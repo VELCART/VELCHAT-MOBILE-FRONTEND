@@ -1,0 +1,25 @@
+{
+  "name": "velchat-frontend",
+  "version": "0.0.0",
+  "private": true,
+  "description": "VelChat mobile frontend monorepo (React Native, iOS + Android).",
+  "packageManager": "pnpm@11.8.0",
+  "engines": {
+    "node": ">=22",
+    "pnpm": ">=11"
+  },
+  "scripts": {
+    "mobile": "pnpm --filter @velchat/mobile",
+    "start": "pnpm --filter @velchat/mobile start",
+    "android": "pnpm --filter @velchat/mobile android",
+    "ios": "pnpm --filter @velchat/mobile ios",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "typecheck": "turbo run typecheck",
+    "build": "turbo run build"
+  },
+  "devDependencies": {
+    "turbo": "^2.5.4",
+    "typescript": "~5.8.3"
+  }
+}

@@ -1,0 +1,13 @@
+# Identifiers only — no secrets. Per-flavor bundle IDs are set in MBOOT-0.6.
+# Values are placeholders; CI overrides via env (APP_IDENTIFIER, PACKAGE_NAME, etc.).
+
+for_platform :android do
+  package_name(ENV["PACKAGE_NAME"] || "com.velchat.app")
+  # json_key_file(ENV["PLAY_JSON_KEY"])  # provided by CI secret
+end
+
+for_platform :ios do
+  app_identifier(ENV["APP_IDENTIFIER"] || "com.velchat.app")
+  apple_id(ENV["APPLE_ID"])       # provided by CI secret
+  team_id(ENV["APPLE_TEAM_ID"])   # provided by CI secret
+end

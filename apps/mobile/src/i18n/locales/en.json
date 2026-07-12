@@ -1,0 +1,17 @@
+{
+  "welcome": {
+    "title": "Welcome to\nVelChat",
+    "subtitle": "Private, end-to-end encrypted chat that feels instant — for the people who matter most.",
+    "cta": "Get started",
+    "login": "Already on VelChat? Log in"
+  },
+  "tabs": {
+    "chats": "Chats",
+    "calls": "Calls",
+    "settings": "Settings"
+  },
+  "common": {
+    "empty": "Nothing here yet",
+    "theme": "Theme: {{mode}} · tap to toggle"
+  }
+}

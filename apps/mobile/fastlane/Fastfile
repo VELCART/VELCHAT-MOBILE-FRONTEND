@@ -1,0 +1,40 @@
+# VelChat mobile — Fastlane lanes (skeleton, no secrets committed).
+# Real signing material + API keys are injected via CI secrets / env, never here.
+# iOS lanes are AUTHORED but only runnable on macOS (see CLAUDE.md env reality).
+
+default_platform(:android)
+
+platform :android do
+  desc "Build a debug APK (smoke)"
+  lane :debug do
+    gradle(project_dir: "android", task: "assembleDebug")
+  end
+
+  desc "Beta -> Play internal testing track (staged rollout)"
+  lane :beta do
+    gradle(project_dir: "android", task: "bundle", build_type: "Release")
+    # upload_to_play_store(track: "internal", rollout: "0.05")  # enable with PLAY_JSON_KEY
+  end
+
+  desc "Production (staged: 5% -> 25% -> 100% managed in Play console)"
+  lane :production do
+    gradle(project_dir: "android", task: "bundle", build_type: "Release")
+    # upload_to_play_store(track: "production", rollout: "0.05")
+  end
+end
+
+platform :ios do
+  desc "Beta -> TestFlight (macOS/CI only)"
+  lane :beta do
+    # setup_ci if ENV['CI']
+    # match(type: "appstore", readonly: true)
+    # build_app(workspace: "ios/VelChat.xcworkspace", scheme: "VelChat")
+    # upload_to_testflight(skip_waiting_for_build_processing: true)
+    UI.message("iOS beta lane authored; runnable on macOS only.")
+  end
+
+  desc "Production -> App Store (macOS/CI only)"
+  lane :production do
+    UI.message("iOS production lane authored; runnable on macOS only.")
+  end
+end

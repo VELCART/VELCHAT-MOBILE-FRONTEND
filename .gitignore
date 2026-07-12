@@ -1,0 +1,52 @@
+# dependencies
+node_modules/
+.pnpm-store/
+
+# turbo / build caches
+.turbo/
+dist/
+coverage/
+
+# logs
+*.log
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# os / editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# env — commit PUBLIC flavor configs (.env.dev/.env.stage/.env.prod, base URLs only);
+# never commit secrets or local overrides.
+.env
+.env.local
+.env.*.local
+!.env.example
+*.keystore
+!debug.keystore
+
+# react native / metro
+apps/*/.expo/
+apps/*/ios/Pods/
+apps/*/ios/build/
+apps/*/android/.gradle/
+apps/*/android/app/build/
+apps/*/android/build/
+apps/*/android/local.properties
+apps/*/**/*.hprof
+.metro-health-check*
+metro-cache/
+
+# reassure / perf
+.reassure/
+
+# fastlane
+**/fastlane/report.xml
+**/fastlane/Preview.html
+**/fastlane/screenshots
+**/fastlane/test_output

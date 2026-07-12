@@ -1,0 +1,21 @@
+diff --git a/android/build.gradle b/android/build.gradle
+index 934d4aa0225a1f513eb85503deef2a177f7a3339..24ebf27b8d52b253899fedd58f4cec2ea04edd37 100644
+--- a/android/build.gradle
++++ b/android/build.gradle
+@@ -1,13 +1,6 @@
+-buildscript {
+-  repositories {
+-    google()
+-    mavenCentral()
+-  }
+-
+-  dependencies {
+-    classpath "com.android.tools.build:gradle:7.2.1"
+-  }
+-}
++// [VelChat patch] Removed the legacy module-level buildscript block that pinned
++// com.android.tools.build:gradle:7.2.1. The root project provides AGP 8.x; this
++// module now uses it (avoids a redundant old-AGP download that broke the build).
+ 
+ def isNewArchitectureEnabled() {
+   return rootProject.hasProperty("newArchEnabled") && rootProject.getProperty("newArchEnabled") == "true"

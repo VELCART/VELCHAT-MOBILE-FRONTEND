@@ -1,0 +1,10 @@
+packages:
+  - 'apps/*'
+  - 'packages/*'
+# unrs-resolver (native napi module from eslint-import-resolver-typescript) ships
+# a prebuilt win32-x64 binary, so its build script is not needed. Deny explicitly
+# so pnpm stops prompting (ERR_PNPM_IGNORED_BUILDS).
+allowBuilds:
+  unrs-resolver: false
+patchedDependencies:
+  react-native-mmkv@3.3.3: patches/react-native-mmkv@3.3.3.patch

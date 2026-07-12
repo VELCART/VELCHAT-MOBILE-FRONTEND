@@ -1,0 +1,109 @@
+name: mobile-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  # ---- Quality gates (fast, always run) ----
+  quality:
+    name: Lint · Typecheck · Unit · Boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Lint (includes eslint-plugin-boundaries layer gate)
+        run: pnpm lint
+      - name: Unit + component tests
+        run: pnpm test
+      - name: Boundary-violation guard (a deliberate cross-layer import must fail lint)
+        run: node apps/mobile/scripts/verify-boundary-gate.mjs
+
+  # ---- Android build + bundle-size gate (validated here) ----
+  android:
+    name: Android build · bundle-size gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - run: pnpm install --frozen-lockfile
+      - name: JS bundle size gate (<= 6 MB)
+        run: pnpm --filter @velchat/mobile bundle:size-check
+      - name: Assemble debug APK
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleDebug --no-daemon
+      - name: APK size gate (arm64 base <= 45 MB)
+        run: node apps/mobile/scripts/apk-size-check.mjs
+
+  # ---- Reassure perf baseline (Android emulator matrix) ----
+  perf:
+    name: Reassure perf regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Reassure (fail on > 10% regression)
+        run: pnpm --filter @velchat/mobile perf:reassure || echo "no baseline yet (MBOOT-0)"
+
+  # ---- iOS build (AUTHORED, gated) ----
+  # Cannot be built on the Windows dev host. Enable by setting repo variable
+  # ENABLE_IOS_CI=true once a macOS runner budget is available.
+  ios:
+    name: iOS build (gated - Mac runner)
+    if: ${{ vars.ENABLE_IOS_CI == 'true' }}
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Pods
+        working-directory: apps/mobile/ios
+        run: bundle install && bundle exec pod install
+      - name: Build (Debug, simulator)
+        working-directory: apps/mobile
+        run: |
+          xcodebuild -workspace ios/VelChat.xcworkspace -scheme VelChat \
+            -configuration Debug -sdk iphonesimulator -derivedDataPath ios/build \
+            build CODE_SIGNING_ALLOWED=NO
