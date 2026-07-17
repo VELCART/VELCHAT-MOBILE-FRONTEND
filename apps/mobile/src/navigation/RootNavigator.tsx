@@ -13,7 +13,7 @@ import {
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../theme';
-import { WelcomeScreen } from '../features/auth';
+import { WelcomeScreen, NotificationsScreen } from '../features/auth';
 import { AppTabs } from './AppTabs';
 import type { RootStackParamList } from './types';
 
@@ -24,6 +24,7 @@ const linking: LinkingOptions<RootStackParamList> = {
   config: {
     screens: {
       Welcome: 'welcome',
+      Notifications: 'notifications',
       AppTabs: {
         screens: { Chats: 'chats', Calls: 'calls', Settings: 'settings' },
       },
@@ -48,8 +49,11 @@ export function RootNavigator(): React.JSX.Element {
 
   return (
     <NavigationContainer theme={navTheme} linking={linking}>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+      <Stack.Navigator
+        screenOptions={{ headerShown: false, animation: 'none' }}
+      >
         <Stack.Screen name="Welcome" component={WelcomeScreen} />
+        <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="AppTabs" component={AppTabs} />
       </Stack.Navigator>
     </NavigationContainer>

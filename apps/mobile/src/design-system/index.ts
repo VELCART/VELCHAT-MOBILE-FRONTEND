@@ -14,6 +14,4 @@ export {
   Card,
   Divider,
 } from './primitives';
-export { Avatar } from './primitives/Avatar';
-export type { AvatarShape, AvatarTone } from './primitives/Avatar';
-export { AvatarOrbit } from './AvatarOrbit';
+export { FadeInUp } from './FadeInUp';

@@ -17,8 +17,10 @@ import { ErrorBoundary } from './ErrorBoundary';
 import { bootstrap } from './bootstrap';
 
 function readInitialThemeMode(): ThemeMode {
-  const saved = kv.getString(KVKeys.themeMode);
-  return saved === 'light' || saved === 'dark' || saved === 'system' ? saved : 'system';
+  // Front/onboarding is locked to light for now (no theme toggle yet). A Settings
+  // theme picker in a later phase will restore the persisted/system choice:
+  //   const saved = kv.getString(KVKeys.themeMode); return saved ?? 'system';
+  return 'light';
 }
 
 export default function App(): React.JSX.Element {
@@ -32,7 +34,7 @@ export default function App(): React.JSX.Element {
         <QueryClientProvider client={queryClient}>
           <ThemeProvider
             initialMode={readInitialThemeMode()}
-            onModeChange={(mode) => kv.set(KVKeys.themeMode, mode)}
+            onModeChange={mode => kv.set(KVKeys.themeMode, mode)}
           >
             <I18nProvider>
               <FeatureFlagsProvider>

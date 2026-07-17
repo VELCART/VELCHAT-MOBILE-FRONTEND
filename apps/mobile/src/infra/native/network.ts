@@ -25,6 +25,8 @@ export async function getNetworkStatus(): Promise<NetworkStatus> {
 }
 
 /** Subscribe to connectivity changes; returns an unsubscribe fn (owned + disposable, §M20.3). */
-export function subscribeNetwork(cb: (status: NetworkStatus) => void): () => void {
-  return NetInfo.addEventListener((state) => cb(toStatus(state)));
+export function subscribeNetwork(
+  cb: (status: NetworkStatus) => void,
+): () => void {
+  return NetInfo.addEventListener(state => cb(toStatus(state)));
 }

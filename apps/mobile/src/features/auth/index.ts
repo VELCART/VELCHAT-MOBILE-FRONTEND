@@ -5,3 +5,4 @@
  * Dependency rule (§M3): UI → Feature → Domain → Infra. Never the reverse.
  */
 export { WelcomeScreen } from './ui/WelcomeScreen';
+export { NotificationsScreen } from './ui/NotificationsScreen';

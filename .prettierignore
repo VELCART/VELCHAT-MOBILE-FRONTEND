@@ -1,0 +1,24 @@
+# deps / caches / build output
+node_modules/
+.turbo/
+**/dist/
+**/build/
+**/coverage/
+pnpm-lock.yaml
+patches/
+
+# native projects (generated / platform-owned)
+apps/*/android/
+apps/*/ios/
+
+# assets & binaries
+**/*.png
+**/*.jpg
+**/*.jpeg
+**/*.webp
+**/*.ttf
+**/*.otf
+
+# markdown docs (kept human-authored, not prettier-normalised)
+*.md
+docs/

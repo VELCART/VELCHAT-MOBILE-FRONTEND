@@ -7,7 +7,10 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const LIMIT_MB = 45;
-const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const appRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+);
 const outDir = path.join(appRoot, 'android', 'app', 'build', 'outputs', 'apk');
 
 function walk(dir) {
@@ -32,7 +35,7 @@ if (apks.length === 0) {
   process.exit(1);
 }
 
-const arm64 = apks.filter((f) => /arm64/i.test(f));
+const arm64 = apks.filter(f => /arm64/i.test(f));
 const targets = arm64.length ? arm64 : apks;
 let failed = false;
 for (const f of targets) {
@@ -40,6 +43,8 @@ for (const f of targets) {
   const isArm64 = /arm64/i.test(f);
   const verdict = isArm64 && mb > LIMIT_MB ? 'FAIL' : 'ok';
   if (verdict === 'FAIL') failed = true;
-  console.log(`${verdict.padEnd(4)} ${mb.toFixed(1)} MB  ${path.basename(f)}${isArm64 ? '' : '  (not ABI-split; informational)'}`);
+  console.log(
+    `${verdict.padEnd(4)} ${mb.toFixed(1)} MB  ${path.basename(f)}${isArm64 ? '' : '  (not ABI-split; informational)'}`,
+  );
 }
 process.exit(failed ? 1 : 0);

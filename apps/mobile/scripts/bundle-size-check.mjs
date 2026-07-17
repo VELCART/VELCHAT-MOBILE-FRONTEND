@@ -6,7 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 
 const LIMIT_MB = 6;
-const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const appRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+);
 const tmp = mkdtempSync(path.join(os.tmpdir(), 'velchat-bundle-'));
 const out = path.join(tmp, 'index.android.bundle');
 

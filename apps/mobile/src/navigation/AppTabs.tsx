@@ -28,7 +28,9 @@ function CallsScreen(): React.JSX.Element {
 }
 function SettingsScreen(): React.JSX.Element {
   const { t } = useTranslation();
-  return <Placeholder title={t('tabs.settings')} subtitle={t('common.empty')} />;
+  return (
+    <Placeholder title={t('tabs.settings')} subtitle={t('common.empty')} />
+  );
 }
 
 export function AppTabs(): React.JSX.Element {
@@ -46,13 +48,27 @@ export function AppTabs(): React.JSX.Element {
         },
         // eslint-disable-next-line react/no-unstable-nested-components -- tabBarIcon is a render prop by design
         tabBarIcon: ({ focused }) => (
-          <RNText style={{ fontSize: 18, opacity: focused ? 1 : 0.5 }}>{ICON[route.name]}</RNText>
+          <RNText style={{ fontSize: 18, opacity: focused ? 1 : 0.5 }}>
+            {ICON[route.name]}
+          </RNText>
         ),
       })}
     >
-      <Tab.Screen name="Chats" component={ChatsScreen} options={{ tabBarLabel: tr('tabs.chats') }} />
-      <Tab.Screen name="Calls" component={CallsScreen} options={{ tabBarLabel: tr('tabs.calls') }} />
-      <Tab.Screen name="Settings" component={SettingsScreen} options={{ tabBarLabel: tr('tabs.settings') }} />
+      <Tab.Screen
+        name="Chats"
+        component={ChatsScreen}
+        options={{ tabBarLabel: tr('tabs.chats') }}
+      />
+      <Tab.Screen
+        name="Calls"
+        component={CallsScreen}
+        options={{ tabBarLabel: tr('tabs.calls') }}
+      />
+      <Tab.Screen
+        name="Settings"
+        component={SettingsScreen}
+        options={{ tabBarLabel: tr('tabs.settings') }}
+      />
     </Tab.Navigator>
   );
 }

@@ -4,7 +4,12 @@
  * Public API barrel. Import this layer only through its index (`eslint-plugin-boundaries`).
  * Dependency rule (§M3): UI → Feature → Domain → Infra. Never the reverse.
  */
-export { i18n, setAppLanguage, isRTLLanguage, SUPPORTED_LANGUAGES } from './config';
+export {
+  i18n,
+  setAppLanguage,
+  isRTLLanguage,
+  SUPPORTED_LANGUAGES,
+} from './config';
 export type { AppLanguage } from './config';
 export { I18nProvider } from './I18nProvider';
 export { useTranslation } from 'react-i18next';

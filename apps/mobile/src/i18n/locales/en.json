@@ -1,9 +1,16 @@
 {
   "welcome": {
-    "title": "Welcome to\nVelChat",
+    "title": "Inspired people",
     "subtitle": "Private, end-to-end encrypted chat that feels instant — for the people who matter most.",
     "cta": "Get started",
     "login": "Already on VelChat? Log in"
+  },
+  "notifications": {
+    "title": "Don't miss out on what your friends are up to.",
+    "subtitle": "Never miss those precious moments.Private, end-to-end encrypted chat that feels instant",
+    "cta": "Turn on notifications",
+    "later": "Another time",
+    "lockDate": "Monday, June 30"
   },
   "tabs": {
     "chats": "Chats",

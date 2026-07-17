@@ -26,7 +26,10 @@ export interface ColorTokens {
   readonly info: string;
 }
 
-export const palette: { readonly light: ColorTokens; readonly dark: ColorTokens } = {
+export const palette: {
+  readonly light: ColorTokens;
+  readonly dark: ColorTokens;
+} = {
   light: {
     bgBase: '#FFFFFF',
     bgSubtle: '#F7F7F8',
@@ -101,12 +104,39 @@ export const radius = {
 } as const;
 
 /** Type scale (§M16). Platform system font (SF Pro / Roboto) by default. */
+// Bundled Poppins (assets/fonts). On RN the weight IS the family file name, so
+// each variant names its exact face rather than relying on fontWeight.
 export const typography = {
-  display: { fontSize: 34, lineHeight: 40, fontWeight: '800', letterSpacing: -0.7 },
-  title: { fontSize: 24, lineHeight: 30, fontWeight: '700', letterSpacing: -0.3 },
-  body: { fontSize: 16, lineHeight: 24, fontWeight: '400', letterSpacing: 0 },
-  label: { fontSize: 17, lineHeight: 20, fontWeight: '600', letterSpacing: -0.1 },
-  caption: { fontSize: 13, lineHeight: 18, fontWeight: '500', letterSpacing: 0 },
+  display: {
+    fontSize: 34,
+    lineHeight: 41,
+    fontFamily: 'Poppins-ExtraBold',
+    letterSpacing: -0.7,
+  },
+  title: {
+    fontSize: 24,
+    lineHeight: 31,
+    fontFamily: 'Poppins-Bold',
+    letterSpacing: -0.3,
+  },
+  body: {
+    fontSize: 16,
+    lineHeight: 24,
+    fontFamily: 'Poppins-Regular',
+    letterSpacing: 0,
+  },
+  label: {
+    fontSize: 17,
+    lineHeight: 22,
+    fontFamily: 'Poppins-SemiBold',
+    letterSpacing: -0.1,
+  },
+  caption: {
+    fontSize: 13,
+    lineHeight: 18,
+    fontFamily: 'Poppins-Medium',
+    letterSpacing: 0,
+  },
 } as const;
 
 export type TypographyVariant = keyof typeof typography;
@@ -126,16 +156,55 @@ export interface ElevationSet {
 }
 
 /** Light-mode diffuse shadows; dark mode substitutes deeper shadows + hairline borders. */
-export const elevation: { readonly light: ElevationSet; readonly dark: ElevationSet } = {
+export const elevation: {
+  readonly light: ElevationSet;
+  readonly dark: ElevationSet;
+} = {
   light: {
-    e1: { shadowColor: '#141428', shadowOpacity: 0.06, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
-    e2: { shadowColor: '#141428', shadowOpacity: 0.1, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 6 },
-    e3: { shadowColor: '#141428', shadowOpacity: 0.14, shadowRadius: 40, shadowOffset: { width: 0, height: 16 }, elevation: 12 },
+    e1: {
+      shadowColor: '#141428',
+      shadowOpacity: 0.06,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 2,
+    },
+    e2: {
+      shadowColor: '#141428',
+      shadowOpacity: 0.1,
+      shadowRadius: 24,
+      shadowOffset: { width: 0, height: 12 },
+      elevation: 6,
+    },
+    e3: {
+      shadowColor: '#141428',
+      shadowOpacity: 0.14,
+      shadowRadius: 40,
+      shadowOffset: { width: 0, height: 16 },
+      elevation: 12,
+    },
   },
   dark: {
-    e1: { shadowColor: '#000000', shadowOpacity: 0.5, shadowRadius: 8, shadowOffset: { width: 0, height: 2 }, elevation: 2 },
-    e2: { shadowColor: '#000000', shadowOpacity: 0.55, shadowRadius: 24, shadowOffset: { width: 0, height: 12 }, elevation: 6 },
-    e3: { shadowColor: '#000000', shadowOpacity: 0.6, shadowRadius: 40, shadowOffset: { width: 0, height: 16 }, elevation: 12 },
+    e1: {
+      shadowColor: '#000000',
+      shadowOpacity: 0.5,
+      shadowRadius: 8,
+      shadowOffset: { width: 0, height: 2 },
+      elevation: 2,
+    },
+    e2: {
+      shadowColor: '#000000',
+      shadowOpacity: 0.55,
+      shadowRadius: 24,
+      shadowOffset: { width: 0, height: 12 },
+      elevation: 6,
+    },
+    e3: {
+      shadowColor: '#000000',
+      shadowOpacity: 0.6,
+      shadowRadius: 40,
+      shadowOffset: { width: 0, height: 16 },
+      elevation: 12,
+    },
   },
 };
 

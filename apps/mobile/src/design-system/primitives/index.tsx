@@ -50,7 +50,7 @@ export function Text({
         {
           fontSize: v.fontSize,
           lineHeight: v.lineHeight,
-          fontWeight: v.fontWeight as TextStyle['fontWeight'],
+          fontFamily: v.fontFamily,
           letterSpacing: v.letterSpacing,
           color: colorMap[color],
           textAlign: align,
@@ -92,12 +92,23 @@ export function Screen({
   );
 }
 
+// Strong "floating / lifted off the page" shadow for primary CTAs.
+const POP_SHADOW = {
+  shadowColor: '#000000',
+  shadowOpacity: 0.28,
+  shadowRadius: 18,
+  shadowOffset: { width: 0, height: 10 },
+  elevation: 14,
+} as const;
+
 export function PillButton({
   label,
   onPress,
   variant = 'primary',
   disabled = false,
   loading = false,
+  leadingIcon,
+  trailingIcon,
   style,
 }: {
   label: string;
@@ -105,10 +116,13 @@ export function PillButton({
   variant?: 'primary' | 'ghost';
   disabled?: boolean;
   loading?: boolean;
+  leadingIcon?: string;
+  trailingIcon?: string;
   style?: StyleProp<ViewStyle>;
 }): React.JSX.Element {
   const t = useTheme();
   const isPrimary = variant === 'primary';
+  const fg = isPrimary ? 'inverse' : 'secondary';
   return (
     <Pressable
       accessibilityRole="button"
@@ -119,23 +133,39 @@ export function PillButton({
         {
           height: 56,
           borderRadius: t.radius.pill,
+          flexDirection: 'row',
           alignItems: 'center',
           justifyContent: 'center',
+          gap: t.spacing.xs,
           paddingHorizontal: t.spacing.xl,
           backgroundColor: isPrimary ? t.colors.actionBg : 'transparent',
           opacity: disabled ? 0.4 : 1,
-          transform: [{ scale: pressed ? 0.985 : 1 }],
+          transform: [{ scale: pressed ? 0.97 : 1 }],
         },
-        isPrimary && t.elevation.e2,
+        isPrimary && POP_SHADOW,
         style,
       ]}
     >
       {loading ? (
-        <ActivityIndicator color={isPrimary ? t.colors.actionFg : t.colors.textPrimary} />
+        <ActivityIndicator
+          color={isPrimary ? t.colors.actionFg : t.colors.textPrimary}
+        />
       ) : (
-        <Text variant="label" color={isPrimary ? 'inverse' : 'secondary'}>
-          {label}
-        </Text>
+        <>
+          {leadingIcon ? (
+            <Text variant="label" color={fg}>
+              {leadingIcon}
+            </Text>
+          ) : null}
+          <Text variant="label" color={fg}>
+            {label}
+          </Text>
+          {trailingIcon ? (
+            <Text variant="label" color={fg}>
+              {trailingIcon}
+            </Text>
+          ) : null}
+        </>
       )}
     </Pressable>
   );
@@ -155,7 +185,17 @@ export function Row({
   style?: StyleProp<ViewStyle>;
 }): React.JSX.Element {
   return (
-    <View style={[{ flexDirection: 'row', alignItems: align, justifyContent: justify, gap }, style]}>
+    <View
+      style={[
+        {
+          flexDirection: 'row',
+          alignItems: align,
+          justifyContent: justify,
+          gap,
+        },
+        style,
+      ]}
+    >
       {children}
     </View>
   );
@@ -175,7 +215,17 @@ export function Column({
   style?: StyleProp<ViewStyle>;
 }): React.JSX.Element {
   return (
-    <View style={[{ flexDirection: 'column', alignItems: align, justifyContent: justify, gap }, style]}>
+    <View
+      style={[
+        {
+          flexDirection: 'column',
+          alignItems: align,
+          justifyContent: justify,
+          gap,
+        },
+        style,
+      ]}
+    >
       {children}
     </View>
   );
@@ -208,9 +258,23 @@ export function Card({
   );
 }
 
-export function Divider({ style }: { style?: StyleProp<ViewStyle> }): React.JSX.Element {
+export function Divider({
+  style,
+}: {
+  style?: StyleProp<ViewStyle>;
+}): React.JSX.Element {
   const t = useTheme();
-  return <View style={[{ height: StyleSheet.hairlineWidth, backgroundColor: t.colors.hairline }, style]} />;
+  return (
+    <View
+      style={[
+        {
+          height: StyleSheet.hairlineWidth,
+          backgroundColor: t.colors.hairline,
+        },
+        style,
+      ]}
+    />
+  );
 }
 
 export type { Theme };
