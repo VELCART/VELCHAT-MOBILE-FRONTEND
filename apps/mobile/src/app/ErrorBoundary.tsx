@@ -16,19 +16,52 @@ function Fallback({ onRetry }: { onRetry: () => void }): React.JSX.Element {
   const btnBg = dark ? '#FFFFFF' : '#0B0B0C';
   const btnFg = dark ? '#0B0B0C' : '#FFFFFF';
   return (
-    <View style={{ flex: 1, backgroundColor: bg, alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <Text style={{ color: fg, fontSize: 22, fontWeight: '700', marginBottom: 8, textAlign: 'center' }}>
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: bg,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+      }}
+    >
+      <Text
+        style={{
+          color: fg,
+          fontSize: 22,
+          fontWeight: '700',
+          marginBottom: 8,
+          textAlign: 'center',
+        }}
+      >
         Something went wrong
       </Text>
-      <Text style={{ color: sub, fontSize: 15, textAlign: 'center', marginBottom: 24, lineHeight: 22 }}>
+      <Text
+        style={{
+          color: sub,
+          fontSize: 15,
+          textAlign: 'center',
+          marginBottom: 24,
+          lineHeight: 22,
+        }}
+      >
         The app hit an unexpected error. You can try again.
       </Text>
       <Pressable
         accessibilityRole="button"
         onPress={onRetry}
-        style={{ backgroundColor: btnBg, borderRadius: 999, height: 52, paddingHorizontal: 32, alignItems: 'center', justifyContent: 'center' }}
+        style={{
+          backgroundColor: btnBg,
+          borderRadius: 999,
+          height: 52,
+          paddingHorizontal: 32,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
       >
-        <Text style={{ color: btnFg, fontSize: 16, fontWeight: '600' }}>Try again</Text>
+        <Text style={{ color: btnFg, fontSize: 16, fontWeight: '600' }}>
+          Try again
+        </Text>
       </Pressable>
     </View>
   );
@@ -38,7 +71,10 @@ interface State {
   error: Error | null;
 }
 
-export class ErrorBoundary extends React.Component<{ children: React.ReactNode }, State> {
+export class ErrorBoundary extends React.Component<
+  { children: React.ReactNode },
+  State
+> {
   override state: State = { error: null };
 
   static getDerivedStateFromError(error: Error): State {

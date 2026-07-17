@@ -10,7 +10,10 @@ module.exports = {
   settings: {
     // Resolve TS files + directory (index.ts) imports so boundaries can classify them.
     'import/resolver': {
-      typescript: { alwaysTryTypes: true, project: require('path').join(__dirname, 'tsconfig.json') },
+      typescript: {
+        alwaysTryTypes: true,
+        project: require('path').join(__dirname, 'tsconfig.json'),
+      },
       node: { extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'] },
     },
     'boundaries/include': ['src/**/*'],
@@ -26,8 +29,18 @@ module.exports = {
       { type: 'domain', mode: 'folder', pattern: 'src/domain' },
       { type: 'infra', mode: 'folder', pattern: 'src/infra' },
       // feature-ui MUST be listed before feature (more specific first)
-      { type: 'feature-ui', mode: 'folder', pattern: 'src/features/*/ui', capture: ['feature'] },
-      { type: 'feature', mode: 'folder', pattern: 'src/features/*', capture: ['feature'] },
+      {
+        type: 'feature-ui',
+        mode: 'folder',
+        pattern: 'src/features/*/ui',
+        capture: ['feature'],
+      },
+      {
+        type: 'feature',
+        mode: 'folder',
+        pattern: 'src/features/*',
+        capture: ['feature'],
+      },
     ],
   },
   rules: {
@@ -37,15 +50,86 @@ module.exports = {
       {
         default: 'disallow',
         rules: [
-          { from: 'app', allow: ['core', 'platform', 'design-system', 'i18n', 'theme', 'navigation', 'ui', 'feature', 'feature-ui', 'domain', 'infra'] },
+          {
+            from: 'app',
+            allow: [
+              'core',
+              'platform',
+              'design-system',
+              'i18n',
+              'theme',
+              'navigation',
+              'ui',
+              'feature',
+              'feature-ui',
+              'domain',
+              'infra',
+            ],
+          },
           { from: 'domain', allow: ['domain', 'core'] },
           { from: 'infra', allow: ['infra', 'domain', 'core', 'platform'] },
-          { from: 'feature', allow: ['feature', 'feature-ui', 'domain', 'core', 'design-system', 'theme', 'i18n', 'ui', 'navigation', 'platform', 'infra'] },
+          {
+            from: 'feature',
+            allow: [
+              'feature',
+              'feature-ui',
+              'domain',
+              'core',
+              'design-system',
+              'theme',
+              'i18n',
+              'ui',
+              'navigation',
+              'platform',
+              'infra',
+            ],
+          },
           // features/*/ui must NOT import infra directly (use the feature's api/hooks).
-          { from: 'feature-ui', allow: ['feature', 'feature-ui', 'domain', 'core', 'design-system', 'theme', 'i18n', 'ui', 'navigation', 'platform'] },
-          { from: 'ui', allow: ['design-system', 'theme', 'i18n', 'ui', 'navigation', 'core', 'domain'] },
-          { from: 'design-system', allow: ['design-system', 'theme', 'i18n', 'core'] },
-          { from: 'navigation', allow: ['navigation', 'ui', 'feature', 'feature-ui', 'design-system', 'theme', 'i18n', 'core', 'domain'] },
+          {
+            from: 'feature-ui',
+            allow: [
+              'feature',
+              'feature-ui',
+              'domain',
+              'core',
+              'design-system',
+              'theme',
+              'i18n',
+              'ui',
+              'navigation',
+              'platform',
+            ],
+          },
+          {
+            from: 'ui',
+            allow: [
+              'design-system',
+              'theme',
+              'i18n',
+              'ui',
+              'navigation',
+              'core',
+              'domain',
+            ],
+          },
+          {
+            from: 'design-system',
+            allow: ['design-system', 'theme', 'i18n', 'core'],
+          },
+          {
+            from: 'navigation',
+            allow: [
+              'navigation',
+              'ui',
+              'feature',
+              'feature-ui',
+              'design-system',
+              'theme',
+              'i18n',
+              'core',
+              'domain',
+            ],
+          },
           { from: 'core', allow: ['core', 'platform'] },
           { from: 'platform', allow: ['platform', 'core'] },
           { from: 'theme', allow: ['theme', 'core', 'design-system'] },
@@ -61,8 +145,14 @@ module.exports = {
         rules: [
           {
             from: ['domain'],
-            disallow: ['react-native', 'react-native-*', '@react-native/*', '@react-native-*'],
-            message: '§M3: domain is pure TS — it must not import React Native.',
+            disallow: [
+              'react-native',
+              'react-native-*',
+              '@react-native/*',
+              '@react-native-*',
+            ],
+            message:
+              '§M3: domain is pure TS — it must not import React Native.',
           },
         ],
       },
@@ -74,13 +164,15 @@ module.exports = {
         paths: [
           {
             name: '@react-native-async-storage/async-storage',
-            message: 'AsyncStorage is forbidden (§M1): unencrypted, slow, string-only. Use infra/kv (MMKV) or infra/db (WatermelonDB).',
+            message:
+              'AsyncStorage is forbidden (§M1): unencrypted, slow, string-only. Use infra/kv (MMKV) or infra/db (WatermelonDB).',
           },
         ],
         patterns: [
           {
             group: ['**/AsyncStorage', '**/async-storage*'],
-            message: 'AsyncStorage is forbidden (§M1). Use infra/kv (MMKV) or infra/db (WatermelonDB).',
+            message:
+              'AsyncStorage is forbidden (§M1). Use infra/kv (MMKV) or infra/db (WatermelonDB).',
           },
         ],
       },
@@ -94,7 +186,13 @@ module.exports = {
   overrides: [
     {
       // Tests and non-shipping scripts may use console.
-      files: ['**/*.test.ts', '**/*.test.tsx', '**/__tests__/**', 'scripts/**', 'jest.setup.*'],
+      files: [
+        '**/*.test.ts',
+        '**/*.test.tsx',
+        '**/__tests__/**',
+        'scripts/**',
+        'jest.setup.*',
+      ],
       rules: { 'no-console': 'off', 'boundaries/element-types': 'off' },
     },
   ],

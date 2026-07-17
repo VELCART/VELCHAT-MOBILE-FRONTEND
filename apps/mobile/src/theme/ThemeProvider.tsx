@@ -5,7 +5,13 @@
  * Persistence of the user's chosen mode arrives in a later MP0 slice (MMKV);
  * for now the default is `system` and follows the OS appearance live.
  */
-import React, { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { useColorScheme } from 'react-native';
 import {
   palette,
@@ -86,7 +92,9 @@ export function ThemeProvider({
     };
   }, [mode, systemScheme, onModeChange]);
 
-  return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
+  return (
+    <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>
+  );
 }
 
 function useThemeContext(): ThemeContextValue {
@@ -101,7 +109,10 @@ export function useTheme(): Theme {
   return useThemeContext().theme;
 }
 
-export function useThemeMode(): Pick<ThemeContextValue, 'mode' | 'setMode' | 'toggle'> {
+export function useThemeMode(): Pick<
+  ThemeContextValue,
+  'mode' | 'setMode' | 'toggle'
+> {
   const { mode, setMode, toggle } = useThemeContext();
   return { mode, setMode, toggle };
 }

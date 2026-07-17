@@ -44,7 +44,9 @@ jest.mock('react-native-mmkv', () => {
 jest.mock('@react-native-community/netinfo', () => ({
   __esModule: true,
   default: {
-    fetch: jest.fn(() => Promise.resolve({ isConnected: true, type: 'wifi', details: {} })),
+    fetch: jest.fn(() =>
+      Promise.resolve({ isConnected: true, type: 'wifi', details: {} }),
+    ),
     addEventListener: jest.fn(() => () => undefined),
   },
 }));
@@ -55,7 +57,11 @@ jest.mock('react-native-device-info', () => ({
     getBatteryLevel: jest.fn(() => Promise.resolve(0.9)),
     isBatteryCharging: jest.fn(() => Promise.resolve(false)),
     getPowerState: jest.fn(() =>
-      Promise.resolve({ batteryLevel: 0.9, batteryState: 'unplugged', lowPowerMode: false }),
+      Promise.resolve({
+        batteryLevel: 0.9,
+        batteryState: 'unplugged',
+        lowPowerMode: false,
+      }),
     ),
   },
 }));

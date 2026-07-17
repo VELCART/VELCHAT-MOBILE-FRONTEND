@@ -28,9 +28,10 @@ export function scrubString(input: string): string {
 
 export function redact(value: unknown, depth = 0): unknown {
   if (typeof value === 'string') return scrubString(value);
-  if (value === null || value === undefined || typeof value !== 'object') return value;
+  if (value === null || value === undefined || typeof value !== 'object')
+    return value;
   if (depth >= MAX_DEPTH) return CENSOR;
-  if (Array.isArray(value)) return value.map((v) => redact(v, depth + 1));
+  if (Array.isArray(value)) return value.map(v => redact(v, depth + 1));
 
   const out: Record<string, unknown> = {};
   for (const [key, v] of Object.entries(value as Record<string, unknown>)) {

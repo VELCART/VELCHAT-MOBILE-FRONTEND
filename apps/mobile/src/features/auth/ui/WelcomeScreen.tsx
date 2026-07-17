@@ -1,54 +1,68 @@
 /**
- * Welcome screen (§F1) — matches the provided reference: avatar-orbit hero,
- * bold heading, muted subtitle, black pill CTA (both light & dark). The full
- * onboarding flow (EnterPhone -> ReverseOTP -> LinkPasskey -> NameYou) is MP1.
+ * Welcome screen (§F1) — hero = the provided orbit-of-people art (white bg, so it
+ * blends into the white onboarding screen), bold heading, muted subtitle, floating
+ * pill CTA with a trailing arrow. Staggered fade-in on mount. Locked to light.
  */
 import React from 'react';
-import { StatusBar, View, Pressable } from 'react-native';
+import { StatusBar, View, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from '../../../i18n';
-import { useTheme, useThemeMode } from '../../../theme';
-import { Screen, Text, PillButton, Column, AvatarOrbit } from '../../../design-system';
+import { useTheme } from '../../../theme';
+import {
+  Screen,
+  Text,
+  PillButton,
+  Column,
+  FadeInUp,
+} from '../../../design-system';
 import type { RootStackParamList } from '../../../navigation/types';
+import HERO from './assets/wlcom_hero.png';
 
 export function WelcomeScreen(): React.JSX.Element {
   const t = useTheme();
-  const { mode, toggle } = useThemeMode();
   const { t: tr } = useTranslation();
-  const navigation = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   return (
     <Screen>
-      <StatusBar barStyle={t.scheme === 'dark' ? 'light-content' : 'dark-content'} />
+      <StatusBar barStyle="dark-content" />
       <View style={{ flex: 1, alignItems: 'center' }}>
-        <View style={{ marginTop: t.spacing.xxl }}>
-          <AvatarOrbit />
-        </View>
+        <FadeInUp style={{ width: '100%', alignItems: 'center' }}>
+          <Image
+            source={HERO}
+            resizeMode="contain"
+            style={{ width: '100%', height: 400, marginTop: t.spacing.sm }}
+          />
+        </FadeInUp>
 
-        <Column gap={t.spacing.sm} align="center" style={{ marginTop: t.spacing.xxl }}>
-          <Text variant="display" align="center">
-            {tr('welcome.title')}
-          </Text>
-          <Text variant="body" color="secondary" align="center">
-            {tr('welcome.subtitle')}
-          </Text>
-        </Column>
+        <FadeInUp delay={120} style={{ width: '100%' }}>
+          <Column
+            gap={t.spacing.sm}
+            align="center"
+            style={{ marginTop: t.spacing.xxs }}
+          >
+            <Text variant="display" align="center">
+              {tr('welcome.title')}
+            </Text>
+            <Text variant="body" color="secondary" align="center">
+              {tr('welcome.subtitle')}
+            </Text>
+          </Column>
+        </FadeInUp>
 
         <View style={{ flex: 1 }} />
 
-        <View style={{ width: '100%' }}>
-          <PillButton label={tr('welcome.cta')} onPress={() => navigation.navigate('AppTabs')} />
-          <Pressable
-            accessibilityRole="button"
-            onPress={toggle}
-            style={{ marginTop: t.spacing.md, alignItems: 'center', paddingVertical: t.spacing.xs }}
-          >
-            <Text variant="caption" color="tertiary">
-              {tr('common.theme', { mode })}
-            </Text>
-          </Pressable>
-        </View>
+        <FadeInUp
+          delay={240}
+          style={{ width: '95%', marginBottom: t.spacing.xxl }}
+        >
+          <PillButton
+            label={tr('welcome.cta')}
+            onPress={() => navigation.navigate('Notifications')}
+          />
+        </FadeInUp>
       </View>
     </Screen>
   );

@@ -6,7 +6,13 @@ import React from 'react';
 import { useTheme } from '../theme';
 import { Screen, Text, Column } from '../design-system';
 
-export function Placeholder({ title, subtitle }: { title: string; subtitle?: string }): React.JSX.Element {
+export function Placeholder({
+  title,
+  subtitle,
+}: {
+  title: string;
+  subtitle?: string;
+}): React.JSX.Element {
   const t = useTheme();
   return (
     <Screen center>

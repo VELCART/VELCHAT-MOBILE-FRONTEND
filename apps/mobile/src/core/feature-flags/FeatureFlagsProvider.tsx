@@ -3,22 +3,42 @@
  * (never blocks), then fetches in the background and updates. Kill-switch: a
  * flag flipped off server-side disables that feature on next load / push.
  */
-import React, { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
+import React, {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react';
 import { loadRemoteConfig } from './loader';
-import { DEFAULT_CONFIG, DEFAULT_FLAGS, type FeatureFlagKey, type FeatureFlags, type RemoteConfigState } from './types';
+import {
+  DEFAULT_CONFIG,
+  DEFAULT_FLAGS,
+  type FeatureFlagKey,
+  type FeatureFlags,
+  type RemoteConfigState,
+} from './types';
 
 const FeatureFlagsContext = createContext<RemoteConfigState>({
   ...DEFAULT_CONFIG,
   flags: { ...DEFAULT_FLAGS },
 });
 
-export function FeatureFlagsProvider({ children }: { children: ReactNode }): React.JSX.Element {
-  const [state, setState] = useState<RemoteConfigState>({ ...DEFAULT_CONFIG, flags: { ...DEFAULT_FLAGS } });
+export function FeatureFlagsProvider({
+  children,
+}: {
+  children: ReactNode;
+}): React.JSX.Element {
+  const [state, setState] = useState<RemoteConfigState>({
+    ...DEFAULT_CONFIG,
+    flags: { ...DEFAULT_FLAGS },
+  });
 
   useEffect(() => {
     let active = true;
     loadRemoteConfig()
-      .then((next) => {
+      .then(next => {
         if (active) setState(next);
       })
       .catch(() => undefined);
@@ -28,7 +48,11 @@ export function FeatureFlagsProvider({ children }: { children: ReactNode }): Rea
   }, []);
 
   const value = useMemo(() => state, [state]);
-  return <FeatureFlagsContext.Provider value={value}>{children}</FeatureFlagsContext.Provider>;
+  return (
+    <FeatureFlagsContext.Provider value={value}>
+      {children}
+    </FeatureFlagsContext.Provider>
+  );
 }
 
 export function useFeatureFlags(): FeatureFlags {

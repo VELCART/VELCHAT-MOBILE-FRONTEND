@@ -6,7 +6,10 @@ import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const appRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  '..',
+);
 const probe = path.join(appRoot, 'src', 'domain', '__boundary_probe__.ts');
 
 writeFileSync(
@@ -22,7 +25,10 @@ writeFileSync(
 let caught = false;
 let output = '';
 try {
-  execSync(`npx eslint "${probe}" --no-ignore`, { cwd: appRoot, stdio: 'pipe' });
+  execSync(`npx eslint "${probe}" --no-ignore`, {
+    cwd: appRoot,
+    stdio: 'pipe',
+  });
 } catch (e) {
   output = `${e.stdout?.toString() ?? ''}${e.stderr?.toString() ?? ''}`;
   caught = /boundaries\/element-types|boundaries/.test(output);
@@ -30,8 +36,13 @@ try {
 rmSync(probe, { force: true });
 
 if (caught) {
-  console.log('OK  boundary gate works: a domain -> infra import was rejected by eslint.');
+  console.log(
+    'OK  boundary gate works: a domain -> infra import was rejected by eslint.',
+  );
   process.exit(0);
 }
-console.error('FAIL  boundary gate did not reject a domain -> infra import.\n', output);
+console.error(
+  'FAIL  boundary gate did not reject a domain -> infra import.\n',
+  output,
+);
 process.exit(1);

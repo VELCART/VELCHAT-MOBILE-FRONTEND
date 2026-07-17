@@ -7,9 +7,13 @@
  */
 import { MMKV } from 'react-native-mmkv';
 
-const ENCRYPTION_KEY = 'velchat-mp0-placeholder-key-derive-from-keychain-in-mp1';
+const ENCRYPTION_KEY =
+  'velchat-mp0-placeholder-key-derive-from-keychain-in-mp1';
 
-export const storage = new MMKV({ id: 'velchat', encryptionKey: ENCRYPTION_KEY });
+export const storage = new MMKV({
+  id: 'velchat',
+  encryptionKey: ENCRYPTION_KEY,
+});
 
 /** Stable, typed key names (avoid stringly-typed access across the app). */
 export const KVKeys = {

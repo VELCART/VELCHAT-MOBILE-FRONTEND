@@ -14,10 +14,14 @@ export interface BatteryStatus {
 
 export async function getBatteryStatus(): Promise<BatteryStatus> {
   const power = await DeviceInfo.getPowerState();
-  const level = typeof power.batteryLevel === 'number' ? power.batteryLevel : await DeviceInfo.getBatteryLevel();
+  const level =
+    typeof power.batteryLevel === 'number'
+      ? power.batteryLevel
+      : await DeviceInfo.getBatteryLevel();
   return {
     level,
-    charging: power.batteryState === 'charging' || power.batteryState === 'full',
+    charging:
+      power.batteryState === 'charging' || power.batteryState === 'full',
     lowPowerMode: Boolean(power.lowPowerMode),
   };
 }
