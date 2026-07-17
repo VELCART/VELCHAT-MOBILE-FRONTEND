@@ -3,6 +3,7 @@
  * Non-blocking + offline-safe: any failure keeps the defaults. Never blocks the
  * render path (§M9). MMKV caching of the last-known-good is added with the MMKV slice.
  */
+import axios from 'axios';
 import { appEnv } from '../config/env';
 import { log } from '../logger';
 import {
@@ -36,28 +37,16 @@ export async function loadRemoteConfig(
     flags: { ...DEFAULT_FLAGS },
     loaded: true,
   };
-  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(
-        () => reject(new Error('feature-flags timeout')),
-        timeoutMs,
-      );
-    });
-    const res = await Promise.race([
-      fetch(`${appEnv.apiBaseUrl}/feature-flags/evaluate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          context: { platform: 'android', appVersion: CLIENT_VERSION },
-        }),
-      }),
-      timeout,
-    ]);
-    if (!res.ok) return fallback;
+    // Standalone axios (no auth) — feature-flags evaluate is a pre-login bootstrap call.
+    const res = await axios.post(
+      `${appEnv.apiBaseUrl}/feature-flags/evaluate`,
+      { context: { platform: 'android', appVersion: CLIENT_VERSION } },
+      { timeout: timeoutMs, headers: { 'Content-Type': 'application/json' } },
+    );
 
-    const json: unknown = await res.json();
-    const data = (json as { data?: unknown })?.data ?? json;
+    const body: unknown = res.data;
+    const data = (body as { data?: unknown })?.data ?? body;
     const rec = (data ?? {}) as Record<string, unknown>;
 
     const serverFlags = (rec.flags ?? {}) as Record<string, { on?: unknown }>;
@@ -87,7 +76,5 @@ export async function loadRemoteConfig(
       reason: String(err),
     });
     return fallback;
-  } finally {
-    clearTimeout(timer);
   }
 }
