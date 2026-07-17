@@ -21,6 +21,7 @@
     "format:check": "prettier --check . --ignore-unknown",
     "changeset": "changeset",
     "changeset:version": "changeset version",
+    "changeset:tag": "changeset tag",
     "changeset:status": "changeset status --since=main",
     "prepare": "husky"
   },
