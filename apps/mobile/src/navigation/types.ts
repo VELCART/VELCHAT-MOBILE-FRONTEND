@@ -3,6 +3,8 @@
  */
 export type RootStackParamList = {
   Welcome: undefined;
+  EnterPhone: undefined;
+  ReverseOtp: undefined;
   Notifications: undefined;
   AppTabs: undefined;
 };

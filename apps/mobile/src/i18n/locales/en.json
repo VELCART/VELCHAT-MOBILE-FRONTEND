@@ -12,6 +12,24 @@
     "later": "Another time",
     "lockDate": "Monday, June 30"
   },
+  "auth": {
+    "phone": {
+      "title": "What's your number?",
+      "subtitle": "We'll verify it with a quick missed call — no OTP to type.",
+      "placeholder": "Phone number",
+      "cta": "Continue"
+    },
+    "otp": {
+      "title": "Verify your number",
+      "subtitle": "Give a missed call from {{phone}} to the number below — we'll detect it automatically.",
+      "did": "Missed-call this number",
+      "waiting": "Waiting for your call…",
+      "timeout": "Didn't detect a call. Try again.",
+      "missedCall": "Give a missed call",
+      "retry": "Try again",
+      "change": "Change number"
+    }
+  },
   "tabs": {
     "chats": "Chats",
     "calls": "Calls",

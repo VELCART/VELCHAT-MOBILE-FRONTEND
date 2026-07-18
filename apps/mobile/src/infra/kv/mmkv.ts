@@ -27,6 +27,9 @@ export const KVKeys = {
   deviceId: 'auth.deviceId',
   accountId: 'auth.accountId',
   tenantId: 'auth.tenantId',
+  // device identity keypair (§L14; harden to hardware-backed StrongBox/Enclave later)
+  devicePrivKey: 'auth.devicePrivKey',
+  phone: 'auth.phone',
 } as const;
 
 export const kv = {
