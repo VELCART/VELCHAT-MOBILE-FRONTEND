@@ -15,6 +15,8 @@
     "perf:reassure": "reassure"
   },
   "dependencies": {
+    "@noble/ed25519": "^2.3.0",
+    "@noble/hashes": "^1.8.0",
     "@react-native-community/netinfo": "^11.4.1",
     "@react-native/new-app-screen": "0.86.0",
     "@react-navigation/bottom-tabs": "^7.3.10",
@@ -29,9 +31,11 @@
     "react-native": "0.86.0",
     "react-native-config": "^1.5.5",
     "react-native-device-info": "^14.0.4",
+    "react-native-get-random-values": "^2.0.0",
     "react-native-mmkv": "^3.1.0",
     "react-native-safe-area-context": "^5.5.2",
-    "react-native-screens": "^4.6.0"
+    "react-native-screens": "^4.6.0",
+    "zustand": "^5.0.14"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

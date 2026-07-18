@@ -60,7 +60,8 @@ export function WelcomeScreen(): React.JSX.Element {
         >
           <PillButton
             label={tr('welcome.cta')}
-            onPress={() => navigation.navigate('Notifications')}
+            onPress={() => navigation.navigate('EnterPhone')}
+            trailingIcon="→"
           />
         </FadeInUp>
       </View>

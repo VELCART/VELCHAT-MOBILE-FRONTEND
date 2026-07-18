@@ -18,5 +18,13 @@ export {
 } from './network';
 export type { AppErrorKind, SessionTokens } from './network';
 export { storage, kv, KVKeys } from './kv';
+export {
+  ensureDeviceKey,
+  signChallenge,
+  hasDeviceKey,
+  clearDeviceKey,
+  bytesToBase64,
+  base64ToBytes,
+} from './crypto';
 export { getBatteryStatus, getNetworkStatus, subscribeNetwork } from './native';
 export type { BatteryStatus, NetworkStatus } from './native';

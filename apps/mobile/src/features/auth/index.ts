@@ -6,3 +6,5 @@
  */
 export { WelcomeScreen } from './ui/WelcomeScreen';
 export { NotificationsScreen } from './ui/NotificationsScreen';
+export { EnterPhoneScreen } from './ui/EnterPhoneScreen';
+export { ReverseOtpScreen } from './ui/ReverseOtpScreen';
