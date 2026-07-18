@@ -29,6 +29,8 @@ jobs:
         uses: changesets/action@v1
         with:
           version: pnpm changeset:version
+          # Private app → no npm publish; `changeset tag` cuts git tags + GitHub Releases.
+          publish: pnpm changeset:tag
           commit: 'chore(release): version packages'
           title: 'chore(release): version packages'
         env:

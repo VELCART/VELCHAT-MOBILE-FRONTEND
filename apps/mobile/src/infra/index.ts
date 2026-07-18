@@ -4,7 +4,19 @@
  * Public API barrel. Import this layer only through its index (`eslint-plugin-boundaries`).
  * Dependency rule (§M3): UI → Feature → Domain → Infra. Never the reverse.
  */
-export { queryClient } from './network';
+export {
+  queryClient,
+  api,
+  AppError,
+  isAppError,
+  normalizeError,
+  getAccessToken,
+  getRefreshToken,
+  hasSession,
+  setTokens,
+  clearSession,
+} from './network';
+export type { AppErrorKind, SessionTokens } from './network';
 export { storage, kv, KVKeys } from './kv';
 export { getBatteryStatus, getNetworkStatus, subscribeNetwork } from './native';
 export type { BatteryStatus, NetworkStatus } from './native';

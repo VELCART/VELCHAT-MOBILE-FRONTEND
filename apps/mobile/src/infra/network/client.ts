@@ -1,0 +1,167 @@
+/**
+ * Axios API client (§M7, §L3) — the single HTTP surface for the app.
+ *   request : Bearer token + tenant + request-id + client-version headers
+ *   response: unwrap the backend `{ success, statusCode, message, data, requestId }` envelope
+ *   errors  : normalize to AppError; single-flight 401 refresh + retry;
+ *             backoff retry on network/timeout/5xx; honor 429 Retry-After
+ * DPoP note: this backend binds refresh via `cnfJkt` only — there is NO per-request
+ * proof header (see docs/backend-integration-reference.md).
+ */
+import axios, {
+  type AxiosError,
+  type AxiosInstance,
+  type AxiosResponse,
+  type InternalAxiosRequestConfig,
+} from 'axios';
+import { appEnv, log } from '../../core';
+import { AppError, normalizeError } from './errors';
+import {
+  getAccessToken,
+  getCnfJkt,
+  getRefreshToken,
+  getTenantId,
+  setTokens,
+  clearSession,
+  type SessionTokens,
+} from './tokens';
+
+const CLIENT_VERSION = '0.0.1';
+const DEFAULT_TIMEOUT = 15000;
+const MAX_RETRIES = 2;
+
+interface RetryConfig extends InternalAxiosRequestConfig {
+  __retryCount?: number;
+  __didAuthRetry?: boolean;
+}
+
+function traceId(): string {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function backoffMs(attempt: number): number {
+  const base = 300 * 2 ** attempt; // 300, 600, 1200…
+  return base + Math.random() * base * 0.3;
+}
+
+const wait = (ms: number): Promise<void> =>
+  new Promise(resolve => setTimeout(resolve, ms));
+
+// --- single-flight refresh --------------------------------------------------
+let refreshInFlight: Promise<string | null> | null = null;
+
+async function doRefresh(): Promise<string | null> {
+  const refresh = getRefreshToken();
+  if (!refresh) return null;
+  try {
+    // bare axios (no interceptors) to avoid recursion
+    const res = await axios.post(
+      `${appEnv.apiBaseUrl}/auth/token/refresh`,
+      { refreshToken: refresh, cnfJkt: getCnfJkt() },
+      {
+        timeout: DEFAULT_TIMEOUT,
+        headers: { 'Content-Type': 'application/json' },
+      },
+    );
+    const data = (res.data?.data ?? res.data) as {
+      access?: string;
+      refresh?: string;
+    };
+    if (!data?.access || !data?.refresh) return null;
+    const next: SessionTokens = { access: data.access, refresh: data.refresh };
+    const jkt = getCnfJkt();
+    if (jkt) next.cnfJkt = jkt;
+    setTokens(next);
+    return data.access;
+  } catch (err) {
+    log.warn('token refresh failed', { reason: String(err) });
+    return null;
+  }
+}
+
+function refreshAccessToken(): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = doRefresh().finally(() => {
+      refreshInFlight = null;
+    });
+  }
+  return refreshInFlight;
+}
+
+// --- client -----------------------------------------------------------------
+export const api: AxiosInstance = axios.create({
+  baseURL: appEnv.apiBaseUrl,
+  timeout: DEFAULT_TIMEOUT,
+  headers: { 'Content-Type': 'application/json' },
+});
+
+api.interceptors.request.use(config => {
+  const token = getAccessToken();
+  if (token) config.headers.set('Authorization', `Bearer ${token}`);
+  const tenant = getTenantId();
+  if (tenant) config.headers.set('x-tenant-id', tenant);
+  config.headers.set('x-request-id', traceId());
+  config.headers.set('x-client-version', CLIENT_VERSION);
+  return config;
+});
+
+api.interceptors.response.use(
+  (res: AxiosResponse) => {
+    const body: unknown = res.data;
+    if (
+      body &&
+      typeof body === 'object' &&
+      'success' in body &&
+      'data' in body
+    ) {
+      res.data = (body as { data: unknown }).data;
+    }
+    return res;
+  },
+  async (error: AxiosError) => {
+    const config = error.config as RetryConfig | undefined;
+    const status = error.response?.status;
+
+    // 401 → refresh once, retry with the new token
+    if (
+      status === 401 &&
+      config &&
+      !config.__didAuthRetry &&
+      getRefreshToken()
+    ) {
+      config.__didAuthRetry = true;
+      const token = await refreshAccessToken();
+      if (token) {
+        config.headers.set('Authorization', `Bearer ${token}`);
+        return api.request(config);
+      }
+      clearSession();
+      return Promise.reject(normalizeError(error));
+    }
+
+    // 429 → honor Retry-After once
+    if (status === 429 && config && !config.__retryCount) {
+      config.__retryCount = 1;
+      const retryAfter = Number(error.response?.headers['retry-after']);
+      await wait(Number.isFinite(retryAfter) ? retryAfter * 1000 : 1000);
+      return api.request(config);
+    }
+
+    // network / timeout / 5xx → backoff retry
+    const retryable =
+      !error.response ||
+      error.code === 'ECONNABORTED' ||
+      (status !== undefined && status >= 500);
+    if (config && retryable) {
+      const attempt = (config.__retryCount ?? 0) + 1;
+      if (attempt <= MAX_RETRIES) {
+        config.__retryCount = attempt;
+        await wait(backoffMs(attempt - 1));
+        return api.request(config);
+      }
+    }
+
+    return Promise.reject(normalizeError(error));
+  },
+);
+
+export { AppError };

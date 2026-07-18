@@ -21,8 +21,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -44,8 +42,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -58,9 +54,9 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: JS bundle size gate (<= 6 MB)
         run: pnpm --filter @velchat/mobile bundle:size-check
-      - name: Assemble debug APK
+      - name: Assemble debug APK (dev flavor)
         working-directory: apps/mobile/android
-        run: ./gradlew assembleDebug --no-daemon
+        run: ./gradlew assembleDevDebug --no-daemon
       - name: APK size gate (arm64 base <= 45 MB)
         run: node apps/mobile/scripts/apk-size-check.mjs
 
@@ -71,8 +67,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -91,8 +85,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
-        with:
-          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}

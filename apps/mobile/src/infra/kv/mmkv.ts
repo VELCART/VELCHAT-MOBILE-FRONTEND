@@ -20,6 +20,13 @@ export const KVKeys = {
   themeMode: 'settings.themeMode',
   language: 'settings.language',
   featureFlagsCache: 'config.featureFlags',
+  // auth session (MP1 replaces the MMKV encryption key with a Keychain-derived one)
+  accessToken: 'auth.accessToken',
+  refreshToken: 'auth.refreshToken',
+  cnfJkt: 'auth.cnfJkt',
+  deviceId: 'auth.deviceId',
+  accountId: 'auth.accountId',
+  tenantId: 'auth.tenantId',
 } as const;
 
 export const kv = {
