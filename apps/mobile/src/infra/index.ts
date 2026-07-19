@@ -7,11 +7,14 @@
 export {
   queryClient,
   api,
+  refreshAccessToken,
   AppError,
   isAppError,
   normalizeError,
   getAccessToken,
   getRefreshToken,
+  getDeviceId,
+  getAccountId,
   hasSession,
   setTokens,
   clearSession,
@@ -26,5 +29,15 @@ export {
   bytesToBase64,
   base64ToBytes,
 } from './crypto';
-export { getBatteryStatus, getNetworkStatus, subscribeNetwork } from './native';
-export type { BatteryStatus, NetworkStatus } from './native';
+export {
+  getBatteryStatus,
+  getNetworkStatus,
+  subscribeNetwork,
+  requestNotificationPermission,
+  hasNotificationPermission,
+} from './native';
+export type {
+  BatteryStatus,
+  NetworkStatus,
+  NotificationPermission,
+} from './native';

@@ -8,6 +8,7 @@ import {
   hasSession,
   setTokens,
   clearSession,
+  clearDeviceKey,
   kv,
   KVKeys,
 } from '../../../infra';
@@ -29,6 +30,7 @@ interface AuthStore {
   readonly accountId: string | null;
   hydrate: () => void;
   beginVerify: (phone: string, sessionId: string) => void;
+  rememberPhone: (phone: string) => void;
   provision: (tokens: Tokens) => void;
   signOut: () => void;
 }
@@ -46,6 +48,11 @@ export const useAuthStore = create<AuthStore>(set => ({
     set({ phone, sessionId, state: 'verifying' });
   },
 
+  rememberPhone: phone => {
+    kv.set(KVKeys.phone, phone);
+    set({ phone });
+  },
+
   provision: tokens => {
     setTokens({
       access: tokens.access,
@@ -60,6 +67,8 @@ export const useAuthStore = create<AuthStore>(set => ({
 
   signOut: () => {
     clearSession();
-    set({ state: 'signed_out', accountId: null, sessionId: null });
+    clearDeviceKey(); // full logout — next sign-in re-provisions via OTP (no silent relogin)
+    kv.delete(KVKeys.phone);
+    set({ state: 'signed_out', accountId: null, sessionId: null, phone: null });
   },
 }));

@@ -9,7 +9,7 @@ import * as ed from '@noble/ed25519';
 import { sha512 } from '@noble/hashes/sha512';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils';
 import { kv, KVKeys } from '../kv';
-import { bytesToBase64, base64ToBytes } from './base64';
+import { bytesToBase64 } from './base64';
 
 // @noble/ed25519 v2 needs a sha512 for the synchronous API.
 ed.etc.sha512Sync = (...m) => sha512(ed.etc.concatBytes(...m));
@@ -46,11 +46,17 @@ export function ensureDeviceKey(): string {
   return publicKeyBase64(priv);
 }
 
-/** Sign a base64url challenge nonce with the device key → base64 signature. */
-export function signChallenge(nonceB64: string): string {
+/**
+ * Sign a challenge nonce with the device key → base64 signature. The backend
+ * (device-key.service.ts) verifies over `Buffer.from(nonce)` — the raw base64url
+ * STRING bytes, NOT the decoded nonce — so we sign the string's bytes. base64url
+ * is ASCII, so each char is exactly one byte (Hermes-safe; no TextEncoder needed).
+ */
+export function signChallenge(nonce: string): string {
   const priv = loadPrivateKey();
   if (!priv) throw new Error('device key not provisioned');
-  return bytesToBase64(ed.sign(base64ToBytes(nonceB64), priv));
+  const msg = Uint8Array.from(nonce, c => c.charCodeAt(0));
+  return bytesToBase64(ed.sign(msg, priv));
 }
 
 export function clearDeviceKey(): void {

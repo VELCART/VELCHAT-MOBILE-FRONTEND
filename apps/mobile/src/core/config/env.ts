@@ -23,6 +23,6 @@ const name: AppEnvName =
 
 export const appEnv: AppEnv = {
   name,
-  apiBaseUrl: Config.API_BASE_URL ?? 'http://10.0.2.2:8080',
+  apiBaseUrl: Config.API_BASE_URL ?? 'http://10.191.109.135:8080',
   wsUrl: Config.WS_URL ?? 'ws://10.0.2.2:8080/ws',
 };

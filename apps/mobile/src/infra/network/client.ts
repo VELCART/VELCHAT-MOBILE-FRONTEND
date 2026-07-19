@@ -26,7 +26,9 @@ import {
 } from './tokens';
 
 const CLIENT_VERSION = '0.0.1';
-const DEFAULT_TIMEOUT = 15000;
+// 60s tolerates Render free-tier cold-starts (a sleeping service takes ~40-50s to
+// wake on the first request — measured 44s); warm requests return in <1s.
+const DEFAULT_TIMEOUT = 60000;
 const MAX_RETRIES = 2;
 
 interface RetryConfig extends InternalAxiosRequestConfig {
@@ -78,7 +80,7 @@ async function doRefresh(): Promise<string | null> {
   }
 }
 
-function refreshAccessToken(): Promise<string | null> {
+export function refreshAccessToken(): Promise<string | null> {
   if (!refreshInFlight) {
     refreshInFlight = doRefresh().finally(() => {
       refreshInFlight = null;
@@ -101,6 +103,7 @@ api.interceptors.request.use(config => {
   if (tenant) config.headers.set('x-tenant-id', tenant);
   config.headers.set('x-request-id', traceId());
   config.headers.set('x-client-version', CLIENT_VERSION);
+  log.debug('http →', { method: config.method, url: config.url });
   return config;
 });
 
@@ -120,6 +123,7 @@ api.interceptors.response.use(
   async (error: AxiosError) => {
     const config = error.config as RetryConfig | undefined;
     const status = error.response?.status;
+    log.warn('http ✗', { url: config?.url, status, code: error.code });
 
     // 401 → refresh once, retry with the new token
     if (

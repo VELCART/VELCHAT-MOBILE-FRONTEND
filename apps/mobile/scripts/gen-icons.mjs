@@ -1,10 +1,9 @@
-// Generates Android launcher icons + splash foreground from brand/logo.png (§M24).
-// The VelChat logo (green chat bubbles, transparent bg) is trimmed to its bounds
-// and centered on a WHITE field so it fills the icon. Produces legacy PNGs (all
-// densities) + an adaptive icon (white background + logo foreground) for API 26+.
+// Generates Android and iOS launcher icons from brand/owl-icon.svg.
+// The owl mark is trimmed to its bounds and centered on a white field. Produces
+// Android legacy/adaptive icons and every iOS AppIcon size, ready for release.
 // The adaptive foreground doubles as the Android-12 splash icon.
 //
-// Usage: pnpm --filter @velchat/mobile icons   (after saving brand/logo.png)
+// Usage: pnpm --filter @velchat/mobile icons
 import sharp from 'sharp';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -15,8 +14,23 @@ const appRoot = path.resolve(
   '..',
 );
 const repoRoot = path.resolve(appRoot, '..', '..');
-const SRC = path.join(repoRoot, 'brand', 'logo.png');
+const SRC = path.join(repoRoot, 'brand', 'owl-icon.svg');
 const RES = path.join(appRoot, 'android', 'app', 'src', 'main', 'res');
+const IOS_APP_ICON = path.join(
+  appRoot,
+  'ios',
+  'VelChat',
+  'Images.xcassets',
+  'AppIcon.appiconset',
+);
+const JS_SPLASH = path.join(appRoot, 'src', 'app', 'assets', 'owl-splash.png');
+const IOS_SPLASH = path.join(
+  appRoot,
+  'ios',
+  'VelChat',
+  'Images.xcassets',
+  'SplashLogo.imageset',
+);
 const WHITE = { r: 255, g: 255, b: 255, alpha: 1 };
 const TRANSPARENT = { r: 0, g: 0, b: 0, alpha: 0 };
 
@@ -29,6 +43,18 @@ const ADAPTIVE = {
   xxhdpi: 324,
   xxxhdpi: 432,
 };
+
+const IOS_ICONS = [
+  ['Icon-20@2x.png', 40],
+  ['Icon-20@3x.png', 60],
+  ['Icon-29@2x.png', 58],
+  ['Icon-29@3x.png', 87],
+  ['Icon-40@2x.png', 80],
+  ['Icon-40@3x.png', 120],
+  ['Icon-60@2x.png', 120],
+  ['Icon-60@3x.png', 180],
+  ['Icon-1024.png', 1024],
+];
 
 async function trimmedLogo() {
   // Trim the transparent border to a tight logo, keep alpha.
@@ -95,8 +121,37 @@ async function main() {
     `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#FFFFFF</color>\n</resources>\n`,
   );
 
+  // iOS requires opaque, square PNGs; iOS applies its own rounded-corner mask.
+  mkdirSync(IOS_APP_ICON, { recursive: true });
+  for (const [filename, px] of IOS_ICONS) {
+    writeFileSync(
+      path.join(IOS_APP_ICON, filename),
+      await onField(logo, px, 0.78, WHITE),
+    );
+  }
+
+  // One transparent source is shared by the React Native and iOS launch screens.
+  const splashLogo = await onField(logo, 512, 0.76, TRANSPARENT);
+  mkdirSync(path.dirname(JS_SPLASH), { recursive: true });
+  writeFileSync(JS_SPLASH, splashLogo);
+  mkdirSync(IOS_SPLASH, { recursive: true });
+  writeFileSync(path.join(IOS_SPLASH, 'SplashLogo.png'), splashLogo);
+  writeFileSync(
+    path.join(IOS_SPLASH, 'Contents.json'),
+    `${JSON.stringify(
+      {
+        images: [
+          { filename: 'SplashLogo.png', idiom: 'universal', scale: '1x' },
+        ],
+        info: { author: 'xcode', version: 1 },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+
   console.log(
-    'OK  launcher icons + splash foreground generated from brand/logo.png (rebuild to see them).',
+    'OK  Android and iOS launcher icons plus app-open splash art generated from brand/owl-icon.svg (rebuild to see them).',
   );
 }
 

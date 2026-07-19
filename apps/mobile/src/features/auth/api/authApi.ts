@@ -56,6 +56,40 @@ export async function loginWithDeviceKey(
   return res.data as Tokens;
 }
 
+/** 2Factor SMS/voice OTP (§B2 additive). Ask the backend to send a code to the phone. */
+export interface OtpSendResult {
+  message: string;
+  /** seconds until a resend is allowed */
+  resendAfter: number;
+  /** seconds the OTP stays valid */
+  expiresIn: number;
+}
+
+export async function sendOtp(phone: string): Promise<OtpSendResult> {
+  const res = await api.post('/auth/otp/send', { phone });
+  return res.data as OtpSendResult;
+}
+
+/**
+ * Verify the OTP AND provision the session in one call — on a correct code the
+ * backend registers/reuses the account + this device and returns real tokens
+ * (so the user stays logged in). Throws AppError on a wrong/expired code.
+ */
+export async function verifyOtp(
+  phone: string,
+  otp: string,
+  platform: string,
+  devicePubkeyBase64: string,
+): Promise<Tokens> {
+  const res = await api.post('/auth/otp/verify', {
+    phone,
+    otp,
+    platform,
+    devicePubkeyBase64,
+  });
+  return res.data as Tokens;
+}
+
 /** Fallback: email magic-link. */
 export async function magicBegin(
   email: string,
