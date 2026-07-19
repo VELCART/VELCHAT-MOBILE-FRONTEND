@@ -8,3 +8,8 @@ export { getBatteryStatus } from './battery';
 export type { BatteryStatus } from './battery';
 export { getNetworkStatus, subscribeNetwork } from './network';
 export type { NetworkStatus } from './network';
+export {
+  requestNotificationPermission,
+  hasNotificationPermission,
+} from './notifications';
+export type { NotificationPermission } from './notifications';

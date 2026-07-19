@@ -17,6 +17,7 @@ import {
   FadeInUp,
 } from '../../../design-system';
 import type { RootStackParamList } from '../../../navigation/types';
+import { useRequestNotifications } from '../hooks/useAuth';
 import HERO from './assets/wlcom_hero.png';
 
 export function WelcomeScreen(): React.JSX.Element {
@@ -24,6 +25,14 @@ export function WelcomeScreen(): React.JSX.Element {
   const { t: tr } = useTranslation();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { check } = useRequestNotifications();
+
+  // Skip the notifications page only when permission is already granted; otherwise
+  // (never asked OR denied) show it so the user can still turn notifications on.
+  const onStart = async (): Promise<void> => {
+    const granted = await check();
+    navigation.navigate(granted ? 'SignIn' : 'Notifications');
+  };
 
   return (
     <Screen>
@@ -60,7 +69,7 @@ export function WelcomeScreen(): React.JSX.Element {
         >
           <PillButton
             label={tr('welcome.cta')}
-            onPress={() => navigation.navigate('EnterPhone')}
+            onPress={onStart}
             trailingIcon="→"
           />
         </FadeInUp>

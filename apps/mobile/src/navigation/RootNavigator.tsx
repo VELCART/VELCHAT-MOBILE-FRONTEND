@@ -16,8 +16,10 @@ import { useTheme } from '../theme';
 import {
   WelcomeScreen,
   NotificationsScreen,
+  SignInScreen,
   EnterPhoneScreen,
   ReverseOtpScreen,
+  useAuthStore,
 } from '../features/auth';
 import { AppTabs } from './AppTabs';
 import type { RootStackParamList } from './types';
@@ -29,9 +31,10 @@ const linking: LinkingOptions<RootStackParamList> = {
   config: {
     screens: {
       Welcome: 'welcome',
+      Notifications: 'notifications',
+      SignIn: 'signin',
       EnterPhone: 'phone',
       ReverseOtp: 'verify',
-      Notifications: 'notifications',
       AppTabs: {
         screens: { Chats: 'chats', Calls: 'calls', Settings: 'settings' },
       },
@@ -41,6 +44,9 @@ const linking: LinkingOptions<RootStackParamList> = {
 
 export function RootNavigator(): React.JSX.Element {
   const t = useTheme();
+  // Cold-start gating: a persisted session (tokens in MMKV) lands straight on the
+  // app — no re-running onboarding/OTP. In-session transitions use navigation.reset.
+  const authed = useAuthStore(s => s.state === 'active');
   const base = t.scheme === 'dark' ? DarkTheme : DefaultTheme;
   const navTheme: NavTheme = {
     ...base,
@@ -57,12 +63,16 @@ export function RootNavigator(): React.JSX.Element {
   return (
     <NavigationContainer theme={navTheme} linking={linking}>
       <Stack.Navigator
+        initialRouteName={authed ? 'AppTabs' : 'Welcome'}
         screenOptions={{ headerShown: false, animation: 'none' }}
       >
         <Stack.Screen name="Welcome" component={WelcomeScreen} />
+        <Stack.Screen name="Notifications" component={NotificationsScreen} />
+        <Stack.Screen name="SignIn" component={SignInScreen} />
+        {/* Reverse-OTP (missed-call) screens stay registered but off the flow — gated
+            by featureFlags.reverseOtp (currently OFF). */}
         <Stack.Screen name="EnterPhone" component={EnterPhoneScreen} />
         <Stack.Screen name="ReverseOtp" component={ReverseOtpScreen} />
-        <Stack.Screen name="Notifications" component={NotificationsScreen} />
         <Stack.Screen name="AppTabs" component={AppTabs} />
       </Stack.Navigator>
     </NavigationContainer>

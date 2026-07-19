@@ -15,3 +15,5 @@ export {
   Divider,
 } from './primitives';
 export { FadeInUp } from './FadeInUp';
+export { BottomSheet } from './BottomSheet';
+export { OtpInput } from './OtpInput';

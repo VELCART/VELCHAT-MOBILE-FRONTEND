@@ -96,15 +96,13 @@ export function EnterPhoneScreen(): React.JSX.Element {
           </Text>
         ) : null}
 
-        <View style={{ flex: 1 }} />
-
         <PillButton
           label={tr('auth.phone.cta')}
           onPress={onContinue}
           disabled={!valid}
           loading={loading}
           trailingIcon="→"
-          style={{ marginBottom: t.spacing.xxl }}
+          style={{ marginTop: t.spacing.xxxl }}
         />
       </View>
     </Screen>

@@ -2,9 +2,28 @@
  * Auth flow hooks — bridge device-key (infra/crypto) + auth API + AuthMachine.
  * Screens (feature-ui) call these; they never touch infra directly.
  */
-import { useCallback, useRef, useState } from 'react';
-import { ensureDeviceKey, isAppError } from '../../../infra';
-import { register, fetchSession } from '../api/authApi';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ensureDeviceKey,
+  isAppError,
+  requestNotificationPermission,
+  hasNotificationPermission,
+  hasDeviceKey,
+  signChallenge,
+  hasSession,
+  getRefreshToken,
+  refreshAccessToken,
+  getDeviceId,
+  type NotificationPermission,
+} from '../../../infra';
+import {
+  register,
+  fetchSession,
+  sendOtp,
+  verifyOtp,
+  requestChallenge,
+  loginWithDeviceKey,
+} from '../api/authApi';
 import { useAuthStore } from '../model/authStore';
 
 const POLL_INTERVAL_MS = 3000;
@@ -87,4 +106,170 @@ export function useSessionPolling(): {
   }, [sessionId, provision, stop]);
 
   return { verified, timedOut, begin, stop };
+}
+
+/**
+ * 2Factor SMS/voice OTP flow (§B2 additive) for the in-sheet phone→code experience.
+ * `send` requests a code (returning the resend + expiry windows for the UI timers);
+ * `verify` checks it AND provisions the session — on a correct code the backend
+ * returns real tokens which we persist, so the user stays logged in (no re-OTP next
+ * launch). Reports success/failure; the caller advances into the app.
+ */
+export function useOtpAuth(): {
+  send: (
+    phone: string,
+  ) => Promise<{ ok: boolean; resendAfter: number; expiresIn: number }>;
+  verify: (phone: string, code: string) => Promise<boolean>;
+  sending: boolean;
+  verifying: boolean;
+  error: string | null;
+  clearError: () => void;
+} {
+  const provision = useAuthStore(s => s.provision);
+  const [sending, setSending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const send = useCallback(
+    async (
+      phone: string,
+    ): Promise<{ ok: boolean; resendAfter: number; expiresIn: number }> => {
+      setSending(true);
+      setError(null);
+      try {
+        const res = await sendOtp(phone);
+        return {
+          ok: true,
+          resendAfter: res.resendAfter ?? 120,
+          expiresIn: res.expiresIn ?? 900,
+        };
+      } catch (e) {
+        setError(
+          isAppError(e)
+            ? e.message
+            : 'Could not send the code. Please try again.',
+        );
+        return { ok: false, resendAfter: 0, expiresIn: 0 };
+      } finally {
+        setSending(false);
+      }
+    },
+    [],
+  );
+
+  const verify = useCallback(
+    async (phone: string, code: string): Promise<boolean> => {
+      setVerifying(true);
+      setError(null);
+      try {
+        const devicePubkeyBase64 = ensureDeviceKey();
+        const tokens = await verifyOtp(
+          phone,
+          code,
+          'android',
+          devicePubkeyBase64,
+        );
+        // A verified OTP is not a completed sign-in until the backend's token pair
+        // has been durably stored. Never navigate to the app without it: doing so
+        // would make the next cold launch fall back to Welcome/Login.
+        if (!tokens?.access || !tokens?.refresh) {
+          setError(
+            'Sign-in completed but no session was returned. Please try again.',
+          );
+          return false;
+        }
+        provision(tokens); // → state 'active' (stays logged in next launch)
+        return true;
+      } catch (e) {
+        setError(
+          isAppError(e)
+            ? e.message
+            : 'That code is wrong or expired. Try again.',
+        );
+        return false;
+      } finally {
+        setVerifying(false);
+      }
+    },
+    [provision],
+  );
+
+  const clearError = useCallback(() => setError(null), []);
+
+  return { send, verify, sending, verifying, error, clearError };
+}
+
+/**
+ * Notification-permission onboarding step. `request` shows the OS dialog (Android
+ * 13+) and resolves with the outcome; onboarding proceeds regardless of the choice.
+ * `check` reports whether it's currently GRANTED — the gate uses this so the page
+ * keeps appearing while permission is missing/denied, and is skipped once granted.
+ */
+export function useRequestNotifications(): {
+  request: () => Promise<NotificationPermission>;
+  check: () => Promise<boolean>;
+  busy: boolean;
+} {
+  const [busy, setBusy] = useState(false);
+  const request = useCallback(async (): Promise<NotificationPermission> => {
+    setBusy(true);
+    try {
+      return await requestNotificationPermission();
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+  const check = useCallback(() => hasNotificationPermission(), []);
+  return { request, check, busy };
+}
+
+/**
+ * Launch bootstrap — decides the starting auth state. A stored session → ready at
+ * once. Otherwise, if this device still holds its key + device id, silently
+ * re-login via the device-key challenge (§B2.5, NO OTP) and provision fresh tokens;
+ * any failure leaves the user signed-out (onboarding). Returns true once decided —
+ * the app shows a splash until then, so there's no onboarding→home flicker.
+ */
+export function useAuthBootstrap(): boolean {
+  const [ready, setReady] = useState(false);
+  const provision = useAuthStore(s => s.provision);
+  const hydrate = useAuthStore(s => s.hydrate);
+
+  useEffect(() => {
+    if (hasSession()) {
+      hydrate();
+      setReady(true);
+      return undefined;
+    }
+    let active = true;
+    const run = async (): Promise<void> => {
+      try {
+        // The backend issues rotating refresh tokens. Prefer that persisted session
+        // before asking the device-key endpoint for a new challenge.
+        if (getRefreshToken()) {
+          const access = await refreshAccessToken();
+          if (access && active) {
+            hydrate();
+            return;
+          }
+        }
+        const deviceId = getDeviceId();
+        if (!hasDeviceKey() || !deviceId) return;
+        const { nonce } = await requestChallenge(deviceId);
+        const signature = signChallenge(nonce);
+        const tokens = await loginWithDeviceKey(deviceId, signature);
+        if (active) provision(tokens);
+      } catch {
+        // stay signed out — onboarding handles a fresh sign-in
+      } finally {
+        if (active) setReady(true);
+      }
+    };
+    void run();
+    return () => {
+      active = false;
+    };
+  }, [hydrate, provision]);
+
+  return ready;
 }

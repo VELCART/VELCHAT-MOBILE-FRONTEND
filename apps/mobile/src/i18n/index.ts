@@ -8,8 +8,10 @@ export {
   i18n,
   setAppLanguage,
   isRTLLanguage,
+  isSupportedLanguage,
   SUPPORTED_LANGUAGES,
+  LANGUAGE_NAMES,
 } from './config';
 export type { AppLanguage } from './config';
-export { I18nProvider } from './I18nProvider';
+export { I18nProvider, useLanguage } from './I18nProvider';
 export { useTranslation } from 'react-i18next';

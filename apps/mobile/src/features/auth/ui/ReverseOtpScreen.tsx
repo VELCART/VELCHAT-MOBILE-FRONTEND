@@ -39,7 +39,7 @@ export function ReverseOtpScreen(): React.JSX.Element {
 
   useEffect(() => {
     if (verified) {
-      navigation.reset({ index: 0, routes: [{ name: 'Notifications' }] });
+      navigation.reset({ index: 0, routes: [{ name: 'AppTabs' }] });
     }
   }, [verified, navigation]);
 

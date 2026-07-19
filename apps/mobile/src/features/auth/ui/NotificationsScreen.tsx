@@ -1,8 +1,7 @@
 /**
- * Notifications-permission onboarding (§F1). The hero image is drawn full-width,
- * flush under a translucent status bar — its own pink->white background reaches
- * the screen edges (no seam), white bottom meets the white screen. Heading,
- * subtitle, and a floating pill CTA (bell icon) sit below. Staggered fade-in.
+ * Notifications-permission onboarding (§F1). The CTA fires the REAL OS permission
+ * dialog (Android 13+ POST_NOTIFICATIONS); whatever the user picks, we advance to
+ * sign-in. "Another time" skips the prompt and moves on. Staggered fade-in.
  */
 import React from 'react';
 import { StatusBar, View, Pressable, Image } from 'react-native';
@@ -18,6 +17,7 @@ import {
   FadeInUp,
 } from '../../../design-system';
 import type { RootStackParamList } from '../../../navigation/types';
+import { useRequestNotifications } from '../hooks/useAuth';
 import HERO from './assets/notif_hero.png';
 
 export function NotificationsScreen(): React.JSX.Element {
@@ -25,13 +25,25 @@ export function NotificationsScreen(): React.JSX.Element {
   const { t: tr } = useTranslation();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
+  const { request, busy } = useRequestNotifications();
+
+  // REPLACE (drop this screen from the back stack) so Back from SignIn lands on
+  // Welcome. Whether permission is granted is re-checked at Welcome each entry.
+  const goNext = (): void => {
+    navigation.replace('SignIn');
+  };
+
+  const proceed = async (): Promise<void> => {
+    await request(); // shows the system dialog; result doesn't gate the flow
+    goNext();
+  };
 
   return (
     <Screen padded={false} edges={['bottom']}>
       <StatusBar
         translucent
         backgroundColor="transparent"
-        barStyle="dark-content"
+        barStyle={t.scheme === 'dark' ? 'light-content' : 'dark-content'}
       />
 
       <View style={{ flex: 1 }}>
@@ -71,11 +83,12 @@ export function NotificationsScreen(): React.JSX.Element {
           <FadeInUp delay={240}>
             <PillButton
               label={tr('notifications.cta')}
-              onPress={() => navigation.navigate('AppTabs')}
+              onPress={proceed}
+              loading={busy}
             />
             <Pressable
               accessibilityRole="button"
-              onPress={() => navigation.navigate('AppTabs')}
+              onPress={goNext}
               style={{
                 marginTop: t.spacing.lg,
                 alignItems: 'center',

@@ -26,6 +26,14 @@ export function getCnfJkt(): string | undefined {
   return kv.getString(KVKeys.cnfJkt);
 }
 
+export function getDeviceId(): string | undefined {
+  return kv.getString(KVKeys.deviceId);
+}
+
+export function getAccountId(): string | undefined {
+  return kv.getString(KVKeys.accountId);
+}
+
 export function getTenantId(): string | undefined {
   return kv.getString(KVKeys.tenantId);
 }

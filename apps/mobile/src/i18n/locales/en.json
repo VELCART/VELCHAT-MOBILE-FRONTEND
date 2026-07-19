@@ -1,18 +1,39 @@
 {
   "welcome": {
-    "title": "Inspired people",
-    "subtitle": "Private, end-to-end encrypted chat that feels instant — for the people who matter most.",
-    "cta": "Get started",
-    "login": "Already on VelChat? Log in"
+    "title": "Connect. Chat.\nStay Close.",
+    "subtitle": "Instant messaging, voice & video calls, and more — all in one secure app.",
+    "cta": "Start Chatting",
+    "skip": "Skip"
+  },
+  "signin": {
+    "title": "Let's get\nstarted.",
+    "subtitle": "Sign in with your number — your chats stay private and end-to-end encrypted.",
+    "cta": "Continue"
   },
   "notifications": {
     "title": "Don't miss out on what your friends are up to.",
-    "subtitle": "Never miss those precious moments.Private, end-to-end encrypted chat that feels instant",
+    "subtitle": "Never miss those precious moments. Private, end-to-end encrypted chat that feels instant.",
     "cta": "Turn on notifications",
     "later": "Another time",
     "lockDate": "Monday, June 30"
   },
   "auth": {
+    "sheet": {
+      "phoneTitle": "Enter your number",
+      "phoneSubtitle": "We'll send a 6-digit code to verify it's you.",
+      "phonePlaceholder": "Phone number",
+      "sendCode": "Send code",
+      "anotherWay": "Verify another way",
+      "otpTitle": "Enter the code",
+      "otpSubtitle": "Sent to {{phone}}",
+      "verify": "Verify",
+      "changeNumber": "Change number",
+      "resend": "Resend code",
+      "resendIn": "Resend in {{time}}",
+      "expiresIn": "Code expires in {{time}}",
+      "expired": "Code expired — request a new one",
+      "phoneInvalid": "Enter a valid mobile number"
+    },
     "phone": {
       "title": "What's your number?",
       "subtitle": "We'll verify it with a quick missed call — no OTP to type.",
@@ -34,6 +55,11 @@
     "chats": "Chats",
     "calls": "Calls",
     "settings": "Settings"
+  },
+  "settings": {
+    "language": "Language",
+    "languageSubtitle": "Choose the app language",
+    "signOut": "Sign out"
   },
   "common": {
     "empty": "Nothing here yet",
