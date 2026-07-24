@@ -90,6 +90,11 @@ export async function verifyOtp(
   return res.data as Tokens;
 }
 
+/** Best-effort server-side sign-out — revoke the presented refresh token's family. */
+export async function logout(refreshToken: string): Promise<void> {
+  await api.post('/auth/logout', { refreshToken });
+}
+
 /** Fallback: email magic-link. */
 export async function magicBegin(
   email: string,

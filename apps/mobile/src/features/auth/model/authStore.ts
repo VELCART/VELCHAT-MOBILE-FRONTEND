@@ -9,9 +9,11 @@ import {
   setTokens,
   clearSession,
   clearDeviceKey,
+  getRefreshToken,
   kv,
   KVKeys,
 } from '../../../infra';
+import { logout } from '../api/authApi';
 import type { Tokens } from '../api/authApi';
 
 export type AuthState =
@@ -66,6 +68,9 @@ export const useAuthStore = create<AuthStore>(set => ({
   },
 
   signOut: () => {
+    // Best-effort server-side revoke (fire-and-forget) BEFORE we drop the local token.
+    const refresh = getRefreshToken();
+    if (refresh) void logout(refresh).catch(() => undefined);
     clearSession();
     clearDeviceKey(); // full logout — next sign-in re-provisions via OTP (no silent relogin)
     kv.delete(KVKeys.phone);
