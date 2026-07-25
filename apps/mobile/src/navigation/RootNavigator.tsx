@@ -13,6 +13,7 @@ import {
 } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../theme';
+import { AppStatusBar } from '../design-system';
 import {
   WelcomeScreen,
   NotificationsScreen,
@@ -36,7 +37,13 @@ const linking: LinkingOptions<RootStackParamList> = {
       EnterPhone: 'phone',
       ReverseOtp: 'verify',
       AppTabs: {
-        screens: { Chats: 'chats', Calls: 'calls', Settings: 'settings' },
+        screens: {
+          Chats: 'chats',
+          Updates: 'updates',
+          Communities: 'communities',
+          Calls: 'calls',
+          Settings: 'settings',
+        },
       },
     },
   },
@@ -61,20 +68,23 @@ export function RootNavigator(): React.JSX.Element {
   };
 
   return (
-    <NavigationContainer theme={navTheme} linking={linking}>
-      <Stack.Navigator
-        initialRouteName={authed ? 'AppTabs' : 'Welcome'}
-        screenOptions={{ headerShown: false, animation: 'none' }}
-      >
-        <Stack.Screen name="Welcome" component={WelcomeScreen} />
-        <Stack.Screen name="Notifications" component={NotificationsScreen} />
-        <Stack.Screen name="SignIn" component={SignInScreen} />
-        {/* Reverse-OTP (missed-call) screens stay registered but off the flow — gated
+    <>
+      <AppStatusBar />
+      <NavigationContainer theme={navTheme} linking={linking}>
+        <Stack.Navigator
+          initialRouteName={authed ? 'AppTabs' : 'Welcome'}
+          screenOptions={{ headerShown: false, animation: 'none' }}
+        >
+          <Stack.Screen name="Welcome" component={WelcomeScreen} />
+          <Stack.Screen name="Notifications" component={NotificationsScreen} />
+          <Stack.Screen name="SignIn" component={SignInScreen} />
+          {/* Reverse-OTP (missed-call) screens stay registered but off the flow — gated
             by featureFlags.reverseOtp (currently OFF). */}
-        <Stack.Screen name="EnterPhone" component={EnterPhoneScreen} />
-        <Stack.Screen name="ReverseOtp" component={ReverseOtpScreen} />
-        <Stack.Screen name="AppTabs" component={AppTabs} />
-      </Stack.Navigator>
-    </NavigationContainer>
+          <Stack.Screen name="EnterPhone" component={EnterPhoneScreen} />
+          <Stack.Screen name="ReverseOtp" component={ReverseOtpScreen} />
+          <Stack.Screen name="AppTabs" component={AppTabs} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </>
   );
 }

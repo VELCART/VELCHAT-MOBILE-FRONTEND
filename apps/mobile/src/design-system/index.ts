@@ -15,5 +15,15 @@ export {
   Divider,
 } from './primitives';
 export { FadeInUp } from './FadeInUp';
+export { AppStatusBar } from './AppStatusBar';
 export { BottomSheet } from './BottomSheet';
 export { OtpInput } from './OtpInput';
+export {
+  ChatIcon,
+  CallIcon,
+  SettingsIcon,
+  UpdatesIcon,
+  CommunitiesIcon,
+  UserIcon,
+} from './icons';
+export type { IconProps } from './icons';
