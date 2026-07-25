@@ -1,7 +1,8 @@
 /**
- * Settings (§F1). A premium, sectioned screen matching the onboarding theme: a
- * profile header, an appearance (theme) picker, the app-wide language picker, a few
- * account rows, and sign-out. Themed light/dark; scrolls on short devices.
+ * Settings (§F1). A product-grade, inset-grouped list matching the onboarding theme:
+ * a name/number header (no avatar), an appearance segmented control, the app-wide
+ * language picker, account rows with icon tiles, and sign-out. Themed light/dark;
+ * scrolls on short devices.
  */
 import React from 'react';
 import { ScrollView, View, Pressable } from 'react-native';
@@ -14,13 +15,12 @@ import {
   Text,
   Card,
   Divider,
-  PillButton,
-  GlobeIcon,
   ShieldIcon,
   BellIcon,
   InfoIcon,
   ChevronRightIcon,
   StorageIcon,
+  LogOutIcon,
   type IconProps,
 } from '../design-system';
 import { appEnv } from '../core';
@@ -36,9 +36,9 @@ function SectionLabel({ children }: { children: string }): React.JSX.Element {
       color="tertiary"
       style={{
         marginTop: t.spacing.xl,
-        marginBottom: t.spacing.xs,
-        marginLeft: t.spacing.xs,
-        letterSpacing: 0.6,
+        marginBottom: t.spacing.sm,
+        marginLeft: t.spacing.sm,
+        letterSpacing: 0.8,
       }}
     >
       {children.toUpperCase()}
@@ -46,20 +46,20 @@ function SectionLabel({ children }: { children: string }): React.JSX.Element {
   );
 }
 
+/** An account row: a subtle icon tile + label + chevron. */
 function SettingRow({
   icon: Icon,
   label,
-  value,
   onPress,
-  showChevron = true,
+  danger = false,
 }: {
   icon: React.FC<IconProps>;
   label: string;
-  value?: string;
   onPress?: () => void;
-  showChevron?: boolean;
+  danger?: boolean;
 }): React.JSX.Element {
   const t = useTheme();
+  const tint = danger ? t.colors.danger : t.colors.textSecondary;
   return (
     <Pressable
       accessibilityRole="button"
@@ -70,21 +70,33 @@ function SettingRow({
         flexDirection: 'row',
         alignItems: 'center',
         gap: t.spacing.md,
-        paddingHorizontal: t.spacing.lg,
-        paddingVertical: t.spacing.md,
+        paddingHorizontal: t.spacing.md,
+        paddingVertical: t.spacing.sm + 2,
         backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
       })}
     >
-      <Icon size={20} color={t.colors.textSecondary} strokeWidth={2} />
-      <Text variant="body" style={{ flex: 1 }}>
+      <View
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 10,
+          backgroundColor: danger ? `${t.colors.danger}18` : t.colors.bgSubtle,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <Icon size={18} color={tint} strokeWidth={2} />
+      </View>
+      <Text
+        variant="body"
+        style={{
+          flex: 1,
+          color: danger ? t.colors.danger : t.colors.textPrimary,
+        }}
+      >
         {label}
       </Text>
-      {value ? (
-        <Text variant="caption" color="secondary">
-          {value}
-        </Text>
-      ) : null}
-      {onPress && showChevron ? (
+      {onPress && !danger ? (
         <ChevronRightIcon
           size={18}
           color={t.colors.textTertiary}
@@ -113,7 +125,6 @@ export function SettingsScreen(): React.JSX.Element {
       ?.reset({ index: 0, routes: [{ name: 'Welcome' }] });
   };
 
-  const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
   const themeLabel: Record<ThemeMode, string> = {
     system: tr('settings.themeSystem'),
     light: tr('settings.themeLight'),
@@ -125,91 +136,92 @@ export function SettingsScreen(): React.JSX.Element {
       <ScrollView
         contentContainerStyle={{
           paddingHorizontal: t.spacing.xl,
-          paddingTop: t.spacing.lg,
+          paddingTop: t.spacing.md,
           paddingBottom: t.spacing.huge,
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text variant="display" style={{ fontSize: 28, lineHeight: 34 }}>
+        <Text variant="title" style={{ fontSize: 26 }}>
           {tr('tabs.settings')}
         </Text>
 
-        {/* Profile header */}
+        {/* Name / number header — no avatar. */}
         <Card
-          style={{
-            marginTop: t.spacing.lg,
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: t.spacing.md,
-          }}
+          style={{ marginTop: t.spacing.lg, paddingVertical: t.spacing.md }}
         >
-          <View
-            style={{
-              width: 54,
-              height: 54,
-              borderRadius: 27,
-              backgroundColor: t.pastels.lavender,
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => undefined}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
               alignItems: 'center',
-              justifyContent: 'center',
-            }}
+              opacity: pressed ? 0.6 : 1,
+            })}
           >
-            <Text
-              variant="title"
-              style={{ color: t.colors.brandFrom, fontSize: 22 }}
-            >
-              {initial || '🙂'}
-            </Text>
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text variant="label" numberOfLines={1}>
-              {displayName ?? tr('settings.addName')}
-            </Text>
-            <Text variant="caption" color="secondary" numberOfLines={1}>
-              {phone ?? email ?? ''}
-            </Text>
-          </View>
+            <View style={{ flex: 1 }}>
+              <Text variant="title" numberOfLines={1} style={{ fontSize: 20 }}>
+                {displayName ?? tr('settings.addName')}
+              </Text>
+              <Text
+                variant="body"
+                color="secondary"
+                numberOfLines={1}
+                style={{ marginTop: 2 }}
+              >
+                {phone ?? email ?? ''}
+              </Text>
+            </View>
+            <ChevronRightIcon
+              size={20}
+              color={t.colors.textTertiary}
+              strokeWidth={2}
+            />
+          </Pressable>
         </Card>
 
-        {/* Appearance */}
+        {/* Appearance — iOS-style segmented control. */}
         <SectionLabel>{tr('settings.appearance')}</SectionLabel>
-        <Card style={{ padding: t.spacing.xs }}>
-          <View style={{ flexDirection: 'row', gap: t.spacing.xs }}>
-            {THEME_MODES.map(m => {
-              const active = m === mode;
-              return (
-                <Pressable
-                  key={m}
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  onPress={() => setMode(m)}
+        <View
+          style={{
+            flexDirection: 'row',
+            backgroundColor: t.colors.bgSubtle,
+            borderRadius: t.radius.md,
+            padding: 4,
+          }}
+        >
+          {THEME_MODES.map(m => {
+            const active = m === mode;
+            return (
+              <Pressable
+                key={m}
+                accessibilityRole="button"
+                accessibilityState={{ selected: active }}
+                onPress={() => setMode(m)}
+                style={{
+                  flex: 1,
+                  paddingVertical: t.spacing.sm,
+                  borderRadius: t.radius.sm,
+                  alignItems: 'center',
+                  backgroundColor: active ? t.colors.surface : 'transparent',
+                  ...(active ? t.elevation.e1 : {}),
+                }}
+              >
+                <Text
+                  variant="caption"
                   style={{
-                    flex: 1,
-                    paddingVertical: t.spacing.sm,
-                    borderRadius: t.radius.sm,
-                    alignItems: 'center',
-                    backgroundColor: active
-                      ? `${t.colors.brandFrom}22`
-                      : 'transparent',
+                    fontSize: 13,
+                    color: active ? t.colors.brandFrom : t.colors.textSecondary,
+                    fontFamily: active
+                      ? t.typography.label.fontFamily
+                      : t.typography.caption.fontFamily,
                   }}
                 >
-                  <Text
-                    variant="caption"
-                    style={{
-                      color: active
-                        ? t.colors.brandFrom
-                        : t.colors.textSecondary,
-                      fontFamily: active
-                        ? t.typography.label.fontFamily
-                        : t.typography.caption.fontFamily,
-                    }}
-                  >
-                    {themeLabel[m]}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        </Card>
+                  {themeLabel[m]}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </View>
 
         {/* Language */}
         <SectionLabel>{tr('settings.language')}</SectionLabel>
@@ -226,23 +238,13 @@ export function SettingsScreen(): React.JSX.Element {
                   style={({ pressed }) => ({
                     flexDirection: 'row',
                     alignItems: 'center',
-                    gap: t.spacing.md,
-                    paddingHorizontal: t.spacing.lg,
+                    paddingHorizontal: t.spacing.md,
                     paddingVertical: t.spacing.md,
                     backgroundColor: pressed
                       ? t.colors.bgSubtle
                       : 'transparent',
                   })}
                 >
-                  {i === 0 ? (
-                    <GlobeIcon
-                      size={20}
-                      color={t.colors.textSecondary}
-                      strokeWidth={2}
-                    />
-                  ) : (
-                    <View style={{ width: 20 }} />
-                  )}
                   <Text
                     variant="body"
                     style={{
@@ -292,22 +294,23 @@ export function SettingsScreen(): React.JSX.Element {
         </Card>
 
         {/* Sign out */}
-        <View style={{ marginTop: t.spacing.xxl }}>
-          <PillButton
+        <View style={{ marginTop: t.spacing.xl }} />
+        <Card style={{ padding: 0, overflow: 'hidden' }}>
+          <SettingRow
+            icon={LogOutIcon}
             label={tr('settings.signOut')}
-            variant="ghost"
-            leadingIcon="⏻"
             onPress={onSignOut}
+            danger
           />
-        </View>
+        </Card>
 
         <Text
           variant="caption"
           color="tertiary"
           align="center"
-          style={{ marginTop: t.spacing.lg }}
+          style={{ marginTop: t.spacing.xl }}
         >
-          VelChat · {appEnv.name} · v{'0.1.0'}
+          VelChat · {appEnv.name} · v0.1.0
         </Text>
       </ScrollView>
     </Screen>
