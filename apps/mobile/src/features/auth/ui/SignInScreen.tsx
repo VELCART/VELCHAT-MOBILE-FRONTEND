@@ -112,7 +112,7 @@ export function SignInScreen(): React.JSX.Element {
 
         <View style={{ flex: 1 }} />
 
-        <FadeInUp delay={280} style={{ marginBottom: t.spacing.xxl }}>
+        <FadeInUp delay={280} style={{ marginBottom: t.spacing.giant }}>
           <PillButton
             label={tr('signin.cta')}
             onPress={() => setSheetOpen(true)}

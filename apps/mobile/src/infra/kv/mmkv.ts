@@ -30,6 +30,8 @@ export const KVKeys = {
   // device identity keypair (§L14; harden to hardware-backed StrongBox/Enclave later)
   devicePrivKey: 'auth.devicePrivKey',
   phone: 'auth.phone',
+  // profile onboarding — set once the directory profile has a display name
+  profileComplete: 'user.profileComplete',
 } as const;
 
 export const kv = {

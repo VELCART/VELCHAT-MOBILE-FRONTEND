@@ -38,8 +38,19 @@
   },
   "tabs": {
     "chats": "المحادثات",
+    "updates": "التحديثات",
+    "communities": "المجتمعات",
     "calls": "المكالمات",
     "settings": "الإعدادات"
+  },
+  "profile": {
+    "title": "أكمل ملفك الشخصي",
+    "subtitle": "أضِف اسمك ليعرفك أصدقاؤك. يمكنك تغييره في أي وقت.",
+    "nameLabel": "اسمك",
+    "namePlaceholder": "مثال: أحمد",
+    "aboutLabel": "نبذة (اختياري)",
+    "aboutPlaceholder": "مرحبًا! أنا أستخدم VelChat.",
+    "save": "حفظ ومتابعة"
   },
   "common": {
     "empty": "لا يوجد شيء هنا بعد",

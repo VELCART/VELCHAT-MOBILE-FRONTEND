@@ -53,6 +53,8 @@
   },
   "tabs": {
     "chats": "चैट",
+    "updates": "अपडेट",
+    "communities": "कम्युनिटी",
     "calls": "कॉल",
     "settings": "सेटिंग्स"
   },
@@ -60,6 +62,15 @@
     "language": "भाषा",
     "languageSubtitle": "ऐप की भाषा चुनें",
     "signOut": "साइन आउट"
+  },
+  "profile": {
+    "title": "अपनी प्रोफ़ाइल सेट करें",
+    "subtitle": "अपना नाम जोड़ें ताकि दोस्त आपको पहचानें। इसे कभी भी बदल सकते हैं।",
+    "nameLabel": "आपका नाम",
+    "namePlaceholder": "जैसे आयुष",
+    "aboutLabel": "अबाउट (वैकल्पिक)",
+    "aboutPlaceholder": "नमस्ते! मैं VelChat इस्तेमाल कर रहा हूँ।",
+    "save": "सेव करें"
   },
   "common": {
     "empty": "यहाँ अभी कुछ नहीं है",

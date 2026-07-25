@@ -23,6 +23,10 @@ const name: AppEnvName =
 
 export const appEnv: AppEnv = {
   name,
-  apiBaseUrl: Config.API_BASE_URL ?? 'http://10.191.109.135:8080',
-  wsUrl: Config.WS_URL ?? 'ws://10.0.2.2:8080/ws',
+  // Fallbacks are only hit in Jest (native module absent) or a misbuilt binary.
+  // Real values come from the flavor's `.env.<flavor>` at build time. `localhost`
+  // works on a USB device / emulator because the `android` script runs
+  // `adb reverse tcp:8080 tcp:8080` (see package.json).
+  apiBaseUrl: Config.API_BASE_URL ?? 'http://localhost:8080',
+  wsUrl: Config.WS_URL ?? 'ws://localhost:8080/ws',
 };

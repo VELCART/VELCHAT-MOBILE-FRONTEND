@@ -6,7 +6,7 @@
     "skip": "Skip"
   },
   "signin": {
-    "title": "Let's get\nstarted.",
+    "title": "Let's get started.",
     "subtitle": "Sign in with your number — your chats stay private and end-to-end encrypted.",
     "cta": "Continue"
   },
@@ -53,6 +53,8 @@
   },
   "tabs": {
     "chats": "Chats",
+    "updates": "Updates",
+    "communities": "Communities",
     "calls": "Calls",
     "settings": "Settings"
   },
@@ -60,6 +62,15 @@
     "language": "Language",
     "languageSubtitle": "Choose the app language",
     "signOut": "Sign out"
+  },
+  "profile": {
+    "title": "Set up your profile",
+    "subtitle": "Add your name so friends know it's you. You can change this anytime.",
+    "nameLabel": "Your name",
+    "namePlaceholder": "e.g. Aayush",
+    "aboutLabel": "About (optional)",
+    "aboutPlaceholder": "Hey there! I'm using VelChat.",
+    "save": "Save & continue"
   },
   "common": {
     "empty": "Nothing here yet",

@@ -12,6 +12,8 @@ export type RootStackParamList = {
 
 export type AppTabsParamList = {
   Chats: undefined;
+  Updates: undefined;
+  Communities: undefined;
   Calls: undefined;
   Settings: undefined;
 };
