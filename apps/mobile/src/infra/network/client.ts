@@ -34,6 +34,52 @@ const MAX_RETRIES = 2;
 interface RetryConfig extends InternalAxiosRequestConfig {
   __retryCount?: number;
   __didAuthRetry?: boolean;
+  __t0?: number; // request start (ms) for the dev network trace
+}
+
+// ── dev network trace ────────────────────────────────────────────────────────
+// A readable one-line API log straight to the Metro terminal (like a backend HTTP
+// log) so you can watch requests without opening a debugger. DEV-only — compiled
+// out of release builds; the structured pino logger still runs for real telemetry.
+const ANSI = {
+  reset: '\x1b[0m',
+  dim: '\x1b[2m',
+  green: '\x1b[32m',
+  yellow: '\x1b[33m',
+  red: '\x1b[31m',
+  cyan: '\x1b[36m',
+};
+
+function statusColor(status?: number): string {
+  if (!status) return ANSI.red;
+  if (status < 300) return ANSI.green;
+  if (status < 400) return ANSI.cyan;
+  if (status < 500) return ANSI.yellow;
+  return ANSI.red;
+}
+
+function traceReq(method?: string, url?: string): void {
+  if (!__DEV__) return;
+  // eslint-disable-next-line no-console -- dev-only readable API trace in Metro
+  console.log(
+    `${ANSI.dim}→${ANSI.reset} ${ANSI.cyan}${(method ?? 'GET').toUpperCase()}${ANSI.reset} ${url ?? ''}`,
+  );
+}
+
+function traceRes(
+  status: number | undefined,
+  method: string | undefined,
+  url: string | undefined,
+  startedAt: number | undefined,
+  note?: string,
+): void {
+  if (!__DEV__) return;
+  const ms = startedAt ? Date.now() - startedAt : undefined;
+  const c = statusColor(status);
+  // eslint-disable-next-line no-console -- dev-only readable API trace in Metro
+  console.log(
+    `${c}←${ANSI.reset} ${c}${status ?? 'ERR'}${ANSI.reset} ${(method ?? 'GET').toUpperCase()} ${url ?? ''} ${ANSI.dim}${ms ?? '?'}ms${note ? ` · ${note}` : ''}${ANSI.reset}`,
+  );
 }
 
 function traceId(): string {
@@ -103,7 +149,8 @@ api.interceptors.request.use(config => {
   if (tenant) config.headers.set('x-tenant-id', tenant);
   config.headers.set('x-request-id', traceId());
   config.headers.set('x-client-version', CLIENT_VERSION);
-  log.debug('http →', { method: config.method, url: config.url });
+  (config as RetryConfig).__t0 = Date.now();
+  traceReq(config.method, config.url);
   return config;
 });
 
@@ -118,12 +165,19 @@ api.interceptors.response.use(
     ) {
       res.data = (body as { data: unknown }).data;
     }
+    traceRes(
+      res.status,
+      res.config.method,
+      res.config.url,
+      (res.config as RetryConfig).__t0,
+    );
     return res;
   },
   async (error: AxiosError) => {
     const config = error.config as RetryConfig | undefined;
     const status = error.response?.status;
     log.warn('http ✗', { url: config?.url, status, code: error.code });
+    traceRes(status, config?.method, config?.url, config?.__t0, error.code);
 
     // 401 → refresh once, retry with the new token
     if (
