@@ -61,7 +61,17 @@
   "settings": {
     "language": "Language",
     "languageSubtitle": "Choose the app language",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "appearance": "Appearance",
+    "themeSystem": "System",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "account": "Account",
+    "privacy": "Privacy & Security",
+    "notifications": "Notifications",
+    "storage": "Storage & Data",
+    "help": "Help & About",
+    "addName": "Add your name"
   },
   "profile": {
     "nameTitle": "What's your name?",

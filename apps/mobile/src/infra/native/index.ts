@@ -14,3 +14,9 @@ export {
 } from './notifications';
 export type { NotificationPermission } from './notifications';
 export { hapticTick, hapticSelection } from './haptics';
+export {
+  requestCameraPermission,
+  requestMicrophonePermission,
+  requestContactsPermission,
+  requestBluetoothPermission,
+} from './permissions';

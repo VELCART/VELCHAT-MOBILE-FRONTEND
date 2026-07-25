@@ -19,10 +19,12 @@ import { Splash } from './Splash';
 import { bootstrap } from './bootstrap';
 
 function readInitialThemeMode(): ThemeMode {
-  // Front/onboarding is locked to light for now (no theme toggle yet). A Settings
-  // theme picker in a later phase will restore the persisted/system choice:
-  //   const saved = kv.getString(KVKeys.themeMode); return saved ?? 'system';
-  return 'light';
+  // Honour the Settings theme picker's saved choice; default to light (no surprise
+  // system flip) until the user opts into dark/system.
+  const saved = kv.getString(KVKeys.themeMode);
+  return saved === 'light' || saved === 'dark' || saved === 'system'
+    ? saved
+    : 'light';
 }
 
 /** The app-wide language: the user's persisted choice, else English. */

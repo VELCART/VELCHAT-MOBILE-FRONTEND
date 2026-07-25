@@ -61,7 +61,17 @@
   "settings": {
     "language": "भाषा",
     "languageSubtitle": "ऐप की भाषा चुनें",
-    "signOut": "साइन आउट"
+    "signOut": "साइन आउट",
+    "appearance": "दिखावट",
+    "themeSystem": "सिस्टम",
+    "themeLight": "लाइट",
+    "themeDark": "डार्क",
+    "account": "अकाउंट",
+    "privacy": "प्राइवेसी और सुरक्षा",
+    "notifications": "नोटिफ़िकेशन",
+    "storage": "स्टोरेज और डेटा",
+    "help": "मदद और जानकारी",
+    "addName": "अपना नाम जोड़ें"
   },
   "profile": {
     "nameTitle": "आपका नाम क्या है?",

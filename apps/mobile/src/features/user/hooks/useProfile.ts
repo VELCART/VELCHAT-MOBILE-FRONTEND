@@ -64,6 +64,19 @@ export function useProfileGate(): {
   return { needsSetup, markComplete };
 }
 
+/** Locally-mirrored profile summary for instant Settings render (no network). */
+export function useProfileSummary(): {
+  displayName: string | null;
+  email: string | null;
+  phone: string | null;
+} {
+  return {
+    displayName: kv.getString(KVKeys.displayName) ?? null,
+    email: kv.getString(KVKeys.email) ?? null,
+    phone: kv.getString(KVKeys.phone) ?? null,
+  };
+}
+
 export function useSaveProfile(): {
   save: (patch: Partial<Profile>, email?: string) => Promise<boolean>;
   saving: boolean;
@@ -83,6 +96,8 @@ export function useSaveProfile(): {
       setError(null);
       try {
         await updateProfile(accountId, patch);
+        // Mirror name locally so Settings can render instantly without a fetch.
+        if (patch.displayName) kv.set(KVKeys.displayName, patch.displayName);
         // Email isn't a directory field — it's a verified identifier. Keep it locally
         // for now; server-side attach/verify (magic-link for an existing account) is a
         // backend follow-up.

@@ -147,3 +147,134 @@ export function SettingsIcon({
     </Svg>
   );
 }
+
+/** Crescent — appearance / dark mode. */
+export function MoonIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"
+        {...stroke(color, strokeWidth)}
+      />
+    </Svg>
+  );
+}
+
+/** Globe — language. */
+export function GlobeIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={12} cy={12} r={10} {...stroke(color, strokeWidth)} />
+      <Path d="M2 12h20" {...stroke(color, strokeWidth)} />
+      <Path
+        d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"
+        {...stroke(color, strokeWidth)}
+      />
+    </Svg>
+  );
+}
+
+/** Shield — privacy & security. */
+export function ShieldIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
+        {...stroke(color, strokeWidth)}
+      />
+    </Svg>
+  );
+}
+
+/** Bell — notifications. */
+export function BellIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9z"
+        {...stroke(color, strokeWidth)}
+      />
+      <Path d="M13.73 21a2 2 0 0 1-3.46 0" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Info — help & about. */
+export function InfoIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={12} cy={12} r={10} {...stroke(color, strokeWidth)} />
+      <Path d="M12 16v-4" {...stroke(color, strokeWidth)} />
+      <Path d="M12 8h.01" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Log out. */
+export function LogOutIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"
+        {...stroke(color, strokeWidth)}
+      />
+      <Path d="M16 17l5-5-5-5" {...stroke(color, strokeWidth)} />
+      <Path d="M21 12H9" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Hard drive — storage management. */
+export function StorageIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M22 12H2" {...stroke(color, strokeWidth)} />
+      <Path
+        d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"
+        {...stroke(color, strokeWidth)}
+      />
+      <Path d="M6 16h.01M10 16h.01" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Chevron right — row affordance. */
+export function ChevronRightIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M9 18l6-6-6-6" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
