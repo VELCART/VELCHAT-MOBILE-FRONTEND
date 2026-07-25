@@ -67,7 +67,10 @@ function TabButton({
   }, [active, reduceMotion, anim]);
 
   const Icon = ICONS[routeName] ?? ChatIcon;
-  const color = active ? t.colors.brandFrom : t.colors.textTertiary;
+  // Distinctive active state: the icon sits in a SOLID brand pill (white glyph) —
+  // a premium chip, not a WhatsApp-style tinted highlight. Label picks up the brand.
+  const iconColor = active ? '#FFFFFF' : t.colors.textTertiary;
+  const labelColor = active ? t.colors.brandFrom : t.colors.textTertiary;
 
   return (
     <Pressable
@@ -98,7 +101,7 @@ function TabButton({
             width: 52,
             height: 32,
             borderRadius: 16,
-            backgroundColor: `${t.colors.brandFrom}26`,
+            backgroundColor: t.colors.brandFrom,
             opacity: anim,
             transform: [
               {
@@ -108,6 +111,7 @@ function TabButton({
                 }),
               },
             ],
+            ...t.elevation.e1,
           }}
         />
         <Animated.View
@@ -122,7 +126,7 @@ function TabButton({
             ],
           }}
         >
-          <Icon size={24} color={color} strokeWidth={active ? 2.4 : 1.9} />
+          <Icon size={23} color={iconColor} strokeWidth={active ? 2.2 : 1.9} />
         </Animated.View>
       </View>
       <Text
@@ -132,7 +136,7 @@ function TabButton({
           fontSize: 10.5,
           lineHeight: 13,
           marginTop: 3,
-          color,
+          color: labelColor,
           fontFamily: active
             ? t.typography.label.fontFamily
             : t.typography.caption.fontFamily,

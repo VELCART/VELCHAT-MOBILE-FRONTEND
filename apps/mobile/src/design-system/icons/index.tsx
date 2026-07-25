@@ -55,7 +55,7 @@ export function CallIcon({
   );
 }
 
-/** Concentric status ring — Updates. */
+/** Segmented story-ring + center dot — Updates (status). */
 export function UpdatesIcon({
   size = 24,
   color = '#000',
@@ -63,8 +63,14 @@ export function UpdatesIcon({
 }: IconProps): React.JSX.Element {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24">
-      <Circle cx={12} cy={12} r={9} {...stroke(color, strokeWidth)} />
-      <Circle cx={12} cy={12} r={3.25} fill={color} />
+      <Circle
+        cx={12}
+        cy={12}
+        r={9}
+        {...stroke(color, strokeWidth)}
+        strokeDasharray="3 3.6"
+      />
+      <Circle cx={12} cy={12} r={3.4} fill={color} />
     </Svg>
   );
 }
@@ -84,6 +90,23 @@ export function CommunitiesIcon({
       <Circle cx={9} cy={7} r={4} {...stroke(color, strokeWidth)} />
       <Path d="M23 21v-2a4 4 0 0 0-3-3.87" {...stroke(color, strokeWidth)} />
       <Path d="M16 3.13a4 4 0 0 1 0 7.75" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Camera — add/change a photo. */
+export function CameraIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h3.5l1.7-2.5h7.6L17.5 6H21a2 2 0 0 1 2 2z"
+        {...stroke(color, strokeWidth)}
+      />
+      <Circle cx={12} cy={13} r={4} {...stroke(color, strokeWidth)} />
     </Svg>
   );
 }

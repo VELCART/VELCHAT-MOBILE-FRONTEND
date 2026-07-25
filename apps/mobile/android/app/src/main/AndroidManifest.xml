@@ -4,6 +4,8 @@
     <!-- Runtime notification permission (Android 13+ / API 33). Requested on the
          Notifications onboarding step via PermissionsAndroid. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Light haptic feedback on step/tab transitions (Vibration API). -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
       android:name=".MainApplication"

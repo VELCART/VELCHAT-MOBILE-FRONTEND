@@ -213,7 +213,9 @@ export function BottomSheet({
             bottom: 0,
             marginBottom: kbHeight,
             transform: [{ translateY }],
-            backgroundColor: t.colors.surface,
+            // bgBase (not surface) so the sheet reads as the same canvas as the app
+            // pages behind it — consistent in light AND dark.
+            backgroundColor: t.colors.bgBase,
             borderTopLeftRadius: t.radius.xl,
             borderTopRightRadius: t.radius.xl,
             paddingBottom: insets.bottom + t.spacing.md,

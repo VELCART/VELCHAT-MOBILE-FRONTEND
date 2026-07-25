@@ -25,5 +25,6 @@ export {
   UpdatesIcon,
   CommunitiesIcon,
   UserIcon,
+  CameraIcon,
 } from './icons';
 export type { IconProps } from './icons';
