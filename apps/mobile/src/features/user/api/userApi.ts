@@ -27,3 +27,35 @@ export async function updateProfile(
   const res = await api.put(`/users/${userId}/profile`, patch);
   return res.data as Profile;
 }
+
+// ── Media (avatar) upload (§B11): init → single multipart PUT ──
+export interface InitUploadResult {
+  mediaId: string;
+  uploadPath: string;
+}
+
+/** Reserve a media id + upload path for the owner's new blob. */
+export async function initUpload(
+  ownerId: string,
+  mime: string,
+): Promise<InitUploadResult> {
+  const res = await api.post('/media/uploads', { ownerId, mime });
+  return res.data as InitUploadResult;
+}
+
+/** PUT the picked image bytes (multipart) to the reserved path. */
+export async function uploadMediaFile(
+  uploadPath: string,
+  file: { uri: string; name: string; type: string },
+): Promise<void> {
+  const form = new FormData();
+  // RN FormData accepts a { uri, name, type } part — cast past the DOM Blob type.
+  form.append('file', {
+    uri: file.uri,
+    name: file.name,
+    type: file.type,
+  } as unknown as Blob);
+  await api.put(uploadPath, form, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+}

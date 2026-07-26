@@ -44,13 +44,34 @@
     "settings": "الإعدادات"
   },
   "profile": {
-    "title": "أكمل ملفك الشخصي",
-    "subtitle": "أضِف اسمك ليعرفك أصدقاؤك. يمكنك تغييره في أي وقت.",
-    "nameLabel": "اسمك",
-    "namePlaceholder": "مثال: أحمد",
-    "aboutLabel": "نبذة (اختياري)",
+    "nameTitle": "ما اسمك؟",
+    "nameSubtitle": "هكذا ستظهر للآخرين.",
+    "namePlaceholder": "اسمك",
+    "emailTitle": "ما بريدك الإلكتروني؟",
+    "emailSubtitle": "لاستعادة الحساب والتحديثات المهمة.",
+    "emailPlaceholder": "you@example.com",
+    "emailInvalid": "أدخل بريدًا إلكترونيًا صحيحًا.",
+    "aboutTitle": "أضِف نبذة",
+    "aboutSubtitle": "اختياري — أخبر الناس قليلاً عنك.",
     "aboutPlaceholder": "مرحبًا! أنا أستخدم VelChat.",
-    "save": "حفظ ومتابعة"
+    "next": "التالي",
+    "done": "تم",
+    "back": "رجوع",
+    "addPhoto": "أضف صورة"
+  },
+  "settings": {
+    "language": "اللغة",
+    "signOut": "تسجيل الخروج",
+    "appearance": "المظهر",
+    "themeSystem": "النظام",
+    "themeLight": "فاتح",
+    "themeDark": "داكن",
+    "account": "الحساب",
+    "privacy": "الخصوصية والأمان",
+    "notifications": "الإشعارات",
+    "storage": "التخزين والبيانات",
+    "help": "المساعدة وحول",
+    "addName": "أضف اسمك"
   },
   "common": {
     "empty": "لا يوجد شيء هنا بعد",

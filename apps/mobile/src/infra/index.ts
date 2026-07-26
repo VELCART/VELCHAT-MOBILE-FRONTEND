@@ -35,6 +35,12 @@ export {
   subscribeNetwork,
   requestNotificationPermission,
   hasNotificationPermission,
+  hapticTick,
+  hapticSelection,
+  requestCameraPermission,
+  requestMicrophonePermission,
+  requestContactsPermission,
+  requestBluetoothPermission,
 } from './native';
 export type {
   BatteryStatus,

@@ -25,5 +25,14 @@ export {
   UpdatesIcon,
   CommunitiesIcon,
   UserIcon,
+  CameraIcon,
+  MoonIcon,
+  GlobeIcon,
+  ShieldIcon,
+  BellIcon,
+  InfoIcon,
+  LogOutIcon,
+  ChevronRightIcon,
+  StorageIcon,
 } from './icons';
 export type { IconProps } from './icons';

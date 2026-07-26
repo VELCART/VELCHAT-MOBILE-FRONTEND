@@ -32,6 +32,10 @@ export const KVKeys = {
   phone: 'auth.phone',
   // profile onboarding — set once the directory profile has a display name
   profileComplete: 'user.profileComplete',
+  // email captured during profile setup (server-side verify is a backend follow-up)
+  email: 'user.email',
+  // display name mirrored locally so Settings renders instantly (no network)
+  displayName: 'user.displayName',
 } as const;
 
 export const kv = {

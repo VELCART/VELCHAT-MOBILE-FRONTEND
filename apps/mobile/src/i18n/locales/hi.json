@@ -61,16 +61,33 @@
   "settings": {
     "language": "भाषा",
     "languageSubtitle": "ऐप की भाषा चुनें",
-    "signOut": "साइन आउट"
+    "signOut": "साइन आउट",
+    "appearance": "दिखावट",
+    "themeSystem": "सिस्टम",
+    "themeLight": "लाइट",
+    "themeDark": "डार्क",
+    "account": "अकाउंट",
+    "privacy": "प्राइवेसी और सुरक्षा",
+    "notifications": "नोटिफ़िकेशन",
+    "storage": "स्टोरेज और डेटा",
+    "help": "मदद और जानकारी",
+    "addName": "अपना नाम जोड़ें"
   },
   "profile": {
-    "title": "अपनी प्रोफ़ाइल सेट करें",
-    "subtitle": "अपना नाम जोड़ें ताकि दोस्त आपको पहचानें। इसे कभी भी बदल सकते हैं।",
-    "nameLabel": "आपका नाम",
-    "namePlaceholder": "जैसे आयुष",
-    "aboutLabel": "अबाउट (वैकल्पिक)",
+    "nameTitle": "आपका नाम क्या है?",
+    "nameSubtitle": "दूसरों को आप ऐसे दिखेंगे।",
+    "namePlaceholder": "आपका नाम",
+    "emailTitle": "आपका ईमेल क्या है?",
+    "emailSubtitle": "अकाउंट रिकवरी और ज़रूरी अपडेट के लिए।",
+    "emailPlaceholder": "you@example.com",
+    "emailInvalid": "सही ईमेल पता डालें।",
+    "aboutTitle": "बायो जोड़ें",
+    "aboutSubtitle": "वैकल्पिक — अपने बारे में थोड़ा बताएं।",
     "aboutPlaceholder": "नमस्ते! मैं VelChat इस्तेमाल कर रहा हूँ।",
-    "save": "सेव करें"
+    "next": "आगे",
+    "done": "हो गया",
+    "back": "पीछे",
+    "addPhoto": "फ़ोटो जोड़ें"
   },
   "common": {
     "empty": "यहाँ अभी कुछ नहीं है",

@@ -61,16 +61,33 @@
   "settings": {
     "language": "Language",
     "languageSubtitle": "Choose the app language",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "appearance": "Appearance",
+    "themeSystem": "System",
+    "themeLight": "Light",
+    "themeDark": "Dark",
+    "account": "Account",
+    "privacy": "Privacy & Security",
+    "notifications": "Notifications",
+    "storage": "Storage & Data",
+    "help": "Help & About",
+    "addName": "Add your name"
   },
   "profile": {
-    "title": "Set up your profile",
-    "subtitle": "Add your name so friends know it's you. You can change this anytime.",
-    "nameLabel": "Your name",
-    "namePlaceholder": "e.g. Aayush",
-    "aboutLabel": "About (optional)",
+    "nameTitle": "What's your name?",
+    "nameSubtitle": "This is how you'll appear to others.",
+    "namePlaceholder": "Your name",
+    "emailTitle": "What's your email?",
+    "emailSubtitle": "For account recovery and important updates.",
+    "emailPlaceholder": "you@example.com",
+    "emailInvalid": "Enter a valid email address.",
+    "aboutTitle": "Add a bio",
+    "aboutSubtitle": "Optional — tell people a little about you.",
     "aboutPlaceholder": "Hey there! I'm using VelChat.",
-    "save": "Save & continue"
+    "next": "Next",
+    "done": "Done",
+    "back": "Back",
+    "addPhoto": "Add photo"
   },
   "common": {
     "empty": "Nothing here yet",
