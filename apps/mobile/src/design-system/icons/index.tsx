@@ -248,6 +248,50 @@ export function LogOutIcon({
   );
 }
 
+/** Magnifier — search. */
+export function SearchIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={11} cy={11} r={7} {...stroke(color, strokeWidth)} />
+      <Path d="M21 21l-4.35-4.35" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Paper plane — flight / offline toggle. */
+export function PlaneIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"
+        {...stroke(color, strokeWidth)}
+      />
+    </Svg>
+  );
+}
+
+/** Three vertical dots — overflow menu. */
+export function MoreIcon({
+  size = 24,
+  color = '#000',
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={12} cy={5} r={1.6} fill={color} />
+      <Circle cx={12} cy={12} r={1.6} fill={color} />
+      <Circle cx={12} cy={19} r={1.6} fill={color} />
+    </Svg>
+  );
+}
+
 /** Hard drive — storage management. */
 export function StorageIcon({
   size = 24,

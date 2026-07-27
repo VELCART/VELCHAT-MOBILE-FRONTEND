@@ -34,5 +34,8 @@ export {
   LogOutIcon,
   ChevronRightIcon,
   StorageIcon,
+  SearchIcon,
+  PlaneIcon,
+  MoreIcon,
 } from './icons';
 export type { IconProps } from './icons';

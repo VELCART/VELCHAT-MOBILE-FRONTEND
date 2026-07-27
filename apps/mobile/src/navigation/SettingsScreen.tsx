@@ -116,13 +116,13 @@ export function SettingsScreen(): React.JSX.Element {
   const { language, setLanguage, supported, names } = useLanguage();
   const { displayName, email, phone } = useProfileSummary();
   const signOut = useAuthStore(s => s.signOut);
-  const navigation = useNavigation();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
   const onSignOut = (): void => {
     signOut();
-    navigation
-      .getParent<NativeStackNavigationProp<RootStackParamList>>()
-      ?.reset({ index: 0, routes: [{ name: 'Welcome' }] });
+    // Settings is a root-stack screen now, so reset the root directly to onboarding.
+    navigation.reset({ index: 0, routes: [{ name: 'Welcome' }] });
   };
 
   const themeLabel: Record<ThemeMode, string> = {
@@ -141,9 +141,35 @@ export function SettingsScreen(): React.JSX.Element {
         }}
         showsVerticalScrollIndicator={false}
       >
-        <Text variant="title" style={{ fontSize: 26 }}>
-          {tr('tabs.settings')}
-        </Text>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: t.spacing.xs,
+          }}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            onPress={() => navigation.goBack()}
+            hitSlop={10}
+            style={({ pressed }) => ({
+              marginLeft: -6,
+              opacity: pressed ? 0.6 : 1,
+            })}
+          >
+            <View style={{ transform: [{ rotate: '180deg' }] }}>
+              <ChevronRightIcon
+                size={26}
+                color={t.colors.textPrimary}
+                strokeWidth={2.4}
+              />
+            </View>
+          </Pressable>
+          <Text variant="title" style={{ fontSize: 26 }}>
+            {tr('tabs.settings')}
+          </Text>
+        </View>
 
         {/* Name / number header — no avatar. */}
         <Card

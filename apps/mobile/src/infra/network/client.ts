@@ -13,7 +13,7 @@ import axios, {
   type AxiosResponse,
   type InternalAxiosRequestConfig,
 } from 'axios';
-import { appEnv, log } from '../../core';
+import { appEnv, log, isFlightMode } from '../../core';
 import { AppError, normalizeError } from './errors';
 import {
   getAccessToken,
@@ -62,7 +62,9 @@ function traceReq(method?: string, url?: string): void {
   if (!__DEV__) return;
   // eslint-disable-next-line no-console -- dev-only readable API trace in Metro
   console.log(
-    `${ANSI.dim}→${ANSI.reset} ${ANSI.cyan}${(method ?? 'GET').toUpperCase()}${ANSI.reset} ${url ?? ''}`,
+    `${ANSI.dim}→${ANSI.reset} ${ANSI.cyan}${(method ?? 'GET').toUpperCase()}${
+      ANSI.reset
+    } ${url ?? ''}`,
   );
 }
 
@@ -78,12 +80,18 @@ function traceRes(
   const c = statusColor(status);
   // eslint-disable-next-line no-console -- dev-only readable API trace in Metro
   console.log(
-    `${c}←${ANSI.reset} ${c}${status ?? 'ERR'}${ANSI.reset} ${(method ?? 'GET').toUpperCase()} ${url ?? ''} ${ANSI.dim}${ms ?? '?'}ms${note ? ` · ${note}` : ''}${ANSI.reset}`,
+    `${c}←${ANSI.reset} ${c}${status ?? 'ERR'}${ANSI.reset} ${(
+      method ?? 'GET'
+    ).toUpperCase()} ${url ?? ''} ${ANSI.dim}${ms ?? '?'}ms${
+      note ? ` · ${note}` : ''
+    }${ANSI.reset}`,
   );
 }
 
 function traceId(): string {
-  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 10)}`;
 }
 
 function backoffMs(attempt: number): number {
@@ -143,6 +151,16 @@ export const api: AxiosInstance = axios.create({
 });
 
 api.interceptors.request.use(config => {
+  // Flight mode: don't touch the network at all — fail fast with a clean offline error.
+  if (isFlightMode()) {
+    return Promise.reject(
+      new AppError(
+        'network',
+        "You're offline (flight mode). Turn it off to reconnect.",
+        { retryable: true },
+      ),
+    );
+  }
   const token = getAccessToken();
   if (token) config.headers.set('Authorization', `Bearer ${token}`);
   const tenant = getTenantId();
