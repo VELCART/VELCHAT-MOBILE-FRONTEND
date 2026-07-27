@@ -126,7 +126,7 @@ function TabButton({
             ],
           }}
         >
-          <Icon size={23} color={iconColor} strokeWidth={active ? 2.2 : 1.9} />
+          <Icon size={26} color={iconColor} strokeWidth={active ? 2.2 : 1.9} />
         </Animated.View>
       </View>
       <Text

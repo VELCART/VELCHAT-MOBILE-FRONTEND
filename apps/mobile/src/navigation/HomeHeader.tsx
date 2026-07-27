@@ -5,7 +5,7 @@
  * menu. Profile + overflow open Settings. Safe-area aware; themed light/dark.
  */
 import React from 'react';
-import { View, Pressable } from 'react-native';
+import { View, Pressable, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -13,7 +13,8 @@ import { useTheme } from '../theme';
 import {
   Text,
   SearchIcon,
-  PlaneIcon,
+  WifiIcon,
+  WifiOffIcon,
   MoreIcon,
   UserIcon,
   type IconProps,
@@ -67,7 +68,7 @@ export function HomeHeader(): React.JSX.Element {
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const flightMode = useConnectivity(s => s.flightMode);
   const toggleFlight = useConnectivity(s => s.toggleFlightMode);
-  const { displayName } = useProfileSummary();
+  const { displayName, avatarUri } = useProfileSummary();
   const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
 
   const openSettings = (): void => navigation.navigate('Settings');
@@ -119,22 +120,29 @@ export function HomeHeader(): React.JSX.Element {
                 width: 32,
                 height: 32,
                 borderRadius: 16,
-                backgroundColor: t.pastels.lavender,
+                backgroundColor: t.colors.bgSubtle,
                 alignItems: 'center',
                 justifyContent: 'center',
+                overflow: 'hidden',
               }}
             >
-              {initial ? (
+              {avatarUri ? (
+                <Image
+                  source={{ uri: avatarUri }}
+                  style={{ width: 32, height: 32 }}
+                  resizeMode="cover"
+                />
+              ) : initial ? (
                 <Text
                   variant="label"
-                  style={{ color: t.colors.brandFrom, fontSize: 15 }}
+                  style={{ color: t.colors.textPrimary, fontSize: 15 }}
                 >
                   {initial}
                 </Text>
               ) : (
                 <UserIcon
                   size={18}
-                  color={t.colors.brandFrom}
+                  color={t.colors.textSecondary}
                   strokeWidth={2}
                 />
               )}
@@ -147,10 +155,10 @@ export function HomeHeader(): React.JSX.Element {
             label="Search"
           />
           <IconButton
-            icon={PlaneIcon}
+            icon={flightMode ? WifiOffIcon : WifiIcon}
             onPress={toggleFlight}
             active={flightMode}
-            label="Flight mode"
+            label={flightMode ? 'Go online' : 'Go offline'}
           />
           <IconButton
             icon={MoreIcon}

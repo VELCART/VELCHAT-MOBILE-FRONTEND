@@ -5,7 +5,7 @@
  * scrolls on short devices.
  */
 import React from 'react';
-import { ScrollView, View, Pressable } from 'react-native';
+import { ScrollView, View, Pressable, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation, useLanguage } from '../i18n';
@@ -21,6 +21,7 @@ import {
   ChevronRightIcon,
   StorageIcon,
   LogOutIcon,
+  UserIcon,
   type IconProps,
 } from '../design-system';
 import { appEnv } from '../core';
@@ -114,7 +115,8 @@ export function SettingsScreen(): React.JSX.Element {
   const { t: tr } = useTranslation();
   const { mode, setMode } = useThemeMode();
   const { language, setLanguage, supported, names } = useLanguage();
-  const { displayName, email, phone } = useProfileSummary();
+  const { displayName, email, phone, avatarUri } = useProfileSummary();
+  const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
   const signOut = useAuthStore(s => s.signOut);
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
@@ -171,7 +173,7 @@ export function SettingsScreen(): React.JSX.Element {
           </Text>
         </View>
 
-        {/* Name / number header — no avatar. */}
+        {/* Name / number header — shows the profile photo when set. */}
         <Card
           style={{ marginTop: t.spacing.lg, paddingVertical: t.spacing.md }}
         >
@@ -181,9 +183,42 @@ export function SettingsScreen(): React.JSX.Element {
             style={({ pressed }) => ({
               flexDirection: 'row',
               alignItems: 'center',
+              gap: t.spacing.md,
               opacity: pressed ? 0.6 : 1,
             })}
           >
+            <View
+              style={{
+                width: 54,
+                height: 54,
+                borderRadius: 27,
+                backgroundColor: t.colors.bgSubtle,
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+              }}
+            >
+              {avatarUri ? (
+                <Image
+                  source={{ uri: avatarUri }}
+                  style={{ width: 54, height: 54 }}
+                  resizeMode="cover"
+                />
+              ) : initial ? (
+                <Text
+                  variant="title"
+                  style={{ color: t.colors.textPrimary, fontSize: 22 }}
+                >
+                  {initial}
+                </Text>
+              ) : (
+                <UserIcon
+                  size={26}
+                  color={t.colors.textSecondary}
+                  strokeWidth={2}
+                />
+              )}
+            </View>
             <View style={{ flex: 1 }}>
               <Text variant="title" numberOfLines={1} style={{ fontSize: 20 }}>
                 {displayName ?? tr('settings.addName')}

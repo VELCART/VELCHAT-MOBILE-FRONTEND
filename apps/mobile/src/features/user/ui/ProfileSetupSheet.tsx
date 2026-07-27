@@ -221,7 +221,7 @@ export function ProfileSetupSheet({
                 width: 76,
                 height: 76,
                 borderRadius: 38,
-                backgroundColor: t.pastels.lavender,
+                backgroundColor: t.colors.bgSubtle,
                 alignItems: 'center',
                 justifyContent: 'center',
                 overflow: 'hidden',

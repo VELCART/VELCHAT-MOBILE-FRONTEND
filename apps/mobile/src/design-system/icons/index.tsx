@@ -278,6 +278,39 @@ export function PlaneIcon({
   );
 }
 
+/** Wi-Fi — connected / online. */
+export function WifiIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M1.42 9a16 16 0 0 1 21.16 0" {...stroke(color, strokeWidth)} />
+      <Path d="M5 12.55a11 11 0 0 1 14.08 0" {...stroke(color, strokeWidth)} />
+      <Path d="M8.53 16.11a6 6 0 0 1 6.95 0" {...stroke(color, strokeWidth)} />
+      <Path d="M12 20h.01" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Wi-Fi with a slash — offline / flight mode. */
+export function WifiOffIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M1.42 9a16 16 0 0 1 21.16 0" {...stroke(color, strokeWidth)} />
+      <Path d="M5 12.55a11 11 0 0 1 14.08 0" {...stroke(color, strokeWidth)} />
+      <Path d="M8.53 16.11a6 6 0 0 1 6.95 0" {...stroke(color, strokeWidth)} />
+      <Path d="M12 20h.01" {...stroke(color, strokeWidth)} />
+      <Path d="M3 3l18 18" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
 /** Three vertical dots — overflow menu. */
 export function MoreIcon({
   size = 24,

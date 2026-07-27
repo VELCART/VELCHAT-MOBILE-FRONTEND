@@ -36,6 +36,8 @@ export {
   StorageIcon,
   SearchIcon,
   PlaneIcon,
+  WifiIcon,
+  WifiOffIcon,
   MoreIcon,
 } from './icons';
 export type { IconProps } from './icons';
