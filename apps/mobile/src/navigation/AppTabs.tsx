@@ -1,20 +1,23 @@
 /**
- * App tab shell (§M17, ADR-0002). Five tabs — Chats / Updates / Communities / Calls
- * / Settings — on a native pager: tap the bottom bar OR swipe left/right to change
- * page (WhatsApp-parity). Chat screens are placeholders until their phases land;
- * Settings is its own screen. The first-run profile sheet opens over home when the
- * profile is incomplete.
+ * App tab shell (§M17, ADR-0002). A shared home header on top, then four tabs —
+ * Chats / Updates / Communities / Calls — on a native pager: TAP the bottom bar to
+ * jump directly (animationEnabled:false → no slide-through) OR swipe left/right.
+ * Settings opens from the header, not a tab. The first-run profile sheet + the offline
+ * banner sit over the shell.
  */
 import React, { useState } from 'react';
+import { View } from 'react-native';
 import {
   createMaterialTopTabNavigator,
   type MaterialTopTabBarProps,
 } from '@react-navigation/material-top-tabs';
 import { useTranslation } from '../i18n';
+import { useTheme } from '../theme';
 import { Placeholder } from '../ui';
 import { ProfileSetupSheet, useProfileGate } from '../features/user';
 import { TabBar } from './TabBar';
-import { SettingsScreen } from './SettingsScreen';
+import { HomeHeader } from './HomeHeader';
+import { OfflineBanner } from './OfflineBanner';
 import type { AppTabsParamList } from './types';
 
 const Tab = createMaterialTopTabNavigator<AppTabsParamList>();
@@ -45,6 +48,7 @@ const renderTabBar = (props: MaterialTopTabBarProps): React.JSX.Element => (
 );
 
 export function AppTabs(): React.JSX.Element {
+  const t = useTheme();
   const { t: tr } = useTranslation();
   // First-run profile prompt: opens only when the profile is incomplete.
   // Dismissing hides it for this session; it re-checks on the next launch.
@@ -52,11 +56,19 @@ export function AppTabs(): React.JSX.Element {
   const [dismissed, setDismissed] = useState(false);
 
   return (
-    <>
+    <View style={{ flex: 1, backgroundColor: t.colors.bgBase }}>
+      <HomeHeader />
+      <OfflineBanner />
       <Tab.Navigator
         tabBarPosition="bottom"
         tabBar={renderTabBar}
-        screenOptions={{ swipeEnabled: true, lazy: true }}
+        // animationEnabled:false → a tab TAP jumps straight to that page (no visible
+        // slide through the tabs in between); swipe still pages via the native pager.
+        screenOptions={{
+          swipeEnabled: true,
+          lazy: true,
+          animationEnabled: false,
+        }}
       >
         <Tab.Screen
           name="Chats"
@@ -78,11 +90,6 @@ export function AppTabs(): React.JSX.Element {
           component={CallsScreen}
           options={{ tabBarLabel: tr('tabs.calls') }}
         />
-        <Tab.Screen
-          name="Settings"
-          component={SettingsScreen}
-          options={{ tabBarLabel: tr('tabs.settings') }}
-        />
       </Tab.Navigator>
 
       <ProfileSetupSheet
@@ -90,6 +97,6 @@ export function AppTabs(): React.JSX.Element {
         onDone={markComplete}
         onClose={() => setDismissed(true)}
       />
-    </>
+    </View>
   );
 }

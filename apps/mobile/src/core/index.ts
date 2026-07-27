@@ -15,3 +15,4 @@ export {
   DEFAULT_FLAGS,
 } from './feature-flags';
 export type { FeatureFlags, FeatureFlagKey } from './feature-flags';
+export { useConnectivity, isOffline, isFlightMode } from './connectivity';

@@ -23,6 +23,7 @@ import {
   useAuthStore,
 } from '../features/auth';
 import { AppTabs } from './AppTabs';
+import { SettingsScreen } from './SettingsScreen';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -42,9 +43,9 @@ const linking: LinkingOptions<RootStackParamList> = {
           Updates: 'updates',
           Communities: 'communities',
           Calls: 'calls',
-          Settings: 'settings',
         },
       },
+      Settings: 'settings',
     },
   },
 };
@@ -83,6 +84,11 @@ export function RootNavigator(): React.JSX.Element {
           <Stack.Screen name="EnterPhone" component={EnterPhoneScreen} />
           <Stack.Screen name="ReverseOtp" component={ReverseOtpScreen} />
           <Stack.Screen name="AppTabs" component={AppTabs} />
+          <Stack.Screen
+            name="Settings"
+            component={SettingsScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
         </Stack.Navigator>
       </NavigationContainer>
     </>

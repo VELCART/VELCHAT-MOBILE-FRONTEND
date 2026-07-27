@@ -10,8 +10,14 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, type ThemeMode } from '../theme';
 import { I18nProvider, isSupportedLanguage, type AppLanguage } from '../i18n';
-import { FeatureFlagsProvider } from '../core';
-import { queryClient, kv, KVKeys } from '../infra';
+import { FeatureFlagsProvider, useConnectivity } from '../core';
+import {
+  queryClient,
+  kv,
+  KVKeys,
+  getNetworkStatus,
+  subscribeNetwork,
+} from '../infra';
 import { RootNavigator } from '../navigation';
 import { useAuthBootstrap } from '../features/auth';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -42,6 +48,13 @@ function Gate(): React.JSX.Element {
 export default function App(): React.JSX.Element {
   useEffect(() => {
     bootstrap();
+    // Mirror real network reachability into the connectivity store (offline banner + gating).
+    const applyOnline = (connected: boolean): void =>
+      useConnectivity.getState().setOnline(connected);
+    void getNetworkStatus()
+      .then(s => applyOnline(s.connected))
+      .catch(() => undefined);
+    return subscribeNetwork(s => applyOnline(s.connected));
   }, []);
 
   return (

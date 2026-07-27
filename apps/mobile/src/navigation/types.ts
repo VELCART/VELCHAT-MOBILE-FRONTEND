@@ -8,14 +8,16 @@ export type RootStackParamList = {
   EnterPhone: undefined;
   ReverseOtp: undefined;
   AppTabs: undefined;
+  Settings: undefined;
 };
 
+/** Bottom tabs (WhatsApp-parity): Chats · Updates · Communities · Calls.
+ * Settings is NOT a tab — it opens from the home header. */
 export type AppTabsParamList = {
   Chats: undefined;
   Updates: undefined;
   Communities: undefined;
   Calls: undefined;
-  Settings: undefined;
 };
 
 declare global {

@@ -91,6 +91,8 @@
   },
   "common": {
     "empty": "Nothing here yet",
-    "theme": "Theme: {{mode}} · tap to toggle"
+    "theme": "Theme: {{mode}} · tap to toggle",
+    "offline": "You're offline — waiting for network",
+    "flightMode": "Flight mode on — you're offline"
   }
 }
