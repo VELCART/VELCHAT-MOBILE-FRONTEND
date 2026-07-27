@@ -12,6 +12,8 @@
     "mobile": "pnpm --filter @velchat/mobile",
     "start": "pnpm --filter @velchat/mobile start",
     "android": "pnpm --filter @velchat/mobile android",
+    "android:stage": "pnpm --filter @velchat/mobile android:stage",
+    "android:prod": "pnpm --filter @velchat/mobile android:prod",
     "ios": "pnpm --filter @velchat/mobile ios",
     "test": "turbo run test",
     "lint": "turbo run lint",
