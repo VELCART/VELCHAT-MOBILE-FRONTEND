@@ -89,6 +89,11 @@
     "back": "Back",
     "addPhoto": "Add photo"
   },
+  "header": {
+    "search": "Search",
+    "newGroup": "New group",
+    "starred": "Starred messages"
+  },
   "common": {
     "empty": "Nothing here yet",
     "theme": "Theme: {{mode}} · tap to toggle",
