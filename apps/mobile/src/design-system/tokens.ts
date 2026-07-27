@@ -41,8 +41,9 @@ export const palette: {
     textTertiary: '#B0B0B5',
     actionBg: '#0B0B0C',
     actionFg: '#FFFFFF',
-    brandFrom: '#7C5CFC',
-    brandTo: '#FF6FB5',
+    // Monochrome brand accent (§design B&W): black in light, white in dark.
+    brandFrom: '#0B0B0C',
+    brandTo: '#3A3A3C',
     success: '#34C759',
     warning: '#FF9F0A',
     danger: '#FF3B30',
@@ -59,8 +60,9 @@ export const palette: {
     textTertiary: '#6E6E75',
     actionBg: '#FFFFFF',
     actionFg: '#0B0B0C',
-    brandFrom: '#6E4BF0',
-    brandTo: '#E85CA0',
+    // Monochrome brand accent (§design B&W): white in dark, black in light.
+    brandFrom: '#F5F5F7',
+    brandTo: '#C7C7CC',
     success: '#30D158',
     warning: '#FFD60A',
     danger: '#FF453A',

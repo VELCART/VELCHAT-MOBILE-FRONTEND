@@ -69,11 +69,13 @@ export function useProfileSummary(): {
   displayName: string | null;
   email: string | null;
   phone: string | null;
+  avatarUri: string | null;
 } {
   return {
     displayName: kv.getString(KVKeys.displayName) ?? null,
     email: kv.getString(KVKeys.email) ?? null,
     phone: kv.getString(KVKeys.phone) ?? null,
+    avatarUri: kv.getString(KVKeys.avatarUri) ?? null,
   };
 }
 
@@ -153,6 +155,9 @@ export function useAvatarUpload(): {
       return;
     }
     setLocalUri(asset.uri);
+    // Persist the local uri so the header + Settings show the photo immediately and
+    // across launches on this device (the server copy rides on avatarMediaId).
+    kv.set(KVKeys.avatarUri, asset.uri);
     setError(null);
     setUploading(true);
     try {
