@@ -71,7 +71,14 @@
     "notifications": "Notifications",
     "storage": "Storage & Data",
     "help": "Help & About",
-    "addName": "Add your name"
+    "addName": "Add your name",
+    "accountSub": "Security notifications, change number",
+    "privacySub": "Block contacts, disappearing messages",
+    "notificationsSub": "Message, group & call tones",
+    "storageSub": "Network usage, auto-download",
+    "helpSub": "Help centre, contact us, terms",
+    "scan": "Scan",
+    "edit": "Edit"
   },
   "profile": {
     "nameTitle": "What's your name?",
@@ -88,6 +95,22 @@
     "done": "Done",
     "back": "Back",
     "addPhoto": "Add photo"
+  },
+  "header": {
+    "search": "Search",
+    "newGroup": "New group",
+    "starred": "Starred messages",
+    "camera": "Camera",
+    "downloads": "Downloads",
+    "mail": "Mail",
+    "meeting": "New meeting",
+    "more": "More options",
+    "goOffline": "Go offline",
+    "goOnline": "Go online",
+    "hintMessages": "messages",
+    "hintFiles": "files",
+    "hintMedia": "media",
+    "hintAi": "AI search"
   },
   "common": {
     "empty": "Nothing here yet",

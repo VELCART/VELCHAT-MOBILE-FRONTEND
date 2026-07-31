@@ -1,27 +1,44 @@
 /**
- * Home header (§F1) — shared across the four tabs, WhatsApp-style. Left: the VelChat
- * wordmark. Right: profile (avatar photo when set, else initial / person icon),
- * search, a flight-mode toggle that takes the whole app offline, and an overflow
- * menu. Profile + overflow open Settings. Safe-area aware; themed light/dark.
+ * Home header (§F1) — shared above the four tabs, WhatsApp-style, and it adapts per
+ * tab (focused tab from the TabBar via `useActiveTab`). Chats shows the VelChat
+ * wordmark + a search bar, and its right cluster is profile · camera · offline · ⋮.
+ * The other tabs show their name + their own action icons (Updates: search + downloads
+ * · Communities: mail · Calls: search + meeting) with the offline toggle tucked into
+ * the ⋮ menu, and NO profile. Themed, safe-area aware.
  */
-import React from 'react';
-import { View, Pressable, Image } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Pressable, Image, Animated } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from '../i18n';
 import { useTheme } from '../theme';
 import {
   Text,
   SearchIcon,
-  WifiIcon,
-  WifiOffIcon,
+  CameraIcon,
+  DownloadIcon,
+  MailIcon,
+  VideoIcon,
   MoreIcon,
   UserIcon,
+  SpinningRing,
   type IconProps,
 } from '../design-system';
-import { useConnectivity } from '../core';
+import { useConnectivity, useActiveTab } from '../core';
 import { useProfileSummary } from '../features/user';
+import { HeaderMenu, type HeaderMenuItem } from './HeaderMenu';
 import type { RootStackParamList } from './types';
+
+// The rotating "active" halo around the avatar — a lively green even in the B&W theme.
+const RING_GREEN = '#25D366';
+
+interface Action {
+  key: string;
+  Icon: React.FC<IconProps>;
+  label: string;
+  onPress: () => void;
+}
 
 function IconButton({
   icon: Icon,
@@ -41,15 +58,15 @@ function IconButton({
       accessibilityLabel={label}
       accessibilityState={{ selected: active }}
       onPress={onPress}
-      hitSlop={8}
+      hitSlop={6}
       style={({ pressed }) => ({
-        width: 40,
+        width: 38,
         height: 40,
-        borderRadius: 20,
+        borderRadius: 19,
         alignItems: 'center',
         justifyContent: 'center',
         backgroundColor: active ? `${t.colors.brandFrom}1F` : 'transparent',
-        opacity: pressed ? 0.6 : 1,
+        opacity: pressed ? 0.55 : 1,
       })}
     >
       <Icon
@@ -61,112 +78,300 @@ function IconButton({
   );
 }
 
+// Rotating search hint — cycles "messages · files · media · AI search" with a fade,
+// so the bar tells you it searches everything (auto-updates every couple of seconds).
+const SEARCH_HINTS = [
+  'hintMessages',
+  'hintFiles',
+  'hintMedia',
+  'hintAi',
+] as const;
+
+function SearchHint(): React.JSX.Element {
+  const t = useTheme();
+  const { t: tr } = useTranslation();
+  const [i, setI] = useState(0);
+  const fade = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      Animated.timing(fade, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start(() => {
+        setI(x => (x + 1) % SEARCH_HINTS.length);
+        Animated.timing(fade, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }).start();
+      });
+    }, 2400);
+    return () => clearInterval(id);
+  }, [fade]);
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+      <Text variant="body" color="secondary">
+        {`${tr('header.search')} `}
+      </Text>
+      <Animated.Text
+        numberOfLines={1}
+        style={{
+          flex: 1,
+          opacity: fade,
+          fontFamily: t.typography.body.fontFamily,
+          fontSize: 16,
+          color: t.colors.textTertiary,
+        }}
+      >
+        {tr(`header.${SEARCH_HINTS[i]}`)}
+      </Animated.Text>
+    </View>
+  );
+}
+
 export function HomeHeader(): React.JSX.Element {
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  const { t: tr } = useTranslation();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const flightMode = useConnectivity(s => s.flightMode);
   const toggleFlight = useConnectivity(s => s.toggleFlightMode);
+  const activeTab = useActiveTab(s => s.name);
   const { displayName, avatarUri } = useProfileSummary();
   const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const openSettings = (): void => navigation.navigate('Settings');
+  const noop = (): void => undefined;
+  const isChats = activeTab === 'Chats';
+
+  // Non-Chats action icons (Chats builds its cluster inline: profile · camera · offline).
+  const actions: Action[] =
+    activeTab === 'Updates'
+      ? [
+          {
+            key: 'search',
+            Icon: SearchIcon,
+            label: tr('header.search'),
+            onPress: noop,
+          },
+          {
+            key: 'download',
+            Icon: DownloadIcon,
+            label: tr('header.downloads'),
+            onPress: noop,
+          },
+        ]
+      : activeTab === 'Communities'
+        ? [
+            {
+              key: 'mail',
+              Icon: MailIcon,
+              label: tr('header.mail'),
+              onPress: noop,
+            },
+          ]
+        : activeTab === 'Calls'
+          ? [
+              {
+                key: 'search',
+                Icon: SearchIcon,
+                label: tr('header.search'),
+                onPress: noop,
+              },
+              {
+                key: 'meeting',
+                Icon: VideoIcon,
+                label: tr('header.meeting'),
+                onPress: noop,
+              },
+            ]
+          : [];
+
+  // Offline toggle lives in the overflow menu on every tab (no header icon for now).
+  const menuItems: HeaderMenuItem[] = [
+    {
+      label: flightMode ? tr('header.goOnline') : tr('header.goOffline'),
+      onPress: toggleFlight,
+    },
+    { label: tr('header.newGroup'), onPress: noop },
+    { label: tr('header.starred'), onPress: noop },
+    { label: tr('tabs.settings'), onPress: openSettings },
+  ];
+
+  const profile = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Profile"
+      onPress={openSettings}
+      hitSlop={6}
+      style={({ pressed }) => ({
+        width: 36,
+        height: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <View
+        style={{
+          width: 32,
+          height: 32,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <SpinningRing
+          size={32}
+          color={RING_GREEN}
+          thickness={2.2}
+          durationMs={7000}
+        />
+        <View
+          style={{
+            width: 25,
+            height: 25,
+            borderRadius: 13,
+            backgroundColor: t.colors.bgSubtle,
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+          }}
+        >
+          {avatarUri ? (
+            <Image
+              source={{ uri: avatarUri }}
+              style={{ width: 25, height: 25 }}
+              resizeMode="cover"
+            />
+          ) : initial ? (
+            <Text
+              variant="label"
+              style={{ color: t.colors.textPrimary, fontSize: 12 }}
+            >
+              {initial}
+            </Text>
+          ) : (
+            <UserIcon
+              size={15}
+              color={t.colors.textSecondary}
+              strokeWidth={2}
+            />
+          )}
+        </View>
+      </View>
+    </Pressable>
+  );
 
   return (
     <View style={{ paddingTop: insets.top, backgroundColor: t.colors.bgBase }}>
+      {/* Row 1 — title (left) + right cluster */}
       <View
         style={{
           height: 56,
           flexDirection: 'row',
           alignItems: 'center',
-          paddingHorizontal: t.spacing.lg,
+          paddingLeft: t.spacing.lg,
+          paddingRight: t.spacing.xs,
         }}
       >
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'baseline' }}>
-          <Text
-            variant="title"
-            style={{ fontSize: 23, color: t.colors.textPrimary }}
-          >
-            Vel
-          </Text>
-          <Text
-            variant="title"
-            style={{ fontSize: 23, color: t.colors.brandFrom }}
-          >
-            Chat
-          </Text>
+        <View style={{ flex: 1 }}>
+          {isChats ? (
+            <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+              <Text
+                variant="title"
+                style={{ fontSize: 23, color: t.colors.textPrimary }}
+              >
+                Vel
+              </Text>
+              <Text
+                variant="title"
+                style={{ fontSize: 23, color: t.colors.brandFrom }}
+              >
+                Chat
+              </Text>
+            </View>
+          ) : (
+            <Text variant="title" numberOfLines={1} style={{ fontSize: 22 }}>
+              {tr(`tabs.${activeTab.toLowerCase()}`)}
+            </Text>
+          )}
         </View>
 
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: t.spacing.xxs,
-          }}
-        >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Profile"
-            onPress={openSettings}
-            hitSlop={8}
-            style={({ pressed }) => ({
-              marginRight: t.spacing.xxs,
-              opacity: pressed ? 0.6 : 1,
-            })}
-          >
-            <View
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 16,
-                backgroundColor: t.colors.bgSubtle,
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-              }}
-            >
-              {avatarUri ? (
-                <Image
-                  source={{ uri: avatarUri }}
-                  style={{ width: 32, height: 32 }}
-                  resizeMode="cover"
-                />
-              ) : initial ? (
-                <Text
-                  variant="label"
-                  style={{ color: t.colors.textPrimary, fontSize: 15 }}
-                >
-                  {initial}
-                </Text>
-              ) : (
-                <UserIcon
-                  size={18}
-                  color={t.colors.textSecondary}
-                  strokeWidth={2}
-                />
-              )}
-            </View>
-          </Pressable>
-
-          <IconButton
-            icon={SearchIcon}
-            onPress={() => undefined}
-            label="Search"
-          />
-          <IconButton
-            icon={flightMode ? WifiOffIcon : WifiIcon}
-            onPress={toggleFlight}
-            active={flightMode}
-            label={flightMode ? 'Go online' : 'Go offline'}
-          />
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {isChats ? (
+            <>
+              {profile}
+              <View style={{ width: t.spacing.xs }} />
+              <IconButton
+                icon={CameraIcon}
+                onPress={noop}
+                label={tr('header.camera')}
+              />
+            </>
+          ) : (
+            actions.map(a => (
+              <IconButton
+                key={a.key}
+                icon={a.Icon}
+                onPress={a.onPress}
+                label={a.label}
+              />
+            ))
+          )}
           <IconButton
             icon={MoreIcon}
-            onPress={openSettings}
-            label="More options"
+            onPress={() => setMenuOpen(true)}
+            label={tr('header.more')}
           />
         </View>
       </View>
+
+      {/* Row 2 — a full-width search bar (Chats only, WhatsApp-style) */}
+      {isChats ? (
+        <View
+          style={{
+            paddingHorizontal: t.spacing.lg,
+            paddingTop: t.spacing.xxs,
+            paddingBottom: t.spacing.sm,
+          }}
+        >
+          <Pressable
+            accessibilityRole="search"
+            accessibilityLabel={tr('header.search')}
+            onPress={noop}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: t.spacing.sm,
+              height: 42,
+              borderRadius: t.radius.pill,
+              backgroundColor: t.colors.bgSubtle,
+              paddingHorizontal: t.spacing.md,
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <SearchIcon
+              size={19}
+              color={t.colors.textSecondary}
+              strokeWidth={2}
+            />
+            <SearchHint />
+          </Pressable>
+        </View>
+      ) : (
+        <View style={{ height: t.spacing.xs }} />
+      )}
+
+      <HeaderMenu
+        visible={menuOpen}
+        onClose={() => setMenuOpen(false)}
+        items={menuItems}
+      />
     </View>
   );
 }

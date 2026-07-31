@@ -15,6 +15,7 @@ import {
 import type { MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
+import { useActiveTab } from '../core';
 import {
   Text,
   ChatIcon,
@@ -67,9 +68,10 @@ function TabButton({
   }, [active, reduceMotion, anim]);
 
   const Icon = ICONS[routeName] ?? ChatIcon;
-  // Distinctive active state: the icon sits in a SOLID brand pill (white glyph) —
-  // a premium chip, not a WhatsApp-style tinted highlight. Label picks up the brand.
-  const iconColor = active ? '#FFFFFF' : t.colors.textTertiary;
+  // Distinctive active state: the icon sits in a SOLID brand pill. The glyph MUST
+  // contrast with that pill in both themes — actionFg is white on the black pill
+  // (light) and black on the white pill (dark). ('#FFFFFF' went white-on-white in dark.)
+  const iconColor = active ? t.colors.actionFg : t.colors.textTertiary;
   const labelColor = active ? t.colors.brandFrom : t.colors.textTertiary;
 
   return (
@@ -156,6 +158,12 @@ export function TabBar({
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const [reduceMotion, setReduceMotion] = useState(false);
+
+  // Publish the focused tab so the shared HomeHeader can swap its title + actions.
+  const activeName = state.routes[state.index]?.name ?? 'Chats';
+  useEffect(() => {
+    useActiveTab.getState().setName(activeName);
+  }, [activeName]);
 
   useEffect(() => {
     let mounted = true;
