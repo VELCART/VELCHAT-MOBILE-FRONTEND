@@ -1,8 +1,8 @@
 /**
- * Settings (§F1). A product-grade, inset-grouped list matching the onboarding theme:
- * a name/number header (no avatar), an appearance segmented control, the app-wide
- * language picker, account rows with icon tiles, and sign-out. Themed light/dark;
- * scrolls on short devices.
+ * Settings (§F1) — a WhatsApp-style flat list: a profile header (photo · name ·
+ * number) up top, then plain icon+label rows (no boxes) with subtitles, and sign-out.
+ * App language + Appearance are live rows — tap to cycle. Premium through spacing and
+ * typography, not chrome. Themed light/dark; scrolls on short devices.
  */
 import React from 'react';
 import { ScrollView, View, Pressable, Image } from 'react-native';
@@ -13,15 +13,16 @@ import { useTheme, useThemeMode, type ThemeMode } from '../theme';
 import {
   Screen,
   Text,
-  Card,
   Divider,
+  UserIcon,
   ShieldIcon,
   BellIcon,
-  InfoIcon,
-  ChevronRightIcon,
   StorageIcon,
+  GlobeIcon,
+  MoonIcon,
+  InfoIcon,
   LogOutIcon,
-  UserIcon,
+  ChevronRightIcon,
   type IconProps,
 } from '../design-system';
 import { appEnv } from '../core';
@@ -29,33 +30,18 @@ import { useAuthStore } from '../features/auth';
 import { useProfileSummary } from '../features/user';
 import type { RootStackParamList } from './types';
 
-function SectionLabel({ children }: { children: string }): React.JSX.Element {
-  const t = useTheme();
-  return (
-    <Text
-      variant="caption"
-      color="tertiary"
-      style={{
-        marginTop: t.spacing.xl,
-        marginBottom: t.spacing.sm,
-        marginLeft: t.spacing.sm,
-        letterSpacing: 0.8,
-      }}
-    >
-      {children.toUpperCase()}
-    </Text>
-  );
-}
-
-/** An account row: a subtle icon tile + label + chevron. */
 function SettingRow({
   icon: Icon,
-  label,
+  title,
+  subtitle,
+  value,
   onPress,
   danger = false,
 }: {
   icon: React.FC<IconProps>;
-  label: string;
+  title: string;
+  subtitle?: string;
+  value?: string;
   onPress?: () => void;
   danger?: boolean;
 }): React.JSX.Element {
@@ -64,51 +50,51 @@ function SettingRow({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={title}
       onPress={onPress}
       disabled={!onPress}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
-        gap: t.spacing.md,
-        paddingHorizontal: t.spacing.md,
-        paddingVertical: t.spacing.sm + 2,
-        backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
+        gap: t.spacing.lg,
+        paddingHorizontal: t.spacing.xl,
+        paddingVertical: t.spacing.md,
+        opacity: pressed ? 0.55 : 1,
       })}
     >
-      <View
-        style={{
-          width: 34,
-          height: 34,
-          borderRadius: 10,
-          backgroundColor: danger ? `${t.colors.danger}18` : t.colors.bgSubtle,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Icon size={18} color={tint} strokeWidth={2} />
+      <Icon size={23} color={tint} strokeWidth={1.9} />
+      <View style={{ flex: 1 }}>
+        <Text
+          variant="body"
+          style={{ color: danger ? t.colors.danger : t.colors.textPrimary }}
+        >
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text
+            variant="caption"
+            color="tertiary"
+            numberOfLines={1}
+            style={{ marginTop: 1 }}
+          >
+            {subtitle}
+          </Text>
+        ) : null}
       </View>
-      <Text
-        variant="body"
-        style={{
-          flex: 1,
-          color: danger ? t.colors.danger : t.colors.textPrimary,
-        }}
-      >
-        {label}
-      </Text>
-      {onPress && !danger ? (
-        <ChevronRightIcon
-          size={18}
-          color={t.colors.textTertiary}
-          strokeWidth={2}
-        />
+      {value ? (
+        <Text variant="caption" color="secondary">
+          {value}
+        </Text>
       ) : null}
     </Pressable>
   );
 }
 
-const THEME_MODES: ThemeMode[] = ['system', 'light', 'dark'];
+const NEXT_THEME: Record<ThemeMode, ThemeMode> = {
+  system: 'light',
+  light: 'dark',
+  dark: 'system',
+};
 
 export function SettingsScreen(): React.JSX.Element {
   const t = useTheme();
@@ -123,11 +109,17 @@ export function SettingsScreen(): React.JSX.Element {
 
   const onSignOut = (): void => {
     signOut();
-    // Settings is a root-stack screen now, so reset the root directly to onboarding.
     navigation.reset({ index: 0, routes: [{ name: 'Welcome' }] });
   };
+  const noop = (): void => undefined;
 
-  const themeLabel: Record<ThemeMode, string> = {
+  const cycleTheme = (): void => setMode(NEXT_THEME[mode]);
+  const cycleLanguage = (): void => {
+    const idx = supported.indexOf(language);
+    const next = supported[(idx + 1) % supported.length];
+    if (next) setLanguage(next);
+  };
+  const themeName: Record<ThemeMode, string> = {
     system: tr('settings.themeSystem'),
     light: tr('settings.themeLight'),
     dark: tr('settings.themeDark'),
@@ -135,241 +127,171 @@ export function SettingsScreen(): React.JSX.Element {
 
   return (
     <Screen edges={['top']} padded={false}>
-      <ScrollView
-        contentContainerStyle={{
-          paddingHorizontal: t.spacing.xl,
-          paddingTop: t.spacing.md,
-          paddingBottom: t.spacing.huge,
+      {/* Top bar */}
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: t.spacing.sm,
+          height: 56,
+          paddingHorizontal: t.spacing.md,
         }}
+      >
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Back"
+          onPress={() => navigation.goBack()}
+          hitSlop={10}
+          style={({ pressed }) => ({
+            width: 40,
+            height: 40,
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: pressed ? 0.6 : 1,
+          })}
+        >
+          <View style={{ transform: [{ rotate: '180deg' }] }}>
+            <ChevronRightIcon
+              size={26}
+              color={t.colors.textPrimary}
+              strokeWidth={2.2}
+            />
+          </View>
+        </Pressable>
+        <Text variant="title" style={{ fontSize: 20 }}>
+          {tr('tabs.settings')}
+        </Text>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={{ paddingBottom: t.spacing.huge }}
         showsVerticalScrollIndicator={false}
       >
-        <View
-          style={{
+        {/* Profile header */}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={displayName ?? tr('settings.addName')}
+          onPress={noop}
+          style={({ pressed }) => ({
             flexDirection: 'row',
             alignItems: 'center',
-            gap: t.spacing.xs,
-          }}
+            gap: t.spacing.md,
+            paddingHorizontal: t.spacing.xl,
+            paddingVertical: t.spacing.md,
+            opacity: pressed ? 0.6 : 1,
+          })}
         >
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Back"
-            onPress={() => navigation.goBack()}
-            hitSlop={10}
-            style={({ pressed }) => ({
-              marginLeft: -6,
-              opacity: pressed ? 0.6 : 1,
-            })}
-          >
-            <View style={{ transform: [{ rotate: '180deg' }] }}>
-              <ChevronRightIcon
-                size={26}
-                color={t.colors.textPrimary}
-                strokeWidth={2.4}
-              />
-            </View>
-          </Pressable>
-          <Text variant="title" style={{ fontSize: 26 }}>
-            {tr('tabs.settings')}
-          </Text>
-        </View>
-
-        {/* Name / number header — shows the profile photo when set. */}
-        <Card
-          style={{ marginTop: t.spacing.lg, paddingVertical: t.spacing.md }}
-        >
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => undefined}
-            style={({ pressed }) => ({
-              flexDirection: 'row',
+          <View
+            style={{
+              width: 58,
+              height: 58,
+              borderRadius: 29,
+              backgroundColor: t.colors.bgSubtle,
               alignItems: 'center',
-              gap: t.spacing.md,
-              opacity: pressed ? 0.6 : 1,
-            })}
+              justifyContent: 'center',
+              overflow: 'hidden',
+            }}
           >
-            <View
-              style={{
-                width: 54,
-                height: 54,
-                borderRadius: 27,
-                backgroundColor: t.colors.bgSubtle,
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-              }}
-            >
-              {avatarUri ? (
-                <Image
-                  source={{ uri: avatarUri }}
-                  style={{ width: 54, height: 54 }}
-                  resizeMode="cover"
-                />
-              ) : initial ? (
-                <Text
-                  variant="title"
-                  style={{ color: t.colors.textPrimary, fontSize: 22 }}
-                >
-                  {initial}
-                </Text>
-              ) : (
-                <UserIcon
-                  size={26}
-                  color={t.colors.textSecondary}
-                  strokeWidth={2}
-                />
-              )}
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text variant="title" numberOfLines={1} style={{ fontSize: 20 }}>
-                {displayName ?? tr('settings.addName')}
-              </Text>
+            {avatarUri ? (
+              <Image
+                source={{ uri: avatarUri }}
+                style={{ width: 58, height: 58 }}
+                resizeMode="cover"
+              />
+            ) : initial ? (
               <Text
-                variant="body"
-                color="secondary"
-                numberOfLines={1}
-                style={{ marginTop: 2 }}
+                variant="title"
+                style={{ color: t.colors.textPrimary, fontSize: 24 }}
               >
-                {phone ?? email ?? ''}
+                {initial}
               </Text>
-            </View>
-            <ChevronRightIcon
-              size={20}
-              color={t.colors.textTertiary}
-              strokeWidth={2}
-            />
-          </Pressable>
-        </Card>
+            ) : (
+              <UserIcon
+                size={28}
+                color={t.colors.textSecondary}
+                strokeWidth={2}
+              />
+            )}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text variant="title" numberOfLines={1} style={{ fontSize: 19 }}>
+              {displayName ?? tr('settings.addName')}
+            </Text>
+            <Text
+              variant="body"
+              color="secondary"
+              numberOfLines={1}
+              style={{ marginTop: 2 }}
+            >
+              {phone ?? email ?? tr('settings.addName')}
+            </Text>
+          </View>
+          <ChevronRightIcon
+            size={20}
+            color={t.colors.textTertiary}
+            strokeWidth={2}
+          />
+        </Pressable>
 
-        {/* Appearance — iOS-style segmented control. */}
-        <SectionLabel>{tr('settings.appearance')}</SectionLabel>
-        <View
-          style={{
-            flexDirection: 'row',
-            backgroundColor: t.colors.bgSubtle,
-            borderRadius: t.radius.md,
-            padding: 4,
-          }}
-        >
-          {THEME_MODES.map(m => {
-            const active = m === mode;
-            return (
-              <Pressable
-                key={m}
-                accessibilityRole="button"
-                accessibilityState={{ selected: active }}
-                onPress={() => setMode(m)}
-                style={{
-                  flex: 1,
-                  paddingVertical: t.spacing.sm,
-                  borderRadius: t.radius.sm,
-                  alignItems: 'center',
-                  backgroundColor: active ? t.colors.surface : 'transparent',
-                  ...(active ? t.elevation.e1 : {}),
-                }}
-              >
-                <Text
-                  variant="caption"
-                  style={{
-                    fontSize: 13,
-                    color: active ? t.colors.brandFrom : t.colors.textSecondary,
-                    fontFamily: active
-                      ? t.typography.label.fontFamily
-                      : t.typography.caption.fontFamily,
-                  }}
-                >
-                  {themeLabel[m]}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        <Divider style={{ marginVertical: t.spacing.xs }} />
 
-        {/* Language */}
-        <SectionLabel>{tr('settings.language')}</SectionLabel>
-        <Card style={{ padding: 0, overflow: 'hidden' }}>
-          {supported.map((code, i) => {
-            const active = code === language;
-            return (
-              <React.Fragment key={code}>
-                {i > 0 ? <Divider /> : null}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ selected: active }}
-                  onPress={() => setLanguage(code)}
-                  style={({ pressed }) => ({
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    paddingHorizontal: t.spacing.md,
-                    paddingVertical: t.spacing.md,
-                    backgroundColor: pressed
-                      ? t.colors.bgSubtle
-                      : 'transparent',
-                  })}
-                >
-                  <Text
-                    variant="body"
-                    style={{
-                      flex: 1,
-                      color: active ? t.colors.brandFrom : t.colors.textPrimary,
-                    }}
-                  >
-                    {names[code]}
-                  </Text>
-                  {active ? (
-                    <Text variant="label" style={{ color: t.colors.brandFrom }}>
-                      ✓
-                    </Text>
-                  ) : null}
-                </Pressable>
-              </React.Fragment>
-            );
-          })}
-        </Card>
+        <SettingRow
+          icon={UserIcon}
+          title={tr('settings.account')}
+          subtitle={tr('settings.accountSub')}
+          onPress={noop}
+        />
+        <SettingRow
+          icon={ShieldIcon}
+          title={tr('settings.privacy')}
+          subtitle={tr('settings.privacySub')}
+          onPress={noop}
+        />
+        <SettingRow
+          icon={BellIcon}
+          title={tr('settings.notifications')}
+          subtitle={tr('settings.notificationsSub')}
+          onPress={noop}
+        />
+        <SettingRow
+          icon={StorageIcon}
+          title={tr('settings.storage')}
+          subtitle={tr('settings.storageSub')}
+          onPress={noop}
+        />
+        <SettingRow
+          icon={GlobeIcon}
+          title={tr('settings.language')}
+          value={names[language]}
+          onPress={cycleLanguage}
+        />
+        <SettingRow
+          icon={MoonIcon}
+          title={tr('settings.appearance')}
+          value={themeName[mode]}
+          onPress={cycleTheme}
+        />
+        <SettingRow
+          icon={InfoIcon}
+          title={tr('settings.help')}
+          subtitle={tr('settings.helpSub')}
+          onPress={noop}
+        />
 
-        {/* Account */}
-        <SectionLabel>{tr('settings.account')}</SectionLabel>
-        <Card style={{ padding: 0, overflow: 'hidden' }}>
-          <SettingRow
-            icon={ShieldIcon}
-            label={tr('settings.privacy')}
-            onPress={() => undefined}
-          />
-          <Divider />
-          <SettingRow
-            icon={BellIcon}
-            label={tr('settings.notifications')}
-            onPress={() => undefined}
-          />
-          <Divider />
-          <SettingRow
-            icon={StorageIcon}
-            label={tr('settings.storage')}
-            onPress={() => undefined}
-          />
-          <Divider />
-          <SettingRow
-            icon={InfoIcon}
-            label={tr('settings.help')}
-            onPress={() => undefined}
-          />
-        </Card>
+        <Divider style={{ marginVertical: t.spacing.xs }} />
 
-        {/* Sign out */}
-        <View style={{ marginTop: t.spacing.xl }} />
-        <Card style={{ padding: 0, overflow: 'hidden' }}>
-          <SettingRow
-            icon={LogOutIcon}
-            label={tr('settings.signOut')}
-            onPress={onSignOut}
-            danger
-          />
-        </Card>
+        <SettingRow
+          icon={LogOutIcon}
+          title={tr('settings.signOut')}
+          onPress={onSignOut}
+          danger
+        />
 
         <Text
           variant="caption"
           color="tertiary"
           align="center"
-          style={{ marginTop: t.spacing.xl }}
+          style={{ marginTop: t.spacing.lg }}
         >
           VelChat · {appEnv.name} · v0.1.0
         </Text>

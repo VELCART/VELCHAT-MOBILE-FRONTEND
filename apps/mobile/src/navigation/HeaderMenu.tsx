@@ -1,9 +1,10 @@
 /**
  * Header overflow menu (§F1) — the WhatsApp-style dropdown that opens from the ⋮
- * button: a rounded card pinned top-right with menu rows, a fade-scale entrance from
- * the corner, and a tap-anywhere scrim to dismiss.
+ * button: a rounded card pinned top-right that springs in on open and fades back out
+ * on close (kept mounted through the exit). Rows use a clean opacity press — no boxed
+ * highlight — and a tap-anywhere scrim dismisses it.
  */
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Modal, Pressable, Animated } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
@@ -23,26 +24,38 @@ export function HeaderMenu({
   visible: boolean;
   onClose: () => void;
   items: HeaderMenuItem[];
-}): React.JSX.Element {
+}): React.JSX.Element | null {
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  const [rendered, setRendered] = useState(visible);
   const anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (!visible) return undefined;
-    anim.setValue(0);
-    const a = Animated.timing(anim, {
-      toValue: 1,
-      duration: 140,
-      useNativeDriver: true,
-    });
-    a.start();
-    return () => a.stop();
-  }, [visible, anim]);
+    if (visible) {
+      setRendered(true);
+      Animated.spring(anim, {
+        toValue: 1,
+        useNativeDriver: true,
+        speed: 20,
+        bounciness: 6,
+      }).start();
+    } else if (rendered) {
+      Animated.timing(anim, {
+        toValue: 0,
+        duration: 130,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) setRendered(false);
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible]);
+
+  if (!rendered) return null;
 
   return (
     <Modal
-      visible={visible}
+      visible
       transparent
       animationType="none"
       statusBarTranslucent
@@ -59,7 +72,7 @@ export function HeaderMenu({
               {
                 scale: anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0.88, 1],
+                  outputRange: [0.9, 1],
                 }),
               },
             ],
@@ -80,8 +93,7 @@ export function HeaderMenu({
                 style={({ pressed }) => ({
                   paddingHorizontal: t.spacing.md,
                   paddingVertical: t.spacing.sm,
-                  borderRadius: t.radius.sm,
-                  backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
+                  opacity: pressed ? 0.45 : 1,
                 })}
               >
                 <Text

@@ -1,13 +1,13 @@
 /**
  * Home header (§F1) — shared above the four tabs, WhatsApp-style, and it adapts per
- * tab. Chats shows the VelChat wordmark + a search bar; the other tabs show their name
- * and their own action icons (Updates: search + downloads · Communities: mail · Calls:
- * search + meeting). Every tab keeps the ⋮ overflow (which also holds the offline
- * toggle) and the profile avatar (inside a spinning green "active" ring). Themed,
- * safe-area aware. The focused tab comes from the TabBar via `useActiveTab`.
+ * tab (focused tab from the TabBar via `useActiveTab`). Chats shows the VelChat
+ * wordmark + a search bar, and its right cluster is profile · camera · offline · ⋮.
+ * The other tabs show their name + their own action icons (Updates: search + downloads
+ * · Communities: mail · Calls: search + meeting) with the offline toggle tucked into
+ * the ⋮ menu, and NO profile. Themed, safe-area aware.
  */
-import React, { useState } from 'react';
-import { View, Pressable, Image } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Pressable, Image, Animated } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -44,28 +44,91 @@ function IconButton({
   icon: Icon,
   onPress,
   label,
+  active = false,
 }: {
   icon: React.FC<IconProps>;
   onPress: () => void;
   label: string;
+  active?: boolean;
 }): React.JSX.Element {
   const t = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ selected: active }}
       onPress={onPress}
       hitSlop={6}
       style={({ pressed }) => ({
         width: 38,
         height: 40,
+        borderRadius: 19,
         alignItems: 'center',
         justifyContent: 'center',
+        backgroundColor: active ? `${t.colors.brandFrom}1F` : 'transparent',
         opacity: pressed ? 0.55 : 1,
       })}
     >
-      <Icon size={22} color={t.colors.textPrimary} strokeWidth={2} />
+      <Icon
+        size={22}
+        color={active ? t.colors.brandFrom : t.colors.textPrimary}
+        strokeWidth={2}
+      />
     </Pressable>
+  );
+}
+
+// Rotating search hint — cycles "messages · files · media · AI search" with a fade,
+// so the bar tells you it searches everything (auto-updates every couple of seconds).
+const SEARCH_HINTS = [
+  'hintMessages',
+  'hintFiles',
+  'hintMedia',
+  'hintAi',
+] as const;
+
+function SearchHint(): React.JSX.Element {
+  const t = useTheme();
+  const { t: tr } = useTranslation();
+  const [i, setI] = useState(0);
+  const fade = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      Animated.timing(fade, {
+        toValue: 0,
+        duration: 220,
+        useNativeDriver: true,
+      }).start(() => {
+        setI(x => (x + 1) % SEARCH_HINTS.length);
+        Animated.timing(fade, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true,
+        }).start();
+      });
+    }, 2400);
+    return () => clearInterval(id);
+  }, [fade]);
+
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
+      <Text variant="body" color="secondary">
+        {`${tr('header.search')} `}
+      </Text>
+      <Animated.Text
+        numberOfLines={1}
+        style={{
+          flex: 1,
+          opacity: fade,
+          fontFamily: t.typography.body.fontFamily,
+          fontSize: 16,
+          color: t.colors.textTertiary,
+        }}
+      >
+        {tr(`header.${SEARCH_HINTS[i]}`)}
+      </Animated.Text>
+    </View>
   );
 }
 
@@ -86,7 +149,7 @@ export function HomeHeader(): React.JSX.Element {
   const noop = (): void => undefined;
   const isChats = activeTab === 'Chats';
 
-  // Per-tab action icons (sit left of the ⋮ + profile).
+  // Non-Chats action icons (Chats builds its cluster inline: profile · camera · offline).
   const actions: Action[] =
     activeTab === 'Updates'
       ? [
@@ -127,15 +190,9 @@ export function HomeHeader(): React.JSX.Element {
                 onPress: noop,
               },
             ]
-          : [
-              {
-                key: 'camera',
-                Icon: CameraIcon,
-                label: tr('header.camera'),
-                onPress: noop,
-              },
-            ];
+          : [];
 
+  // Offline toggle lives in the overflow menu on every tab (no header icon for now).
   const menuItems: HeaderMenuItem[] = [
     {
       label: flightMode ? tr('header.goOnline') : tr('header.goOffline'),
@@ -146,9 +203,73 @@ export function HomeHeader(): React.JSX.Element {
     { label: tr('tabs.settings'), onPress: openSettings },
   ];
 
+  const profile = (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel="Profile"
+      onPress={openSettings}
+      hitSlop={6}
+      style={({ pressed }) => ({
+        width: 36,
+        height: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: pressed ? 0.6 : 1,
+      })}
+    >
+      <View
+        style={{
+          width: 32,
+          height: 32,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <SpinningRing
+          size={32}
+          color={RING_GREEN}
+          thickness={2.2}
+          durationMs={7000}
+        />
+        <View
+          style={{
+            width: 25,
+            height: 25,
+            borderRadius: 13,
+            backgroundColor: t.colors.bgSubtle,
+            alignItems: 'center',
+            justifyContent: 'center',
+            overflow: 'hidden',
+          }}
+        >
+          {avatarUri ? (
+            <Image
+              source={{ uri: avatarUri }}
+              style={{ width: 25, height: 25 }}
+              resizeMode="cover"
+            />
+          ) : initial ? (
+            <Text
+              variant="label"
+              style={{ color: t.colors.textPrimary, fontSize: 12 }}
+            >
+              {initial}
+            </Text>
+          ) : (
+            <UserIcon
+              size={15}
+              color={t.colors.textSecondary}
+              strokeWidth={2}
+            />
+          )}
+        </View>
+      </View>
+    </Pressable>
+  );
+
   return (
     <View style={{ paddingTop: insets.top, backgroundColor: t.colors.bgBase }}>
-      {/* Row 1 — title (left) + actions / ⋮ / profile (right) */}
+      {/* Row 1 — title (left) + right cluster */}
       <View
         style={{
           height: 56,
@@ -182,76 +303,31 @@ export function HomeHeader(): React.JSX.Element {
         </View>
 
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          {actions.map(a => (
-            <IconButton
-              key={a.key}
-              icon={a.Icon}
-              onPress={a.onPress}
-              label={a.label}
-            />
-          ))}
+          {isChats ? (
+            <>
+              {profile}
+              <View style={{ width: t.spacing.xs }} />
+              <IconButton
+                icon={CameraIcon}
+                onPress={noop}
+                label={tr('header.camera')}
+              />
+            </>
+          ) : (
+            actions.map(a => (
+              <IconButton
+                key={a.key}
+                icon={a.Icon}
+                onPress={a.onPress}
+                label={a.label}
+              />
+            ))
+          )}
           <IconButton
             icon={MoreIcon}
             onPress={() => setMenuOpen(true)}
             label={tr('header.more')}
           />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Profile"
-            onPress={openSettings}
-            hitSlop={6}
-            style={({ pressed }) => ({
-              width: 42,
-              height: 42,
-              marginLeft: 2,
-              alignItems: 'center',
-              justifyContent: 'center',
-              opacity: pressed ? 0.6 : 1,
-            })}
-          >
-            <View
-              style={{
-                width: 38,
-                height: 38,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <SpinningRing size={38} color={RING_GREEN} thickness={2.5} />
-              <View
-                style={{
-                  width: 30,
-                  height: 30,
-                  borderRadius: 15,
-                  backgroundColor: t.colors.bgSubtle,
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  overflow: 'hidden',
-                }}
-              >
-                {avatarUri ? (
-                  <Image
-                    source={{ uri: avatarUri }}
-                    style={{ width: 30, height: 30 }}
-                    resizeMode="cover"
-                  />
-                ) : initial ? (
-                  <Text
-                    variant="label"
-                    style={{ color: t.colors.textPrimary, fontSize: 14 }}
-                  >
-                    {initial}
-                  </Text>
-                ) : (
-                  <UserIcon
-                    size={17}
-                    color={t.colors.textSecondary}
-                    strokeWidth={2}
-                  />
-                )}
-              </View>
-            </View>
-          </Pressable>
         </View>
       </View>
 
@@ -284,9 +360,7 @@ export function HomeHeader(): React.JSX.Element {
               color={t.colors.textSecondary}
               strokeWidth={2}
             />
-            <Text variant="body" color="secondary">
-              {tr('header.search')}
-            </Text>
+            <SearchHint />
           </Pressable>
         </View>
       ) : (

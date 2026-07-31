@@ -1,0 +1,16 @@
+<resources>
+
+    <!-- Dark-mode theme (system in dark). Mirrors values/styles.xml but the system
+         navigation bar + splash match the app's dark surfaces, so the OS bottom bar
+         blends into the app's dark bottom tab bar. -->
+    <style name="AppTheme" parent="Theme.AppCompat.DayNight.NoActionBar">
+        <item name="android:editTextBackground">@drawable/rn_edit_text_material</item>
+        <!-- System navigation bar = the app's bottom tab surface (dark). -->
+        <item name="android:navigationBarColor">#1A1A1C</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <!-- Dark splash to match app-open in dark mode (API 31+; ignored below). -->
+        <item name="android:windowSplashScreenBackground">#0A0A0B</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher_foreground</item>
+    </style>
+
+</resources>
