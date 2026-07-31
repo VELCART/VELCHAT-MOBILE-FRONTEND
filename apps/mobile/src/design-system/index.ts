@@ -40,5 +40,8 @@ export {
   WifiIcon,
   WifiOffIcon,
   MoreIcon,
+  DownloadIcon,
+  MailIcon,
+  VideoIcon,
 } from './icons';
 export type { IconProps } from './icons';

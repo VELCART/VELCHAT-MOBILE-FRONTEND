@@ -92,7 +92,14 @@
   "header": {
     "search": "Search",
     "newGroup": "New group",
-    "starred": "Starred messages"
+    "starred": "Starred messages",
+    "camera": "Camera",
+    "downloads": "Downloads",
+    "mail": "Mail",
+    "meeting": "New meeting",
+    "more": "More options",
+    "goOffline": "Go offline",
+    "goOnline": "Go online"
   },
   "common": {
     "empty": "Nothing here yet",

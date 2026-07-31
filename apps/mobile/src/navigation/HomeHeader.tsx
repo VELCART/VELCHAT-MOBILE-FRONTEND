@@ -1,8 +1,10 @@
 /**
- * Home header (§F1) — shared across the four tabs, WhatsApp-style. Row 1: the VelChat
- * wordmark (left) + a tight cluster on the right — profile (avatar inside a spinning
- * green "active" ring), a Wi-Fi/offline toggle, and an overflow ⋮ that opens a
- * dropdown menu. Row 2: a full-width search bar. Safe-area aware; themed light/dark.
+ * Home header (§F1) — shared above the four tabs, WhatsApp-style, and it adapts per
+ * tab. Chats shows the VelChat wordmark + a search bar; the other tabs show their name
+ * and their own action icons (Updates: search + downloads · Communities: mail · Calls:
+ * search + meeting). Every tab keeps the ⋮ overflow (which also holds the offline
+ * toggle) and the profile avatar (inside a spinning green "active" ring). Themed,
+ * safe-area aware. The focused tab comes from the TabBar via `useActiveTab`.
  */
 import React, { useState } from 'react';
 import { View, Pressable, Image } from 'react-native';
@@ -14,14 +16,16 @@ import { useTheme } from '../theme';
 import {
   Text,
   SearchIcon,
-  WifiIcon,
-  WifiOffIcon,
+  CameraIcon,
+  DownloadIcon,
+  MailIcon,
+  VideoIcon,
   MoreIcon,
   UserIcon,
   SpinningRing,
   type IconProps,
 } from '../design-system';
-import { useConnectivity } from '../core';
+import { useConnectivity, useActiveTab } from '../core';
 import { useProfileSummary } from '../features/user';
 import { HeaderMenu, type HeaderMenuItem } from './HeaderMenu';
 import type { RootStackParamList } from './types';
@@ -29,40 +33,38 @@ import type { RootStackParamList } from './types';
 // The rotating "active" halo around the avatar — a lively green even in the B&W theme.
 const RING_GREEN = '#25D366';
 
+interface Action {
+  key: string;
+  Icon: React.FC<IconProps>;
+  label: string;
+  onPress: () => void;
+}
+
 function IconButton({
   icon: Icon,
   onPress,
   label,
-  active = false,
 }: {
   icon: React.FC<IconProps>;
   onPress: () => void;
   label: string;
-  active?: boolean;
 }): React.JSX.Element {
   const t = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      accessibilityState={{ selected: active }}
       onPress={onPress}
       hitSlop={6}
       style={({ pressed }) => ({
-        width: 40,
+        width: 38,
         height: 40,
-        borderRadius: 20,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: active ? `${t.colors.brandFrom}1F` : 'transparent',
-        opacity: pressed ? 0.6 : 1,
+        opacity: pressed ? 0.55 : 1,
       })}
     >
-      <Icon
-        size={22}
-        color={active ? t.colors.brandFrom : t.colors.textPrimary}
-        strokeWidth={2}
-      />
+      <Icon size={22} color={t.colors.textPrimary} strokeWidth={2} />
     </Pressable>
   );
 }
@@ -75,53 +77,133 @@ export function HomeHeader(): React.JSX.Element {
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const flightMode = useConnectivity(s => s.flightMode);
   const toggleFlight = useConnectivity(s => s.toggleFlightMode);
+  const activeTab = useActiveTab(s => s.name);
   const { displayName, avatarUri } = useProfileSummary();
   const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
   const [menuOpen, setMenuOpen] = useState(false);
 
   const openSettings = (): void => navigation.navigate('Settings');
+  const noop = (): void => undefined;
+  const isChats = activeTab === 'Chats';
+
+  // Per-tab action icons (sit left of the ⋮ + profile).
+  const actions: Action[] =
+    activeTab === 'Updates'
+      ? [
+          {
+            key: 'search',
+            Icon: SearchIcon,
+            label: tr('header.search'),
+            onPress: noop,
+          },
+          {
+            key: 'download',
+            Icon: DownloadIcon,
+            label: tr('header.downloads'),
+            onPress: noop,
+          },
+        ]
+      : activeTab === 'Communities'
+        ? [
+            {
+              key: 'mail',
+              Icon: MailIcon,
+              label: tr('header.mail'),
+              onPress: noop,
+            },
+          ]
+        : activeTab === 'Calls'
+          ? [
+              {
+                key: 'search',
+                Icon: SearchIcon,
+                label: tr('header.search'),
+                onPress: noop,
+              },
+              {
+                key: 'meeting',
+                Icon: VideoIcon,
+                label: tr('header.meeting'),
+                onPress: noop,
+              },
+            ]
+          : [
+              {
+                key: 'camera',
+                Icon: CameraIcon,
+                label: tr('header.camera'),
+                onPress: noop,
+              },
+            ];
+
   const menuItems: HeaderMenuItem[] = [
-    { label: tr('header.newGroup'), onPress: () => undefined },
-    { label: tr('header.starred'), onPress: () => undefined },
+    {
+      label: flightMode ? tr('header.goOnline') : tr('header.goOffline'),
+      onPress: toggleFlight,
+    },
+    { label: tr('header.newGroup'), onPress: noop },
+    { label: tr('header.starred'), onPress: noop },
     { label: tr('tabs.settings'), onPress: openSettings },
   ];
 
   return (
     <View style={{ paddingTop: insets.top, backgroundColor: t.colors.bgBase }}>
-      {/* Row 1 — wordmark + tight right cluster */}
+      {/* Row 1 — title (left) + actions / ⋮ / profile (right) */}
       <View
         style={{
           height: 56,
           flexDirection: 'row',
           alignItems: 'center',
           paddingLeft: t.spacing.lg,
-          paddingRight: t.spacing.sm,
+          paddingRight: t.spacing.xs,
         }}
       >
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'baseline' }}>
-          <Text
-            variant="title"
-            style={{ fontSize: 23, color: t.colors.textPrimary }}
-          >
-            Vel
-          </Text>
-          <Text
-            variant="title"
-            style={{ fontSize: 23, color: t.colors.brandFrom }}
-          >
-            Chat
-          </Text>
+        <View style={{ flex: 1 }}>
+          {isChats ? (
+            <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+              <Text
+                variant="title"
+                style={{ fontSize: 23, color: t.colors.textPrimary }}
+              >
+                Vel
+              </Text>
+              <Text
+                variant="title"
+                style={{ fontSize: 23, color: t.colors.brandFrom }}
+              >
+                Chat
+              </Text>
+            </View>
+          ) : (
+            <Text variant="title" numberOfLines={1} style={{ fontSize: 22 }}>
+              {tr(`tabs.${activeTab.toLowerCase()}`)}
+            </Text>
+          )}
         </View>
 
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {actions.map(a => (
+            <IconButton
+              key={a.key}
+              icon={a.Icon}
+              onPress={a.onPress}
+              label={a.label}
+            />
+          ))}
+          <IconButton
+            icon={MoreIcon}
+            onPress={() => setMenuOpen(true)}
+            label={tr('header.more')}
+          />
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="Profile"
             onPress={openSettings}
             hitSlop={6}
             style={({ pressed }) => ({
-              width: 40,
-              height: 40,
+              width: 42,
+              height: 42,
+              marginLeft: 2,
               alignItems: 'center',
               justifyContent: 'center',
               opacity: pressed ? 0.6 : 1,
@@ -170,54 +252,46 @@ export function HomeHeader(): React.JSX.Element {
               </View>
             </View>
           </Pressable>
-
-          <IconButton
-            icon={flightMode ? WifiOffIcon : WifiIcon}
-            onPress={toggleFlight}
-            active={flightMode}
-            label={flightMode ? 'Go online' : 'Go offline'}
-          />
-          <IconButton
-            icon={MoreIcon}
-            onPress={() => setMenuOpen(true)}
-            label="More options"
-          />
         </View>
       </View>
 
-      {/* Row 2 — search bar (WhatsApp-style) */}
-      <View
-        style={{
-          paddingHorizontal: t.spacing.lg,
-          paddingTop: t.spacing.xxs,
-          paddingBottom: t.spacing.sm,
-        }}
-      >
-        <Pressable
-          accessibilityRole="search"
-          accessibilityLabel={tr('header.search')}
-          onPress={() => undefined}
-          style={({ pressed }) => ({
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: t.spacing.sm,
-            height: 42,
-            borderRadius: t.radius.pill,
-            backgroundColor: t.colors.bgSubtle,
-            paddingHorizontal: t.spacing.md,
-            opacity: pressed ? 0.7 : 1,
-          })}
+      {/* Row 2 — a full-width search bar (Chats only, WhatsApp-style) */}
+      {isChats ? (
+        <View
+          style={{
+            paddingHorizontal: t.spacing.lg,
+            paddingTop: t.spacing.xxs,
+            paddingBottom: t.spacing.sm,
+          }}
         >
-          <SearchIcon
-            size={19}
-            color={t.colors.textSecondary}
-            strokeWidth={2}
-          />
-          <Text variant="body" color="secondary">
-            {tr('header.search')}
-          </Text>
-        </Pressable>
-      </View>
+          <Pressable
+            accessibilityRole="search"
+            accessibilityLabel={tr('header.search')}
+            onPress={noop}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: t.spacing.sm,
+              height: 42,
+              borderRadius: t.radius.pill,
+              backgroundColor: t.colors.bgSubtle,
+              paddingHorizontal: t.spacing.md,
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <SearchIcon
+              size={19}
+              color={t.colors.textSecondary}
+              strokeWidth={2}
+            />
+            <Text variant="body" color="secondary">
+              {tr('header.search')}
+            </Text>
+          </Pressable>
+        </View>
+      ) : (
+        <View style={{ height: t.spacing.xs }} />
+      )}
 
       <HeaderMenu
         visible={menuOpen}

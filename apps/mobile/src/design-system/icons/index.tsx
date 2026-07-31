@@ -278,6 +278,58 @@ export function PlaneIcon({
   );
 }
 
+/** Download tray with a down arrow — Updates. */
+export function DownloadIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"
+        {...stroke(color, strokeWidth)}
+      />
+      <Path d="M7 10l5 5 5-5" {...stroke(color, strokeWidth)} />
+      <Path d="M12 15V3" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Envelope — mail. */
+export function MailIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"
+        {...stroke(color, strokeWidth)}
+      />
+      <Path d="M22 6l-10 7L2 6" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Video camera — meetings / calls. */
+export function VideoIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M23 7l-7 5 7 5V7z" {...stroke(color, strokeWidth)} />
+      <Path
+        d="M3 5h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"
+        {...stroke(color, strokeWidth)}
+      />
+    </Svg>
+  );
+}
+
 /** Wi-Fi — connected / online. */
 export function WifiIcon({
   size = 24,

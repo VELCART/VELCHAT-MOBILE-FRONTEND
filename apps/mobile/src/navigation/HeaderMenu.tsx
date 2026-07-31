@@ -65,7 +65,9 @@ export function HeaderMenu({
             ],
           }}
         >
-          <Card style={{ padding: t.spacing.xxs, minWidth: 210 }}>
+          <Card
+            style={{ padding: t.spacing.xxs, minWidth: 188, maxWidth: 260 }}
+          >
             {items.map(item => (
               <Pressable
                 key={item.label}
@@ -77,14 +79,18 @@ export function HeaderMenu({
                 }}
                 style={({ pressed }) => ({
                   paddingHorizontal: t.spacing.md,
-                  paddingVertical: t.spacing.sm + 2,
+                  paddingVertical: t.spacing.sm,
                   borderRadius: t.radius.sm,
                   backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
                 })}
               >
                 <Text
                   variant="body"
-                  style={item.danger ? { color: t.colors.danger } : undefined}
+                  numberOfLines={1}
+                  style={{
+                    fontSize: 15,
+                    color: item.danger ? t.colors.danger : t.colors.textPrimary,
+                  }}
                 >
                   {item.label}
                 </Text>

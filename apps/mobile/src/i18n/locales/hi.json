@@ -92,7 +92,14 @@
   "header": {
     "search": "खोजें",
     "newGroup": "नया ग्रुप",
-    "starred": "स्टार किए मैसेज"
+    "starred": "स्टार किए मैसेज",
+    "camera": "कैमरा",
+    "downloads": "डाउनलोड",
+    "mail": "मेल",
+    "meeting": "नई मीटिंग",
+    "more": "और विकल्प",
+    "goOffline": "ऑफ़लाइन जाएं",
+    "goOnline": "ऑनलाइन जाएं"
   },
   "common": {
     "empty": "यहाँ अभी कुछ नहीं है",
