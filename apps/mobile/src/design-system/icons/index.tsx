@@ -248,6 +248,40 @@ export function LogOutIcon({
   );
 }
 
+/** Scan frame — QR / code scanner. */
+export function ScanIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M4 7V5a1 1 0 0 1 1-1h2" {...stroke(color, strokeWidth)} />
+      <Path d="M17 4h2a1 1 0 0 1 1 1v2" {...stroke(color, strokeWidth)} />
+      <Path d="M20 17v2a1 1 0 0 1-1 1h-2" {...stroke(color, strokeWidth)} />
+      <Path d="M7 20H5a1 1 0 0 1-1-1v-2" {...stroke(color, strokeWidth)} />
+      <Path d="M4 12h16" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Pencil — edit. */
+export function EditIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M12 20h9" {...stroke(color, strokeWidth)} />
+      <Path
+        d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"
+        {...stroke(color, strokeWidth)}
+      />
+    </Svg>
+  );
+}
+
 /** Magnifier — search. */
 export function SearchIcon({
   size = 24,

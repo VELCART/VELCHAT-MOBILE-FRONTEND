@@ -36,6 +36,8 @@ export {
   ChevronRightIcon,
   StorageIcon,
   SearchIcon,
+  ScanIcon,
+  EditIcon,
   PlaneIcon,
   WifiIcon,
   WifiOffIcon,

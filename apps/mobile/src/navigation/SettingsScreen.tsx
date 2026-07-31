@@ -23,12 +23,44 @@ import {
   InfoIcon,
   LogOutIcon,
   ChevronRightIcon,
+  SearchIcon,
+  ScanIcon,
+  EditIcon,
   type IconProps,
 } from '../design-system';
 import { appEnv } from '../core';
 import { useAuthStore } from '../features/auth';
 import { useProfileSummary } from '../features/user';
 import type { RootStackParamList } from './types';
+
+function TopIcon({
+  icon: Icon,
+  label,
+  onPress,
+}: {
+  icon: React.FC<IconProps>;
+  label: string;
+  onPress: () => void;
+}): React.JSX.Element {
+  const t = useTheme();
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      hitSlop={6}
+      style={({ pressed }) => ({
+        width: 40,
+        height: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+        opacity: pressed ? 0.55 : 1,
+      })}
+    >
+      <Icon size={22} color={t.colors.textPrimary} strokeWidth={2} />
+    </Pressable>
+  );
+}
 
 function SettingRow({
   icon: Icon,
@@ -161,6 +193,18 @@ export function SettingsScreen(): React.JSX.Element {
         <Text variant="title" style={{ fontSize: 20 }}>
           {tr('tabs.settings')}
         </Text>
+
+        <View style={{ flex: 1 }} />
+
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <TopIcon
+            icon={SearchIcon}
+            label={tr('header.search')}
+            onPress={noop}
+          />
+          <TopIcon icon={ScanIcon} label={tr('settings.scan')} onPress={noop} />
+          <TopIcon icon={EditIcon} label={tr('settings.edit')} onPress={noop} />
+        </View>
       </View>
 
       <ScrollView

@@ -76,7 +76,9 @@
     "privacySub": "Block contacts, disappearing messages",
     "notificationsSub": "Message, group & call tones",
     "storageSub": "Network usage, auto-download",
-    "helpSub": "Help centre, contact us, terms"
+    "helpSub": "Help centre, contact us, terms",
+    "scan": "Scan",
+    "edit": "Edit"
   },
   "profile": {
     "nameTitle": "What's your name?",
