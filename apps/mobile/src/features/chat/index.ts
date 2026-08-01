@@ -1,7 +1,8 @@
 /**
- * features/chat — feature slice. Shape: ui/ model/ api/ hooks/ db/. Only this index is public.
+ * features/chat — conversation list + (MP2) chat runtime. Shape: ui/ model/ api/ hooks/ db/.
  *
  * Public API barrel. Import this layer only through its index (`eslint-plugin-boundaries`).
  * Dependency rule (§M3): UI → Feature → Domain → Infra. Never the reverse.
  */
-export {};
+export { ChatsList } from './ui/ChatsList';
+export { useConversations } from './hooks/useConversations';

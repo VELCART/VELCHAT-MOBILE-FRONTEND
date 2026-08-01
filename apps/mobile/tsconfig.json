@@ -3,6 +3,8 @@
   "compilerOptions": {
     "types": ["jest"],
     "strict": true,
+    "experimentalDecorators": true,
+    "useDefineForClassFields": false,
     "noImplicitAny": true,
     "strictNullChecks": true,
     "noUncheckedIndexedAccess": true,

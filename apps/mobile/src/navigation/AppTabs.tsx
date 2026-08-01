@@ -15,6 +15,7 @@ import { useTranslation } from '../i18n';
 import { useTheme } from '../theme';
 import { Placeholder } from '../ui';
 import { ProfileSetupSheet, useProfileGate } from '../features/user';
+import { ChatsList } from '../features/chat';
 import { TabBar } from './TabBar';
 import { HomeHeader } from './HomeHeader';
 import { OfflineBanner } from './OfflineBanner';
@@ -23,8 +24,7 @@ import type { AppTabsParamList } from './types';
 const Tab = createMaterialTopTabNavigator<AppTabsParamList>();
 
 function ChatsScreen(): React.JSX.Element {
-  const { t } = useTranslation();
-  return <Placeholder title={t('tabs.chats')} subtitle={t('common.empty')} />;
+  return <ChatsList />;
 }
 function UpdatesScreen(): React.JSX.Element {
   const { t } = useTranslation();

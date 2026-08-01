@@ -23,6 +23,13 @@ export {
 export type { AppErrorKind, SessionTokens } from './network';
 export { storage, kv, KVKeys, useKVString } from './kv';
 export {
+  database,
+  Conversation,
+  Message,
+  observeConversations,
+  seedDevConversations,
+} from './db';
+export {
   ensureDeviceKey,
   signChallenge,
   hasDeviceKey,
