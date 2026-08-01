@@ -29,6 +29,7 @@ import {
   CallIcon,
   MailIcon,
   ClockIcon,
+  CalendarIcon,
   CameraIcon,
   EditIcon,
   ChevronRightIcon,
@@ -40,6 +41,7 @@ import {
   useSaveProfile,
   useAvatarUpload,
 } from '../features/user';
+import { useAccountInfo } from '../features/auth';
 import type { RootStackParamList } from './types';
 
 const AVATAR = 120;
@@ -62,6 +64,18 @@ function formatLoginTime(iso: string | null, todayLabel: string): string {
     year: 'numeric',
   });
   return `${date}, ${time}`;
+}
+
+/** Date-only formatter for "member since" — e.g. "30 Jul 2026". */
+function formatDate(iso: string | null): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
 }
 
 /**
@@ -249,6 +263,8 @@ export function ProfileScreen(): React.JSX.Element {
   const { save } = useSaveProfile();
   const avatar = useAvatarUpload();
   const { remoteAvatarUrl } = useProfileDetails();
+  // Pull server-truth phone/email/member-since/last-active into the reactive mirror.
+  useAccountInfo();
 
   const name = summary.displayName ?? '';
   const about = summary.about ?? '';
@@ -466,6 +482,13 @@ export function ProfileScreen(): React.JSX.Element {
             icon={ClockIcon}
             label={tr('profile.lastLogin')}
             value={formatLoginTime(summary.loginAt, tr('profile.today'))}
+            placeholder="—"
+          />
+          <Divider style={{ marginHorizontal: t.spacing.xl }} />
+          <InfoRow
+            icon={CalendarIcon}
+            label={tr('profile.memberSince')}
+            value={formatDate(summary.memberSince)}
             placeholder="—"
           />
           <Divider style={{ marginHorizontal: t.spacing.xl }} />

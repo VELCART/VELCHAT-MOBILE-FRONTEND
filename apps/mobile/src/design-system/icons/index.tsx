@@ -244,6 +244,23 @@ export function ClockIcon({
   );
 }
 
+/** Calendar — dates (member since). */
+export function CalendarIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M5 4h14a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"
+        {...stroke(color, strokeWidth)}
+      />
+      <Path d="M4 9h16M8 3v4M16 3v4" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
 /** Log out. */
 export function LogOutIcon({
   size = 24,

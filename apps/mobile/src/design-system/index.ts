@@ -35,6 +35,7 @@ export {
   BellIcon,
   InfoIcon,
   ClockIcon,
+  CalendarIcon,
   LogOutIcon,
   ChevronRightIcon,
   StorageIcon,

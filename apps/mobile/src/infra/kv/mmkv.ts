@@ -32,6 +32,8 @@ export const KVKeys = {
   phone: 'auth.phone',
   // ISO timestamp of the last successful sign-in (shown on the Profile page)
   loginAt: 'auth.loginAt',
+  // ISO timestamp of account creation (server truth) → "member since" on the Profile page
+  memberSince: 'auth.memberSince',
   // profile onboarding — set once the directory profile has a display name
   profileComplete: 'user.profileComplete',
   // email captured during profile setup (server-side verify is a backend follow-up)

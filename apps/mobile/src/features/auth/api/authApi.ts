@@ -22,6 +22,23 @@ export interface Challenge {
   expiresIn: number;
 }
 
+/** Read-only account snapshot for the profile header (§B2.1). Dates are ISO strings. */
+export interface AccountInfo {
+  accountId: string;
+  status: string;
+  tier: string;
+  createdAt: string;
+  lastActiveAt: string;
+  phone: string | null;
+  email: string | null;
+}
+
+/** Fetch the signed-in account's identity + verified phone/email + created/last-active. */
+export async function getAccountInfo(accountId: string): Promise<AccountInfo> {
+  const res = await api.get('/auth/account', { params: { accountId } });
+  return res.data as AccountInfo;
+}
+
 /** Start a Reverse-OTP session; server stashes device material keyed by sessionId. */
 export async function register(
   phone: string,
