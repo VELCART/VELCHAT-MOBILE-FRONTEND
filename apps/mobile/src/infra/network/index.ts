@@ -5,7 +5,7 @@
  * Dependency rule (§M3): UI → Feature → Domain → Infra. Never the reverse.
  */
 export { queryClient } from './queryClient';
-export { api, refreshAccessToken } from './client';
+export { api, refreshAccessToken, warmBackend } from './client';
 export { AppError, isAppError, normalizeError } from './errors';
 export type { AppErrorKind } from './errors';
 export {

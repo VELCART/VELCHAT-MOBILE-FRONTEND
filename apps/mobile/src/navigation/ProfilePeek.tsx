@@ -19,7 +19,7 @@ import { useTranslation } from '../i18n';
 import { useTheme } from '../theme';
 import {
   Text,
-  GlassBubble,
+  FrostedCircle,
   UserIcon,
   CameraIcon,
   type IconProps,
@@ -53,25 +53,10 @@ function PeekAction({
         transform: [{ scale: pressed ? 0.93 : 1 }],
       })}
     >
-      <View
-        style={{
-          width: 64,
-          height: 64,
-          borderRadius: 32,
-          alignItems: 'center',
-          justifyContent: 'center',
-          // Soft outer glow so each bubble floats like a water droplet.
-          shadowColor: '#FFFFFF',
-          shadowOpacity: 0.3,
-          shadowRadius: 10,
-          shadowOffset: { width: 0, height: 3 },
-          elevation: 6,
-        }}
-      >
-        <GlassBubble size={64} />
-        <Icon size={25} color="#FFFFFF" strokeWidth={2} />
-      </View>
-      <Text variant="caption" style={{ color: 'rgba(255,255,255,0.92)' }}>
+      <FrostedCircle size={64}>
+        <Icon size={25} color="#000" strokeWidth={2} />
+      </FrostedCircle>
+      <Text variant="caption" style={{ color: 'rgb(255, 255, 255)' }}>
         {label}
       </Text>
     </Pressable>
@@ -183,6 +168,9 @@ export function ProfilePeek({
                 alignItems: 'center',
                 justifyContent: 'center',
                 overflow: 'hidden',
+                // Thin, theme-aware border around the photo.
+                borderWidth: 1,
+                borderColor: t.colors.hairline,
               }}
             >
               {avatarUri ? (

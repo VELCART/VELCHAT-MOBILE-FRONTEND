@@ -61,6 +61,9 @@ jest.mock('react-native-image-crop-picker', () => ({
   },
 }));
 
+// Native BlurView is absent under Jest — stand it in with a plain host component.
+jest.mock('@react-native-community/blur', () => ({ BlurView: 'BlurView' }));
+
 jest.mock('@react-native-community/netinfo', () => ({
   __esModule: true,
   default: {
