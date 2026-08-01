@@ -11,6 +11,7 @@ import {
   Animated,
   AccessibilityInfo,
   StyleSheet,
+  Platform,
 } from 'react-native';
 import type { MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -82,10 +83,20 @@ function TabButton({
       onPress={onPress}
       onLongPress={onLongPress}
       hitSlop={6}
+      // Native, borderless ripple on Android (premium platform feel centred on the
+      // icon); iOS keeps the subtle press-dim since it has no ripple primitive.
+      android_ripple={{
+        color: `${t.colors.brandFrom}22`,
+        borderless: true,
+        radius: 34,
+      }}
       style={({ pressed }) => ({
         flex: 1,
+        // A comfortable, consistent touch target (≥48dp) on every density.
+        minHeight: 48,
         alignItems: 'center',
-        opacity: pressed ? 0.6 : 1,
+        justifyContent: 'center',
+        opacity: Platform.OS === 'ios' && pressed ? 0.6 : 1,
       })}
     >
       <View
@@ -190,13 +201,21 @@ export function TabBar({
         borderTopWidth: StyleSheet.hairlineWidth,
         borderTopColor: t.colors.hairline,
         paddingTop: 8,
-        paddingBottom: Math.max(insets.bottom, 10),
-        // Soft lift so the bar reads as a distinct surface above content.
+        // Sit above the system nav bar on EVERY Android nav mode (gesture bar OR
+        // 3-button) and the iOS home indicator — insets.bottom is the real height when
+        // edge-to-edge; fall back to a comfortable min when it's 0 (older 3-button).
+        paddingBottom: Math.max(insets.bottom, 12),
+        // Respect side notches/cutouts in landscape so tabs never hide under them.
+        paddingLeft: insets.left,
+        paddingRight: insets.right,
+        // Soft lift so the bar reads as a distinct surface above content. iOS draws the
+        // directional top shadow; Android uses elevation (its ambient shadow reads at
+        // the top edge of a bottom-docked bar) — kept modest for a flat, premium look.
         shadowColor: '#000000',
-        shadowOpacity: t.scheme === 'dark' ? 0.3 : 0.05,
+        shadowOpacity: t.scheme === 'dark' ? 0.3 : 0.06,
         shadowRadius: 12,
         shadowOffset: { width: 0, height: -3 },
-        elevation: 12,
+        elevation: 8,
       }}
     >
       {state.routes.map((route, index) => {

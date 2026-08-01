@@ -114,7 +114,10 @@
     "memberSince": "सदस्य बने",
     "today": "आज",
     "viewProfile": "प्रोफ़ाइल देखें",
-    "changePhoto": "फ़ोटो बदलें"
+    "changePhoto": "फ़ोटो बदलें",
+    "removePhoto": "फ़ोटो हटाएं",
+    "removePhotoTitle": "फ़ोटो हटाएं?",
+    "removePhotoMessage": "आपकी प्रोफ़ाइल फ़ोटो सबके लिए हट जाएगी।"
   },
   "header": {
     "search": "खोजें",
@@ -135,6 +138,8 @@
   "common": {
     "empty": "यहाँ अभी कुछ नहीं है",
     "dismiss": "बंद करें",
+    "cancel": "रद्द करें",
+    "remove": "हटाएं",
     "theme": "थीम: {{mode}} · टॉगल करने के लिए टैप करें",
     "offline": "आप ऑफ़लाइन हैं — नेटवर्क का इंतज़ार",
     "flightMode": "फ़्लाइट मोड ऑन — आप ऑफ़लाइन हैं"

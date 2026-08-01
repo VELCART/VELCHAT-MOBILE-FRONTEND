@@ -142,7 +142,7 @@ export function HomeHeader(): React.JSX.Element {
   const flightMode = useConnectivity(s => s.flightMode);
   const toggleFlight = useConnectivity(s => s.toggleFlightMode);
   const activeTab = useActiveTab(s => s.name);
-  const { displayName, avatarUri } = useProfileSummary();
+  const { displayName, avatar } = useProfileSummary();
   const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
   const [menuOpen, setMenuOpen] = useState(false);
   const [peekOpen, setPeekOpen] = useState(false);
@@ -247,9 +247,9 @@ export function HomeHeader(): React.JSX.Element {
             overflow: 'hidden',
           }}
         >
-          {avatarUri ? (
+          {avatar ? (
             <Image
-              source={{ uri: avatarUri }}
+              source={{ uri: avatar }}
               style={{ width: 25, height: 25 }}
               resizeMode="cover"
             />

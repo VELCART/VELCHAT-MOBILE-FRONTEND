@@ -12,6 +12,7 @@ import {
   Image,
   Animated,
   StyleSheet,
+  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -22,6 +23,7 @@ import {
   FrostedCircle,
   UserIcon,
   CameraIcon,
+  TrashIcon,
   type IconProps,
 } from '../design-system';
 import { useProfileSummary, useAvatarPicker } from '../features/user';
@@ -74,8 +76,8 @@ export function ProfilePeek({
   const { t: tr } = useTranslation();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { displayName, avatarUri } = useProfileSummary();
-  const { pick } = useAvatarPicker();
+  const { displayName, avatar } = useProfileSummary();
+  const { pick, remove } = useAvatarPicker();
   const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
 
   const [rendered, setRendered] = useState(visible);
@@ -118,6 +120,25 @@ export function ProfilePeek({
   const changePhoto = (): void => {
     onClose();
     void pick();
+  };
+  // Removing the photo is destructive → confirm first (WhatsApp-style), then clear it
+  // locally + on the server. The reactive mirror makes it disappear everywhere at once.
+  const removePhoto = (): void => {
+    Alert.alert(
+      tr('profile.removePhotoTitle'),
+      tr('profile.removePhotoMessage'),
+      [
+        { text: tr('common.cancel'), style: 'cancel' },
+        {
+          text: tr('common.remove'),
+          style: 'destructive',
+          onPress: () => {
+            onClose();
+            void remove();
+          },
+        },
+      ],
+    );
   };
 
   return (
@@ -173,9 +194,9 @@ export function ProfilePeek({
                 borderColor: t.colors.hairline,
               }}
             >
-              {avatarUri ? (
+              {avatar ? (
                 <Image
-                  source={{ uri: avatarUri }}
+                  source={{ uri: avatar }}
                   style={{ width: SIZE, height: SIZE }}
                   resizeMode="cover"
                 />
@@ -232,6 +253,13 @@ export function ProfilePeek({
                 label={tr('profile.changePhoto')}
                 onPress={changePhoto}
               />
+              {avatar ? (
+                <PeekAction
+                  icon={TrashIcon}
+                  label={tr('profile.removePhoto')}
+                  onPress={removePhoto}
+                />
+              ) : null}
             </View>
           </Animated.View>
         </View>

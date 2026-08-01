@@ -33,6 +33,7 @@ import {
 import {
   useSaveProfile,
   useAvatarUpload,
+  useProfileSummary,
   hapticTick,
 } from '../hooks/useProfile';
 import type { Profile } from '../api/userApi';
@@ -54,12 +55,14 @@ export function ProfileSetupSheet({
   const { width: screenW } = useWindowDimensions();
   const { save, saving, error } = useSaveProfile();
   const avatar = useAvatarUpload();
+  const summary = useProfileSummary();
 
   const [step, setStep] = useState(0);
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [about, setAbout] = useState('');
   const [focused, setFocused] = useState<string | null>(null);
+  const seeded = useRef(false);
 
   const stepW = screenW - t.spacing.xl * 2;
   const x = useRef(new Animated.Value(0)).current;
@@ -79,6 +82,25 @@ export function ProfileSetupSheet({
       active = false;
     };
   }, []);
+
+  // Seed the form from what we already know the moment it opens. A returning user who
+  // has a name but no email (e.g. the email mirror was lost on a reinstall) lands on
+  // the email step with the name/about pre-filled — they only add the missing email.
+  useEffect(() => {
+    if (!visible) {
+      seeded.current = false;
+      return;
+    }
+    if (seeded.current) return;
+    seeded.current = true;
+    const existingName = summary.displayName?.trim() ?? '';
+    const existingAbout = summary.about?.trim() ?? '';
+    const existingEmail = summary.email?.trim() ?? '';
+    if (existingName) setName(existingName);
+    if (existingAbout) setAbout(existingAbout);
+    if (existingEmail) setEmail(existingEmail);
+    if (existingName && !existingEmail) setStep(1);
+  }, [visible, summary.displayName, summary.about, summary.email]);
 
   // Slide to the active step (also re-syncs if the width changes, e.g. rotation).
   useEffect(() => {
@@ -153,6 +175,9 @@ export function ProfileSetupSheet({
   ).current;
 
   const initial = name.trim().charAt(0).toUpperCase();
+  // Show the just-picked photo, else the user's EXISTING avatar (so a returning user
+  // sees their current photo already in place — they only change it if they want to).
+  const shownAvatar = avatar.localUri ?? summary.avatar;
   const inputStyle = {
     fontFamily: t.typography.body.fontFamily,
     fontSize: 18,
@@ -227,9 +252,9 @@ export function ProfileSetupSheet({
                 overflow: 'hidden',
               }}
             >
-              {avatar.localUri ? (
+              {shownAvatar ? (
                 <Image
-                  source={{ uri: avatar.localUri }}
+                  source={{ uri: shownAvatar }}
                   style={{ width: 76, height: 76 }}
                   resizeMode="cover"
                 />

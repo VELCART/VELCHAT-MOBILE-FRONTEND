@@ -14,7 +14,12 @@ import {
 import { useTranslation } from '../i18n';
 import { useTheme } from '../theme';
 import { Placeholder } from '../ui';
-import { ProfileSetupSheet, useProfileGate } from '../features/user';
+import {
+  ProfileSetupSheet,
+  useProfileGate,
+  useProfileDetails,
+} from '../features/user';
+import { useAccountInfo } from '../features/auth';
 import { ChatsList } from '../features/chat';
 import { TabBar } from './TabBar';
 import { HomeHeader } from './HomeHeader';
@@ -54,6 +59,11 @@ export function AppTabs(): React.JSX.Element {
   // Dismissing hides it for this session; it re-checks on the next launch.
   const { needsSetup, markComplete } = useProfileGate();
   const [dismissed, setDismissed] = useState(false);
+  // Resolve + cache the profile (avatar URL) and account info the moment home mounts —
+  // so the header/Settings/Profile show the photo + details instantly after login,
+  // instead of only when the Profile page is opened. Reactive mirror → shows everywhere.
+  useProfileDetails();
+  useAccountInfo();
 
   return (
     <View style={{ flex: 1, backgroundColor: t.colors.bgBase }}>
@@ -64,9 +74,13 @@ export function AppTabs(): React.JSX.Element {
         tabBar={renderTabBar}
         // animationEnabled:false → a tab TAP jumps straight to that page (no visible
         // slide through the tabs in between); swipe still pages via the native pager.
+        // lazy:false pre-mounts all four tabs so a left/right swipe glides straight
+        // onto a ready page instead of flashing a blank/spinner mid-gesture (the tabs
+        // are cheap — three are placeholders — so it's worth it even on the 3 GB ref
+        // device). A slightly longer velocityThreshold makes the paging feel less twitchy.
         screenOptions={{
           swipeEnabled: true,
-          lazy: true,
+          lazy: false,
           animationEnabled: false,
         }}
       >

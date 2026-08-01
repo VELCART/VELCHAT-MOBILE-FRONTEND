@@ -268,7 +268,7 @@ export function ProfileScreen(): React.JSX.Element {
 
   const name = summary.displayName ?? '';
   const about = summary.about ?? '';
-  const avatarUri = avatar.localUri ?? summary.avatarUri ?? remoteAvatarUrl;
+  const avatarUri = avatar.localUri ?? summary.avatar ?? remoteAvatarUrl;
   const initial = name.trim().charAt(0).toUpperCase();
 
   // A freshly-uploaded photo attaches to the directory profile once its id lands.

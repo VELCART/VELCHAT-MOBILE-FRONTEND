@@ -49,5 +49,6 @@ export {
   DownloadIcon,
   MailIcon,
   VideoIcon,
+  TrashIcon,
 } from './icons';
 export type { IconProps } from './icons';

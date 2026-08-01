@@ -52,26 +52,29 @@ export function useProfileGate(): {
   useEffect(() => {
     const accountId = getAccountId();
     if (!accountId) return undefined;
-    if (kv.getBoolean(KVKeys.profileComplete) === true) return undefined;
-    // An email already captured → the profile is set up; never prompt again.
+    // Email is the completion signal — it's required and (until a backend email-attach
+    // endpoint exists) lives only in the local mirror, so a reinstall can lose it. If
+    // we still have it, the profile is set up; never prompt.
     if (kv.getString(KVKeys.email)) {
       kv.set(KVKeys.profileComplete, true);
       return undefined;
     }
 
+    // No email yet → we WILL prompt (even if a name already exists). Load the backend
+    // profile first so the sheet can pre-fill the existing name/about and the user only
+    // needs to add the missing email — coming up from the bottom, WhatsApp-style.
     let active = true;
     const check = async (): Promise<void> => {
       try {
         const profile = await getProfile(accountId);
         if (profile?.displayName && profile.displayName.trim() !== '') {
-          kv.set(KVKeys.profileComplete, true); // already has a name → never ask again
-        } else if (active) {
-          setNeedsSetup(true);
+          kv.set(KVKeys.displayName, profile.displayName);
         }
+        if (profile?.about) kv.set(KVKeys.about, profile.about);
       } catch {
-        // No profile yet (404) or a transient error → prompt to set it up.
-        if (active) setNeedsSetup(true);
+        // No profile yet (404) or a transient error → still prompt to set it up.
       }
+      if (active) setNeedsSetup(true);
     };
     void check();
     return () => {
@@ -98,15 +101,20 @@ export function useProfileSummary(): {
   phone: string | null;
   about: string | null;
   avatarUri: string | null;
+  /** Effective avatar to render: the locally-picked photo, else the cached server URL. */
+  avatar: string | null;
   loginAt: string | null;
   memberSince: string | null;
 } {
+  const avatarUri = useKVString(KVKeys.avatarUri) ?? null;
+  const avatarUrl = useKVString(KVKeys.avatarUrl) ?? null;
   return {
     displayName: useKVString(KVKeys.displayName) ?? null,
     email: useKVString(KVKeys.email) ?? null,
     phone: useKVString(KVKeys.phone) ?? null,
     about: useKVString(KVKeys.about) ?? null,
-    avatarUri: useKVString(KVKeys.avatarUri) ?? null,
+    avatarUri,
+    avatar: avatarUri ?? avatarUrl,
     loginAt: useKVString(KVKeys.loginAt) ?? null,
     memberSince: useKVString(KVKeys.memberSince) ?? null,
   };
@@ -145,9 +153,16 @@ export function useProfileDetails(): {
         try {
           const { url } = await getMediaUrl(profile.avatarMediaId);
           setRemoteAvatarUrl(url);
+          // Cache it (reactive) → the header/Settings/Profile show the photo instantly,
+          // here and on the next launch, without waiting for this round-trip again.
+          kv.set(KVKeys.avatarUrl, url);
         } catch {
           // A missing signed URL just means we keep whatever local copy we have.
         }
+      } else {
+        // No server avatar (never set / removed) → drop any stale cached URL.
+        setRemoteAvatarUrl(null);
+        kv.delete(KVKeys.avatarUrl);
       }
     } catch (e) {
       setError(
@@ -294,6 +309,7 @@ export function useAvatarUpload(): {
  */
 export function useAvatarPicker(): {
   pick: () => Promise<void>;
+  remove: () => Promise<void>;
   uploading: boolean;
   localUri: string | null;
   error: string | null;
@@ -303,5 +319,16 @@ export function useAvatarPicker(): {
   useEffect(() => {
     if (mediaId) void save({ avatarMediaId: mediaId });
   }, [mediaId, save]);
-  return { pick, uploading, localUri, error };
+
+  // Remove the profile photo. Clear the local mirror first (reactive → the photo
+  // disappears from the header/Settings/Profile at once), then clear it on the server
+  // by sending an empty mediaId — the user-service COALESCE stores '' and getProfile
+  // returns it falsy, so it stays cleared across launches and other devices.
+  const remove = useCallback(async (): Promise<void> => {
+    kv.delete(KVKeys.avatarUri);
+    kv.delete(KVKeys.avatarUrl);
+    await save({ avatarMediaId: '' });
+  }, [save]);
+
+  return { pick, remove, uploading, localUri, error };
 }

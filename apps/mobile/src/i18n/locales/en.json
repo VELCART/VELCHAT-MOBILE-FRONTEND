@@ -114,7 +114,10 @@
     "memberSince": "Member since",
     "today": "Today",
     "viewProfile": "View profile",
-    "changePhoto": "Change photo"
+    "changePhoto": "Change photo",
+    "removePhoto": "Remove photo",
+    "removePhotoTitle": "Remove photo?",
+    "removePhotoMessage": "Your profile photo will be removed for everyone."
   },
   "header": {
     "search": "Search",
@@ -135,6 +138,8 @@
   "common": {
     "empty": "Nothing here yet",
     "dismiss": "Dismiss",
+    "cancel": "Cancel",
+    "remove": "Remove",
     "theme": "Theme: {{mode}} · tap to toggle",
     "offline": "You're offline — waiting for network",
     "flightMode": "Flight mode on — you're offline"

@@ -76,7 +76,10 @@
     "memberSince": "عضو منذ",
     "today": "اليوم",
     "viewProfile": "عرض الملف الشخصي",
-    "changePhoto": "تغيير الصورة"
+    "changePhoto": "تغيير الصورة",
+    "removePhoto": "إزالة الصورة",
+    "removePhotoTitle": "إزالة الصورة؟",
+    "removePhotoMessage": "ستتم إزالة صورة ملفك الشخصي للجميع."
   },
   "settings": {
     "language": "اللغة",
@@ -119,6 +122,8 @@
   "common": {
     "empty": "لا يوجد شيء هنا بعد",
     "dismiss": "إغلاق",
+    "cancel": "إلغاء",
+    "remove": "إزالة",
     "theme": "المظهر: {{mode}} · اضغط للتبديل",
     "offline": "أنت غير متصل — بانتظار الشبكة",
     "flightMode": "وضع الطيران مفعّل — أنت غير متصل"

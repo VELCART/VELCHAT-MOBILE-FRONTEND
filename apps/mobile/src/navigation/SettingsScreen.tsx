@@ -134,7 +134,7 @@ export function SettingsScreen(): React.JSX.Element {
   const { t: tr } = useTranslation();
   const { mode, setMode } = useThemeMode();
   const { language, setLanguage, supported, names } = useLanguage();
-  const { displayName, email, phone, avatarUri } = useProfileSummary();
+  const { displayName, email, phone, avatar } = useProfileSummary();
   const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
   const signOut = useAuthStore(s => s.signOut);
   const [peekOpen, setPeekOpen] = useState(false);
@@ -247,11 +247,14 @@ export function SettingsScreen(): React.JSX.Element {
               alignItems: 'center',
               justifyContent: 'center',
               overflow: 'hidden',
+              // Thin, theme-aware border around the user's photo.
+              borderWidth: 1,
+              borderColor: t.colors.hairline,
             }}
           >
-            {avatarUri ? (
+            {avatar ? (
               <Image
-                source={{ uri: avatarUri }}
+                source={{ uri: avatar }}
                 style={{ width: 58, height: 58 }}
                 resizeMode="cover"
               />
