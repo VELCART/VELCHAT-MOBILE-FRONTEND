@@ -118,6 +118,10 @@ It's a **two-step** flow — add a changeset with your PR, then a bot handles th
 3. **Merge the “Version Packages” PR.** The workflow cuts the **git tag** + GitHub Release
    (private app — no npm publish).
 
+> If your org disables PR creation by `GITHUB_TOKEN`, set `RELEASE_GITHUB_TOKEN` (or
+> `GH_RELEASE_TOKEN` / `GH_PAT`) to a bot PAT/GitHub App token with `contents` + `pull_requests`
+> write access so the release workflow can open/update the version PR.
+
 > If a merge to `main` produced no release, it's almost always because **no changeset was added** —
 > Changesets only versions/tags when there are pending `.changeset/*.md` entries.
 
