@@ -17,12 +17,20 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation } from '../i18n';
 import { useTheme } from '../theme';
-import { Text, UserIcon, CameraIcon, type IconProps } from '../design-system';
+import {
+  Text,
+  GlassBubble,
+  UserIcon,
+  CameraIcon,
+  type IconProps,
+} from '../design-system';
 import { useProfileSummary, useAvatarPicker } from '../features/user';
 import type { RootStackParamList } from './types';
 
 const SIZE = 240;
 
+// A frosted-glass circular action button (translucent, light-rimmed) with a label
+// beneath — designed to sit on the dark peek scrim and read as "glass / water".
 function PeekAction({
   icon: Icon,
   label,
@@ -39,16 +47,31 @@ function PeekAction({
       accessibilityLabel={label}
       onPress={onPress}
       style={({ pressed }) => ({
-        flex: 1,
         alignItems: 'center',
-        justifyContent: 'center',
-        gap: t.spacing.xxs,
-        paddingVertical: t.spacing.md,
-        opacity: pressed ? 0.55 : 1,
+        gap: t.spacing.xs,
+        opacity: pressed ? 0.7 : 1,
+        transform: [{ scale: pressed ? 0.93 : 1 }],
       })}
     >
-      <Icon size={22} color={t.colors.brandFrom} strokeWidth={2} />
-      <Text variant="caption" color="secondary">
+      <View
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 32,
+          alignItems: 'center',
+          justifyContent: 'center',
+          // Soft outer glow so each bubble floats like a water droplet.
+          shadowColor: '#FFFFFF',
+          shadowOpacity: 0.3,
+          shadowRadius: 10,
+          shadowOffset: { width: 0, height: 3 },
+          elevation: 6,
+        }}
+      >
+        <GlassBubble size={64} />
+        <Icon size={25} color="#FFFFFF" strokeWidth={2} />
+      </View>
+      <Text variant="caption" style={{ color: 'rgba(255,255,255,0.92)' }}>
         {label}
       </Text>
     </Pressable>
@@ -188,7 +211,7 @@ export function ProfilePeek({
               )}
             </View>
 
-            <Text
+            {/* <Text
               variant="title"
               numberOfLines={1}
               align="center"
@@ -199,33 +222,22 @@ export function ProfilePeek({
               }}
             >
               {displayName ?? tr('settings.addName')}
-            </Text>
+            </Text> */}
 
+            {/* Two separate frosted-glass circles, spaced apart. */}
             <View
-              style={[
-                {
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  marginTop: t.spacing.lg,
-                  backgroundColor: t.colors.surface,
-                  borderRadius: t.radius.lg,
-                  overflow: 'hidden',
-                  minWidth: 240,
-                },
-                t.elevation.e2,
-              ]}
+              style={{
+                flexDirection: 'row',
+                alignItems: 'flex-start',
+                justifyContent: 'center',
+                gap: t.spacing.xxl,
+                marginTop: t.spacing.xl,
+              }}
             >
               <PeekAction
                 icon={UserIcon}
                 label={tr('profile.viewProfile')}
                 onPress={openProfile}
-              />
-              <View
-                style={{
-                  width: StyleSheet.hairlineWidth,
-                  alignSelf: 'stretch',
-                  backgroundColor: t.colors.hairline,
-                }}
               />
               <PeekAction
                 icon={CameraIcon}

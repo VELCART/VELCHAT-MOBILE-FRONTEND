@@ -38,8 +38,28 @@ jest.mock('react-native-mmkv', () => {
       store.clear();
     }
   }
-  return { MMKV };
+  // Reactive hooks used by the profile mirror — a static read is enough for tests.
+  const useMMKVString = (k: string): [unknown, (v: unknown) => void] => [
+    store.get(k),
+    (v: unknown) => store.set(k, v),
+  ];
+  return { MMKV, useMMKVString };
 });
+
+// react-native-image-crop-picker uses a TurboModule that is absent under Jest and
+// throws at import; stand it in with a cancelled-picker default.
+jest.mock('react-native-image-crop-picker', () => ({
+  __esModule: true,
+  default: {
+    openPicker: jest.fn(() => Promise.reject({ code: 'E_PICKER_CANCELLED' })),
+    openCamera: jest.fn(() => Promise.reject({ code: 'E_PICKER_CANCELLED' })),
+    openCropper: jest.fn(() =>
+      Promise.resolve({ path: '', mime: 'image/jpeg' }),
+    ),
+    clean: jest.fn(() => Promise.resolve()),
+    cleanSingle: jest.fn(() => Promise.resolve()),
+  },
+}));
 
 jest.mock('@react-native-community/netinfo', () => ({
   __esModule: true,

@@ -16,6 +16,7 @@ export {
 } from './primitives';
 export { FadeInUp } from './FadeInUp';
 export { SpinningRing } from './SpinningRing';
+export { GlassBubble } from './GlassBubble';
 export { AppStatusBar } from './AppStatusBar';
 export { BottomSheet } from './BottomSheet';
 export { OtpInput } from './OtpInput';

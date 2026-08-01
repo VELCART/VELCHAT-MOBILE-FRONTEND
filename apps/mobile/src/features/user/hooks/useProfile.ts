@@ -6,7 +6,7 @@
  * import); it's already set by the time the app reaches home.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { launchImageLibrary } from 'react-native-image-picker';
+import type { Image as CroppedImage } from 'react-native-image-crop-picker';
 import {
   getAccountId,
   isAppError,
@@ -26,6 +26,22 @@ import {
 // Re-exported so feature UI gets haptics through the feature layer (UI must not
 // import infra directly — layer boundaries §M3).
 export { hapticTick } from '../../../infra';
+
+type CropPicker = typeof import('react-native-image-crop-picker').default;
+
+/**
+ * Lazily resolve the native cropper. On the New Architecture the module throws at
+ * import when its native side isn't in the binary yet (i.e. after adding the dep but
+ * before a rebuild). Loading it lazily + guarded means that only the "pick photo"
+ * action fails softly with a clear message — the rest of the app keeps working.
+ */
+function loadCropPicker(): CropPicker | null {
+  try {
+    return require('react-native-image-crop-picker').default as CropPicker;
+  } catch {
+    return null;
+  }
+}
 
 export function useProfileGate(): {
   needsSetup: boolean;
@@ -212,29 +228,48 @@ export function useAvatarUpload(): {
   const pick = useCallback(async (): Promise<void> => {
     const accountId = getAccountId();
     if (!accountId) return;
-    const result = await launchImageLibrary({
-      mediaType: 'photo',
-      selectionLimit: 1,
-      quality: 0.8,
-    });
-    if (result.didCancel) return;
-    const asset = result.assets?.[0];
-    if (!asset?.uri) {
-      if (result.errorCode) setError('Could not open the gallery.');
+    const cropper = loadCropPicker();
+    if (!cropper) {
+      // Native module absent → the app hasn't been rebuilt since adding the cropper.
+      setError(
+        'Photo cropping needs a fresh app build — please rebuild the app.',
+      );
       return;
     }
-    setLocalUri(asset.uri);
+    // Open the gallery straight into a circular crop UI (WhatsApp/Instagram-style),
+    // square-forced to 512² JPEG so avatars are consistent and light to upload.
+    let image: CroppedImage;
+    try {
+      image = await cropper.openPicker({
+        mediaType: 'photo',
+        cropping: true,
+        cropperCircleOverlay: true,
+        width: 512,
+        height: 512,
+        compressImageQuality: 0.85,
+        forceJpg: true,
+        hideBottomControls: true,
+        showCropGuidelines: false,
+      });
+    } catch (e) {
+      // Backing out of the picker/cropper is a normal cancel, not an error.
+      if ((e as { code?: string })?.code === 'E_PICKER_CANCELLED') return;
+      setError('Could not open the gallery.');
+      return;
+    }
+    if (!image?.path) return;
+    setLocalUri(image.path);
     // Persist the local uri so the header + Settings show the photo immediately and
     // across launches on this device (the server copy rides on avatarMediaId).
-    kv.set(KVKeys.avatarUri, asset.uri);
+    kv.set(KVKeys.avatarUri, image.path);
     setError(null);
     setUploading(true);
     try {
-      const mime = asset.type ?? 'image/jpeg';
+      const mime = image.mime ?? 'image/jpeg';
       const { mediaId: id, uploadPath } = await initUpload(accountId, mime);
       await uploadMediaFile(uploadPath, {
-        uri: asset.uri,
-        name: asset.fileName ?? 'avatar.jpg',
+        uri: image.path,
+        name: image.filename ?? 'avatar.jpg',
         type: mime,
       });
       setMediaId(id);

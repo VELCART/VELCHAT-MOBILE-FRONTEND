@@ -148,6 +148,7 @@ export function HomeHeader(): React.JSX.Element {
   const [peekOpen, setPeekOpen] = useState(false);
 
   const openSettings = (): void => navigation.navigate('Settings');
+  const openProfile = (): void => navigation.navigate('Profile');
   const noop = (): void => undefined;
   const isChats = activeTab === 'Chats';
 
@@ -209,7 +210,7 @@ export function HomeHeader(): React.JSX.Element {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="Profile"
-      onPress={openSettings}
+      onPress={openProfile}
       onLongPress={() => setPeekOpen(true)}
       delayLongPress={220}
       hitSlop={6}
