@@ -44,6 +44,10 @@
     "calls": "المكالمات",
     "settings": "الإعدادات"
   },
+  "chat": {
+    "messagePlaceholder": "رسالة",
+    "send": "إرسال"
+  },
   "profile": {
     "nameTitle": "ما اسمك؟",
     "nameSubtitle": "هكذا ستظهر للآخرين.",

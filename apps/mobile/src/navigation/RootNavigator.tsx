@@ -25,6 +25,7 @@ import {
 import { AppTabs } from './AppTabs';
 import { SettingsScreen } from './SettingsScreen';
 import { ProfileScreen } from './ProfileScreen';
+import { ChatScreen } from '../features/chat';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -48,6 +49,7 @@ const linking: LinkingOptions<RootStackParamList> = {
       },
       Settings: 'settings',
       Profile: 'profile',
+      Chat: 'chat/:conversationId',
     },
   },
 };
@@ -94,6 +96,11 @@ export function RootNavigator(): React.JSX.Element {
           <Stack.Screen
             name="Profile"
             component={ProfileScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="Chat"
+            component={ChatScreen}
             options={{ animation: 'slide_from_right' }}
           />
         </Stack.Navigator>

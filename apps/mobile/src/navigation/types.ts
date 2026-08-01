@@ -10,6 +10,7 @@ export type RootStackParamList = {
   AppTabs: undefined;
   Settings: undefined;
   Profile: undefined;
+  Chat: { conversationId: string; name?: string | undefined };
 };
 
 /** Bottom tabs (WhatsApp-parity): Chats · Updates · Communities · Calls.

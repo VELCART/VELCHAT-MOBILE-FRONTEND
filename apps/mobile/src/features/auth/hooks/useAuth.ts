@@ -295,10 +295,13 @@ export function useAccountInfo(): void {
     let active = true;
     getAccountInfo(accountId)
       .then(info => {
-        if (!active) return;
+        if (!active || !info) return;
         if (info.phone) kv.set(KVKeys.phone, info.phone);
         if (info.email) kv.set(KVKeys.email, info.email);
-        if (info.lastActiveAt) kv.set(KVKeys.loginAt, info.lastActiveAt);
+        // NOTE: do NOT mirror lastActiveAt → loginAt. The backend never bumps
+        // accounts.last_active_at (it equals created_at), so it would make "Last login"
+        // always equal "Member since". Keep the client-stamped loginAt (set on each
+        // provision — actually accurate) until the server updates it on token issue.
         if (info.createdAt) kv.set(KVKeys.memberSince, info.createdAt);
       })
       .catch(() => undefined);

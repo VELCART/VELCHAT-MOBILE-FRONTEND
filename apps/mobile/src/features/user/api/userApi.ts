@@ -48,8 +48,13 @@ export async function uploadMediaFile(
     name: file.name,
     type: file.type,
   } as unknown as Blob);
+  // Let React Native's networking set `multipart/form-data; boundary=…`. Forcing a
+  // boundary-less Content-Type (or the axios JSON default) leaves the server unable to
+  // delimit the parts → the upload fails to parse. `transformRequest` keeps the FormData
+  // untouched by axios. (Verify on-device against the media-service multipart parser.)
   await api.put(uploadPath, form, {
-    headers: { 'Content-Type': 'multipart/form-data' },
+    headers: { 'Content-Type': null },
+    transformRequest: data => data,
   });
 }
 
