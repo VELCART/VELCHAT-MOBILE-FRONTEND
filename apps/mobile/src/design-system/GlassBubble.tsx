@@ -32,13 +32,13 @@ export function GlassBubble({
       pointerEvents="none"
     >
       <Defs>
-        <RadialGradient id={fillId} cx="36%" cy="26%" r="78%">
-          <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.55} />
-          <Stop offset="0.45" stopColor="#FFFFFF" stopOpacity={0.13} />
-          <Stop offset="1" stopColor="#FFFFFF" stopOpacity={0.05} />
+        <RadialGradient id={fillId} cx="36%" cy="26%" r="80%">
+          <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.34} />
+          <Stop offset="0.5" stopColor="#FFFFFF" stopOpacity={0.08} />
+          <Stop offset="1" stopColor="#FFFFFF" stopOpacity={0.02} />
         </RadialGradient>
         <RadialGradient id={specId} cx="50%" cy="50%" r="50%">
-          <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.9} />
+          <Stop offset="0" stopColor="#FFFFFF" stopOpacity={0.85} />
           <Stop offset="1" stopColor="#FFFFFF" stopOpacity={0} />
         </RadialGradient>
       </Defs>
@@ -47,8 +47,8 @@ export function GlassBubble({
         cy={size / 2}
         r={r}
         fill={`url(#${fillId})`}
-        stroke="rgba(255,255,255,0.55)"
-        strokeWidth={1.2}
+        stroke="rgba(255,255,255,0.45)"
+        strokeWidth={1.1}
       />
       <Ellipse
         cx={size * 0.34}
