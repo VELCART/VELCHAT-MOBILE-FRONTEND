@@ -114,10 +114,8 @@
     "memberSince": "Member since",
     "today": "Today",
     "viewProfile": "View profile",
-    "changePhoto": "Change photo",
-    "removePhoto": "Remove photo",
-    "removePhotoTitle": "Remove photo?",
-    "removePhotoMessage": "Your profile photo will be removed for everyone."
+    "changePhoto": "Change",
+    "removePhoto": "Remove"
   },
   "header": {
     "search": "Search",

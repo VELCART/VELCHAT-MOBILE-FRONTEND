@@ -115,9 +115,7 @@
     "today": "आज",
     "viewProfile": "प्रोफ़ाइल देखें",
     "changePhoto": "फ़ोटो बदलें",
-    "removePhoto": "फ़ोटो हटाएं",
-    "removePhotoTitle": "फ़ोटो हटाएं?",
-    "removePhotoMessage": "आपकी प्रोफ़ाइल फ़ोटो सबके लिए हट जाएगी।"
+    "removePhoto": "फ़ोटो हटाएं"
   },
   "header": {
     "search": "खोजें",

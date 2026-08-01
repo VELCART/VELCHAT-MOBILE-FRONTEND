@@ -77,9 +77,7 @@
     "today": "اليوم",
     "viewProfile": "عرض الملف الشخصي",
     "changePhoto": "تغيير الصورة",
-    "removePhoto": "إزالة الصورة",
-    "removePhotoTitle": "إزالة الصورة؟",
-    "removePhotoMessage": "ستتم إزالة صورة ملفك الشخصي للجميع."
+    "removePhoto": "إزالة الصورة"
   },
   "settings": {
     "language": "اللغة",

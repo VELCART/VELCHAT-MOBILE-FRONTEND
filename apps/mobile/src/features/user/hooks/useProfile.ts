@@ -27,6 +27,11 @@ import {
 // import infra directly — layer boundaries §M3).
 export { hapticTick } from '../../../infra';
 
+// Bumped every time the avatar is removed. A profile reload started BEFORE a removal
+// (e.g. a slow cold-start fetch in flight) must not resurrect the just-deleted photo,
+// so reload snapshots this at the start and bails out of re-caching if it changed.
+let avatarRemovalEpoch = 0;
+
 type CropPicker = typeof import('react-native-image-crop-picker').default;
 
 /**
@@ -144,14 +149,19 @@ export function useProfileDetails(): {
     }
     setLoading(true);
     setError(null);
+    // Snapshot the removal epoch: if the user removes their photo while this fetch is
+    // in flight, we must NOT write the (now stale) server URL back and bring it back.
+    const startEpoch = avatarRemovalEpoch;
     try {
       const profile = await getProfile(accountId);
       if (profile.displayName) kv.set(KVKeys.displayName, profile.displayName);
       if (profile.about !== undefined)
         kv.set(KVKeys.about, profile.about ?? '');
-      if (profile.avatarMediaId) {
+      if (profile.avatarMediaId && avatarRemovalEpoch === startEpoch) {
         try {
           const { url } = await getMediaUrl(profile.avatarMediaId);
+          // Re-check AFTER the media round-trip too (a removal may land meanwhile).
+          if (avatarRemovalEpoch !== startEpoch) return;
           setRemoteAvatarUrl(url);
           // Cache it (reactive) → the header/Settings/Profile show the photo instantly,
           // here and on the next launch, without waiting for this round-trip again.
@@ -325,6 +335,8 @@ export function useAvatarPicker(): {
   // by sending an empty mediaId — the user-service COALESCE stores '' and getProfile
   // returns it falsy, so it stays cleared across launches and other devices.
   const remove = useCallback(async (): Promise<void> => {
+    // Supersede any profile reload in flight so it can't write the old URL back.
+    avatarRemovalEpoch += 1;
     kv.delete(KVKeys.avatarUri);
     kv.delete(KVKeys.avatarUrl);
     await save({ avatarMediaId: '' });

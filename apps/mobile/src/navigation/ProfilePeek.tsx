@@ -12,7 +12,6 @@ import {
   Image,
   Animated,
   StyleSheet,
-  Alert,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -121,24 +120,11 @@ export function ProfilePeek({
     onClose();
     void pick();
   };
-  // Removing the photo is destructive → confirm first (WhatsApp-style), then clear it
-  // locally + on the server. The reactive mirror makes it disappear everywhere at once.
+  // Remove the photo straight away (no confirm) — clears it locally + on the server;
+  // the reactive mirror makes it disappear everywhere at once and it stays gone.
   const removePhoto = (): void => {
-    Alert.alert(
-      tr('profile.removePhotoTitle'),
-      tr('profile.removePhotoMessage'),
-      [
-        { text: tr('common.cancel'), style: 'cancel' },
-        {
-          text: tr('common.remove'),
-          style: 'destructive',
-          onPress: () => {
-            onClose();
-            void remove();
-          },
-        },
-      ],
-    );
+    onClose();
+    void remove();
   };
 
   return (
