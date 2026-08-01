@@ -47,27 +47,39 @@ export function isAppError(e: unknown): e is AppError {
   return e instanceof AppError;
 }
 
-/** Map any thrown value (usually an AxiosError) to a typed AppError. */
+/**
+ * Plain-English fallback per error kind — used when the server didn't send a friendly
+ * message of its own (e.g. a plain-text 429 from the edge, or an opaque 5xx). Never show
+ * the raw Axios "Request failed with status code N" to a user.
+ */
+const FRIENDLY: Record<AppErrorKind, string> = {
+  network:
+    "Can't reach VelChat right now. Please check your connection and try again.",
+  timeout: 'That took too long. Please check your connection and try again.',
+  auth: 'Your session has expired. Please sign in again.',
+  rate_limit:
+    'Too many attempts right now. Please wait a moment and try again.',
+  server: 'Something went wrong on our side. Please try again in a moment.',
+  client: 'Something went wrong. Please try again.',
+  canceled: 'Request canceled',
+  unknown: 'Something went wrong. Please try again.',
+};
+
+/** Map any thrown value (usually an AxiosError) to a typed AppError with a friendly message. */
 export function normalizeError(error: unknown): AppError {
   if (isAppError(error)) return error;
 
   if (axios.isCancel(error)) {
-    return new AppError('canceled', 'Request canceled', { retryable: false });
+    return new AppError('canceled', FRIENDLY.canceled, { retryable: false });
   }
 
   if (axios.isAxiosError(error)) {
     if (error.code === 'ECONNABORTED') {
-      return new AppError(
-        'timeout',
-        'The request timed out. Check your connection and try again.',
-      );
+      return new AppError('timeout', FRIENDLY.timeout);
     }
     const res = error.response;
     if (!res) {
-      return new AppError(
-        'network',
-        "Can't reach VelChat right now. Check your connection.",
-      );
+      return new AppError('network', FRIENDLY.network);
     }
     const body = res.data as
       | { message?: string; error?: { code?: string }; requestId?: string }
@@ -76,7 +88,6 @@ export function normalizeError(error: unknown): AppError {
     const requestId =
       body?.requestId ?? (res.headers?.['x-request-id'] as string | undefined);
     const code = body?.error?.code;
-    const message = body?.message ?? error.message;
     const kind: AppErrorKind =
       statusCode === 401 || statusCode === 403
         ? 'auth'
@@ -85,11 +96,20 @@ export function normalizeError(error: unknown): AppError {
           : statusCode >= 500
             ? 'server'
             : 'client';
-    return new AppError(kind, message, { statusCode, code, requestId });
+    // Prefer the backend's OWN message ONLY when it's a real user-facing envelope string
+    // (our API writes those, e.g. "That code is wrong or expired"). A plain-text edge body
+    // (e.g. "Too Many Requests") or a missing message falls back to the friendly default —
+    // never the raw Axios "Request failed with status code N".
+    const serverMsg =
+      typeof body?.message === 'string' && body.message.trim().length > 0
+        ? body.message.trim()
+        : undefined;
+    return new AppError(kind, serverMsg ?? FRIENDLY[kind], {
+      statusCode,
+      code,
+      requestId,
+    });
   }
 
-  return new AppError(
-    'unknown',
-    error instanceof Error ? error.message : 'Something went wrong',
-  );
+  return new AppError('unknown', FRIENDLY.unknown);
 }

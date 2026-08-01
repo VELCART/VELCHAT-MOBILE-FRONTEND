@@ -177,7 +177,7 @@ export function useSaveProfile(): {
     async (patch: Partial<Profile>, email?: string): Promise<boolean> => {
       const accountId = getAccountId();
       if (!accountId) {
-        setError('You are not signed in.');
+        setError('Please sign in to continue.');
         return false;
       }
       setSaving(true);
@@ -233,9 +233,7 @@ export function useAvatarUpload(): {
     const cropper = loadCropPicker();
     if (!cropper) {
       // Native module absent → the app hasn't been rebuilt since adding the cropper.
-      setError(
-        'Photo cropping needs a fresh app build — please rebuild the app.',
-      );
+      setError("Couldn't open the photo editor right now. Please try again.");
       return;
     }
     // Open the gallery straight into a circular crop UI (WhatsApp/Instagram-style),
@@ -256,7 +254,7 @@ export function useAvatarUpload(): {
     } catch (e) {
       // Backing out of the picker/cropper is a normal cancel, not an error.
       if ((e as { code?: string })?.code === 'E_PICKER_CANCELLED') return;
-      setError('Could not open the gallery.');
+      setError("Couldn't open your photos. Please try again.");
       return;
     }
     if (!image?.path) return;

@@ -178,9 +178,7 @@ export function useOtpAuth(): {
         // has been durably stored. Never navigate to the app without it: doing so
         // would make the next cold launch fall back to Welcome/Login.
         if (!tokens?.access || !tokens?.refresh) {
-          setError(
-            'Sign-in completed but no session was returned. Please try again.',
-          );
+          setError("We couldn't finish signing you in. Please try again.");
           return false;
         }
         // Persist the verified number so the Profile page can show it (the active OTP
