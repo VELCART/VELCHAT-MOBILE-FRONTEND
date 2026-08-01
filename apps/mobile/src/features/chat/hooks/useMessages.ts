@@ -19,9 +19,14 @@ export function useMessages(conversationId: string): {
   const meId = useMemo(() => getAccountId() ?? 'me', []);
   const [messages, setMessages] = useState<Message[]>([]);
   useEffect(() => {
-    void seedDevMessages(conversationId, meId);
-    const sub = observeMessages(conversationId).subscribe(setMessages);
-    return () => sub.unsubscribe();
+    seedDevMessages(conversationId, meId).catch(() => undefined);
+    let sub: { unsubscribe: () => void } | undefined;
+    try {
+      sub = observeMessages(conversationId).subscribe(setMessages);
+    } catch {
+      setMessages([]);
+    }
+    return () => sub?.unsubscribe();
   }, [conversationId, meId]);
   return { messages, meId };
 }
@@ -30,7 +35,7 @@ export function useSendMessage(conversationId: string): (text: string) => void {
   const meId = useMemo(() => getAccountId() ?? 'me', []);
   return useCallback(
     (text: string) => {
-      void sendMessageLocal(conversationId, text, meId);
+      sendMessageLocal(conversationId, text, meId).catch(() => undefined);
     },
     [conversationId, meId],
   );

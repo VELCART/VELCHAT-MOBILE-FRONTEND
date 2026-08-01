@@ -4,19 +4,23 @@
  * the outbox and reconcile the server seq. Kept separate from the chat-list queries.
  */
 import { Q } from '@nozbe/watermelondb';
-import { database } from './database';
+import { getDatabase } from './database';
 import { Message, Conversation } from './models';
 
-/** Observe a conversation's messages newest-first (fed into a reversed list). */
+/**
+ * Observe a conversation's messages newest-first (fed into a reversed list).
+ * `observeWithColumns` so in-place changes (a bubble ticking sending→sent→read, reactions)
+ * re-render even though the sort key (`created_at`) is immutable.
+ */
 export function observeMessages(conversationId: string) {
-  return database
+  return getDatabase()
     .get<Message>('messages')
     .query(
       Q.where('conversation_id', conversationId),
       Q.where('deleted', false),
       Q.sortBy('created_at', Q.desc),
     )
-    .observe();
+    .observeWithColumns(['state', 'reactions', 'attachments']);
 }
 
 /** A short client message id (server seq is assigned later, on ACK). */
@@ -36,9 +40,10 @@ export async function sendMessageLocal(
 ): Promise<void> {
   const body = text.trim();
   if (!body) return;
+  const db = getDatabase();
   const now = Date.now();
-  await database.write(async () => {
-    await database.get<Message>('messages').create(m => {
+  await db.write(async () => {
+    await db.get<Message>('messages').create(m => {
       m.clientMsgId = newClientMsgId();
       m.conversationId = conversationId;
       m.senderId = senderId;
@@ -50,7 +55,7 @@ export async function sendMessageLocal(
       m.starred = false;
       m.createdAt = now;
     });
-    const conv = await database
+    const conv = await db
       .get<Conversation>('conversations')
       .find(conversationId);
     await conv.update(c => {
@@ -69,19 +74,21 @@ const SEED_MESSAGES: Array<{ mine: boolean; text: string }> = [
   { mine: true, text: 'On my way 🚗' },
 ];
 
-/** Seed a few messages for a conversation once (dev) so the chat screen isn't empty. */
-export async function seedDevMessages(
+const seededConversations = new Map<string, Promise<void>>();
+
+async function doSeedMessages(
   conversationId: string,
   meId: string,
 ): Promise<void> {
-  const col = database.get<Message>('messages');
+  const db = getDatabase();
+  const col = db.get<Message>('messages');
   const existing = await col
     .query(Q.where('conversation_id', conversationId))
     .fetchCount();
   if (existing > 0) return;
   const base = Date.now() - SEED_MESSAGES.length * 60_000;
-  await database.write(async () => {
-    await database.batch(
+  await db.write(async () => {
+    await db.batch(
       SEED_MESSAGES.map((s, i) =>
         col.prepareCreate(m => {
           m.clientMsgId = newClientMsgId();
@@ -98,4 +105,18 @@ export async function seedDevMessages(
       ),
     );
   });
+}
+
+/** Seed a few messages for a conversation once (dev). Serialised per conversation so
+ * concurrent effect calls (StrictMode double-invoke) can't double-insert. */
+export function seedDevMessages(
+  conversationId: string,
+  meId: string,
+): Promise<void> {
+  let p = seededConversations.get(conversationId);
+  if (!p) {
+    p = doSeedMessages(conversationId, meId);
+    seededConversations.set(conversationId, p);
+  }
+  return p;
 }

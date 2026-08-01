@@ -4,19 +4,28 @@
  * one-shot dev seed makes the list non-empty on a fresh install.
  */
 import { Q } from '@nozbe/watermelondb';
-import { database } from './database';
+import { getDatabase } from './database';
 import { Conversation } from './models';
 
-/** Observe the chat list: non-archived, pinned first, then most-recent (§F2). */
+/**
+ * Observe the chat list: non-archived, pinned first, then most-recent (§F2).
+ * `observeWithColumns` so IN-PLACE field changes (unread cleared, preview updated) also
+ * re-render — a plain `.observe()` under a `sortBy` only re-emits on reorder/identity.
+ */
 export function observeConversations() {
-  return database
+  return getDatabase()
     .get<Conversation>('conversations')
     .query(
       Q.where('is_archived', false),
       Q.sortBy('is_pinned', Q.desc),
       Q.sortBy('last_message_at', Q.desc),
     )
-    .observe();
+    .observeWithColumns([
+      'is_pinned',
+      'last_message_at',
+      'unread_count',
+      'last_message_preview',
+    ]);
 }
 
 const SEED = [
@@ -43,13 +52,15 @@ const SEED = [
   { name: 'Ishaan', preview: 'Sent a photo', unread: 0, pinned: false },
 ];
 
-/** Insert a few sample conversations once (dev only) so the list isn't empty pre-sync. */
-export async function seedDevConversations(): Promise<void> {
-  const col = database.get<Conversation>('conversations');
+let seedOnce: Promise<void> | null = null;
+
+async function doSeed(): Promise<void> {
+  const db = getDatabase();
+  const col = db.get<Conversation>('conversations');
   if ((await col.query().fetchCount()) > 0) return;
   const now = Date.now();
-  await database.write(async () => {
-    await database.batch(
+  await db.write(async () => {
+    await db.batch(
       SEED.map((s, i) =>
         col.prepareCreate(c => {
           c.type = 'dm';
@@ -69,4 +80,11 @@ export async function seedDevConversations(): Promise<void> {
       ),
     );
   });
+}
+
+/** Insert a few sample conversations once (dev). Serialised so concurrent effect calls
+ * (React StrictMode double-invoke) can't both read count 0 and double-insert. */
+export function seedDevConversations(): Promise<void> {
+  if (!seedOnce) seedOnce = doSeed();
+  return seedOnce;
 }

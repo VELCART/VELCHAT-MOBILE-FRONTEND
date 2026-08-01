@@ -5,7 +5,6 @@
  * Public API barrel. Import this layer only through its index (`eslint-plugin-boundaries`).
  * Dependency rule (§M3): UI → Feature → Domain → Infra. Never the reverse.
  */
-export { database } from './database';
 export { schema } from './schema';
 export { observeConversations, seedDevConversations } from './queries';
 export { observeMessages, sendMessageLocal, seedDevMessages } from './messages';

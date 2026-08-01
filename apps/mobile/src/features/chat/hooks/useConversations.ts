@@ -13,9 +13,16 @@ import {
 export function useConversations(): Conversation[] {
   const [rows, setRows] = useState<Conversation[]>([]);
   useEffect(() => {
-    void seedDevConversations();
-    const sub = observeConversations().subscribe(setRows);
-    return () => sub.unsubscribe();
+    seedDevConversations().catch(() => undefined);
+    let sub: { unsubscribe: () => void } | undefined;
+    try {
+      // getDatabase() throws if the native module isn't in the binary yet (pre-rebuild) —
+      // degrade to an empty list instead of crashing the tab.
+      sub = observeConversations().subscribe(setRows);
+    } catch {
+      setRows([]);
+    }
+    return () => sub?.unsubscribe();
   }, []);
   return rows;
 }
