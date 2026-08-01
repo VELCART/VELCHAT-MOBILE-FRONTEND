@@ -7,12 +7,19 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { launchImageLibrary } from 'react-native-image-picker';
-import { getAccountId, isAppError, kv, KVKeys } from '../../../infra';
+import {
+  getAccountId,
+  isAppError,
+  kv,
+  KVKeys,
+  useKVString,
+} from '../../../infra';
 import {
   getProfile,
   updateProfile,
   initUpload,
   uploadMediaFile,
+  getMediaUrl,
   type Profile,
 } from '../api/userApi';
 
@@ -64,21 +71,80 @@ export function useProfileGate(): {
   return { needsSetup, markComplete };
 }
 
-/** Locally-mirrored profile summary for instant Settings render (no network). */
+/**
+ * Locally-mirrored profile summary — REACTIVE. Backed by the encrypted MMKV mirror, it
+ * re-renders every consumer (header, Settings, Profile) the instant a photo is picked or
+ * a field saved. Zero network on the render path; the UI never waits (§M0).
+ */
 export function useProfileSummary(): {
   displayName: string | null;
   email: string | null;
   phone: string | null;
   about: string | null;
   avatarUri: string | null;
+  loginAt: string | null;
 } {
   return {
-    displayName: kv.getString(KVKeys.displayName) ?? null,
-    email: kv.getString(KVKeys.email) ?? null,
-    phone: kv.getString(KVKeys.phone) ?? null,
-    about: kv.getString(KVKeys.about) ?? null,
-    avatarUri: kv.getString(KVKeys.avatarUri) ?? null,
+    displayName: useKVString(KVKeys.displayName) ?? null,
+    email: useKVString(KVKeys.email) ?? null,
+    phone: useKVString(KVKeys.phone) ?? null,
+    about: useKVString(KVKeys.about) ?? null,
+    avatarUri: useKVString(KVKeys.avatarUri) ?? null,
+    loginAt: useKVString(KVKeys.loginAt) ?? null,
   };
+}
+
+/**
+ * Load the authoritative profile from the backend once (§B3) and mirror it locally so
+ * the reactive summary reflects the server truth. Resolves the avatar's mediaId to a
+ * signed URL for display when there's no local picked copy (e.g. a fresh install).
+ * Offline-first: any failure is non-blocking — the mirror already rendered instantly.
+ */
+export function useProfileDetails(): {
+  loading: boolean;
+  error: string | null;
+  remoteAvatarUrl: string | null;
+  reload: () => Promise<void>;
+} {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [remoteAvatarUrl, setRemoteAvatarUrl] = useState<string | null>(null);
+
+  const reload = useCallback(async (): Promise<void> => {
+    const accountId = getAccountId();
+    if (!accountId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const profile = await getProfile(accountId);
+      if (profile.displayName) kv.set(KVKeys.displayName, profile.displayName);
+      if (profile.about !== undefined)
+        kv.set(KVKeys.about, profile.about ?? '');
+      if (profile.avatarMediaId) {
+        try {
+          const { url } = await getMediaUrl(profile.avatarMediaId);
+          setRemoteAvatarUrl(url);
+        } catch {
+          // A missing signed URL just means we keep whatever local copy we have.
+        }
+      }
+    } catch (e) {
+      setError(
+        isAppError(e) ? e.message : 'Could not refresh your profile just now.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  return { loading, error, remoteAvatarUrl, reload };
 }
 
 export function useSaveProfile(): {
@@ -183,4 +249,24 @@ export function useAvatarUpload(): {
   }, []);
 
   return { pick, localUri, mediaId, uploading, error };
+}
+
+/**
+ * Pick + upload + attach an avatar to the directory profile in one call. Wraps
+ * `useAvatarUpload` and, once the upload yields a mediaId, PUTs it onto the profile —
+ * so changing the photo from anywhere (Profile page OR the long-press peek) fully
+ * persists, and the reactive mirror shows it everywhere at once.
+ */
+export function useAvatarPicker(): {
+  pick: () => Promise<void>;
+  uploading: boolean;
+  localUri: string | null;
+  error: string | null;
+} {
+  const { pick, localUri, mediaId, uploading, error } = useAvatarUpload();
+  const { save } = useSaveProfile();
+  useEffect(() => {
+    if (mediaId) void save({ avatarMediaId: mediaId });
+  }, [mediaId, save]);
+  return { pick, uploading, localUri, error };
 }

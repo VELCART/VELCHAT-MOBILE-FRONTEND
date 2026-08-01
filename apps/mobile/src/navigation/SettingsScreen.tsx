@@ -4,8 +4,8 @@
  * App language + Appearance are live rows — tap to cycle. Premium through spacing and
  * typography, not chrome. Themed light/dark; scrolls on short devices.
  */
-import React from 'react';
-import { ScrollView, View, Pressable, Image, StyleSheet } from 'react-native';
+import React, { useState } from 'react';
+import { ScrollView, View, Pressable, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation, useLanguage } from '../i18n';
@@ -31,6 +31,7 @@ import {
 import { appEnv } from '../core';
 import { useAuthStore } from '../features/auth';
 import { useProfileSummary } from '../features/user';
+import { ProfilePeek } from './ProfilePeek';
 import type { RootStackParamList } from './types';
 
 function TopIcon({
@@ -133,9 +134,10 @@ export function SettingsScreen(): React.JSX.Element {
   const { t: tr } = useTranslation();
   const { mode, setMode } = useThemeMode();
   const { language, setLanguage, supported, names } = useLanguage();
-  const { displayName, avatarUri } = useProfileSummary();
+  const { displayName, email, phone, avatarUri } = useProfileSummary();
   const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
   const signOut = useAuthStore(s => s.signOut);
+  const [peekOpen, setPeekOpen] = useState(false);
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
@@ -220,89 +222,75 @@ export function SettingsScreen(): React.JSX.Element {
         contentContainerStyle={{ paddingBottom: t.spacing.huge }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Profile header — Apple-style rounded account card */}
+        {/* Profile header — tap to open the Profile page, long-press to peek. */}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={displayName ?? tr('settings.addName')}
           onPress={() => navigation.navigate('Profile')}
+          onLongPress={() => setPeekOpen(true)}
+          delayLongPress={220}
           style={({ pressed }) => ({
-            marginHorizontal: t.spacing.lg,
-            marginTop: t.spacing.xs,
-            marginBottom: t.spacing.sm,
-            transform: [{ scale: pressed ? 0.99 : 1 }],
-            opacity: pressed ? 0.9 : 1,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: t.spacing.md,
+            paddingHorizontal: t.spacing.md,
+            paddingVertical: t.spacing.md,
+            opacity: pressed ? 0.6 : 1,
           })}
         >
           <View
-            style={[
-              {
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: t.spacing.md,
-                backgroundColor: t.colors.surface,
-                borderRadius: t.radius.lg,
-                paddingVertical: t.spacing.md,
-                paddingHorizontal: t.spacing.md,
-                borderWidth: t.scheme === 'dark' ? StyleSheet.hairlineWidth : 0,
-                borderColor: t.colors.hairline,
-              },
-              t.elevation.e1,
-            ]}
+            style={{
+              width: 58,
+              height: 58,
+              borderRadius: 29,
+              backgroundColor: t.colors.bgSubtle,
+              alignItems: 'center',
+              justifyContent: 'center',
+              overflow: 'hidden',
+            }}
           >
-            <View
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: 32,
-                backgroundColor: t.colors.bgSubtle,
-                alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-              }}
-            >
-              {avatarUri ? (
-                <Image
-                  source={{ uri: avatarUri }}
-                  style={{ width: 64, height: 64 }}
-                  resizeMode="cover"
-                />
-              ) : initial ? (
-                <Text
-                  variant="title"
-                  style={{ color: t.colors.textSecondary, fontSize: 27 }}
-                >
-                  {initial}
-                </Text>
-              ) : (
-                <UserIcon
-                  size={30}
-                  color={t.colors.textTertiary}
-                  strokeWidth={1.9}
-                />
-              )}
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text variant="title" numberOfLines={1} style={{ fontSize: 20 }}>
-                {displayName ?? tr('settings.addName')}
-              </Text>
+            {avatarUri ? (
+              <Image
+                source={{ uri: avatarUri }}
+                style={{ width: 58, height: 58 }}
+                resizeMode="cover"
+              />
+            ) : initial ? (
               <Text
-                variant="caption"
-                color="secondary"
-                numberOfLines={1}
-                style={{ marginTop: 3 }}
+                variant="title"
+                style={{ color: t.colors.textPrimary, fontSize: 24 }}
               >
-                {tr('settings.profileSub')}
+                {initial}
               </Text>
-            </View>
-            <ChevronRightIcon
-              size={20}
-              color={t.colors.textTertiary}
-              strokeWidth={2}
-            />
+            ) : (
+              <UserIcon
+                size={28}
+                color={t.colors.textSecondary}
+                strokeWidth={2}
+              />
+            )}
           </View>
+          <View style={{ flex: 1 }}>
+            <Text variant="title" numberOfLines={1} style={{ fontSize: 19 }}>
+              {displayName ?? tr('settings.addName')}
+            </Text>
+            <Text
+              variant="body"
+              color="secondary"
+              numberOfLines={1}
+              style={{ marginTop: 2 }}
+            >
+              {phone ?? email ?? tr('settings.addName')}
+            </Text>
+          </View>
+          <ChevronRightIcon
+            size={20}
+            color={t.colors.textTertiary}
+            strokeWidth={2}
+          />
         </Pressable>
 
-        <View style={{ height: t.spacing.xs }} />
+        <Divider style={{ marginVertical: t.spacing.xs }} />
 
         <SettingRow
           icon={UserIcon}
@@ -365,6 +353,8 @@ export function SettingsScreen(): React.JSX.Element {
           VelChat · {appEnv.name} · v0.1.0
         </Text>
       </ScrollView>
+
+      <ProfilePeek visible={peekOpen} onClose={() => setPeekOpen(false)} />
     </Screen>
   );
 }

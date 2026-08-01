@@ -3,21 +3,14 @@
  * the shared axios client — the response envelope is unwrapped by the interceptor.
  */
 import { api } from '../../../infra';
+import { normalizeProfile, type Profile } from './profileShape';
 
-/** Directory profile (matches user-service UpdateProfileDto). Email is NOT here — it
- * is a separately-verified identifier (auth-service), added via the magic-link flow. */
-export interface Profile {
-  displayName?: string;
-  about?: string;
-  avatarMediaId?: string;
-  presencePrivacy?: 'everyone' | 'contacts' | 'nobody';
-  lastseenPrivacy?: 'everyone' | 'contacts' | 'nobody';
-  readreceiptsEnabled?: boolean;
-}
+export { normalizeProfile };
+export type { Profile };
 
 export async function getProfile(userId: string): Promise<Profile> {
   const res = await api.get(`/users/${userId}/profile`);
-  return res.data as Profile;
+  return normalizeProfile(res.data);
 }
 
 export async function updateProfile(
@@ -25,7 +18,7 @@ export async function updateProfile(
   patch: Partial<Profile>,
 ): Promise<Profile> {
   const res = await api.put(`/users/${userId}/profile`, patch);
-  return res.data as Profile;
+  return normalizeProfile(res.data);
 }
 
 // ── Media (avatar) upload (§B11): init → single multipart PUT ──
@@ -58,4 +51,17 @@ export async function uploadMediaFile(
   await api.put(uploadPath, form, {
     headers: { 'Content-Type': 'multipart/form-data' },
   });
+}
+
+/**
+ * Resolve a stored mediaId to a short-lived signed URL for display (§B11). Used to show
+ * the avatar on a fresh install where the local picked uri is gone — the server copy
+ * (avatarMediaId on the profile) is fetched on demand.
+ */
+export async function getMediaUrl(
+  mediaId: string,
+  ttl = 600,
+): Promise<{ url: string; mime: string }> {
+  const res = await api.get(`/media/${mediaId}/url`, { params: { ttl } });
+  return res.data as { url: string; mime: string };
 }

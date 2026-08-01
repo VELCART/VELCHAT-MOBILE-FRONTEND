@@ -32,6 +32,7 @@ export {
   ShieldIcon,
   BellIcon,
   InfoIcon,
+  ClockIcon,
   LogOutIcon,
   ChevronRightIcon,
   StorageIcon,

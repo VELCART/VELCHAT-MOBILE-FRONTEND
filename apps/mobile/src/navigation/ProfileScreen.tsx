@@ -27,6 +27,8 @@ import {
   UserIcon,
   InfoIcon,
   CallIcon,
+  MailIcon,
+  ClockIcon,
   CameraIcon,
   EditIcon,
   ChevronRightIcon,
@@ -34,12 +36,33 @@ import {
 } from '../design-system';
 import {
   useProfileSummary,
+  useProfileDetails,
   useSaveProfile,
   useAvatarUpload,
 } from '../features/user';
 import type { RootStackParamList } from './types';
 
 const AVATAR = 120;
+
+/** Human-readable "last login" — "Today, 3:42 PM" or "30 Jul 2026, 3:42 PM". */
+function formatLoginTime(iso: string | null, todayLabel: string): string {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  const time = d.toLocaleTimeString(undefined, {
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+  if (d.toDateString() === new Date().toDateString()) {
+    return `${todayLabel}, ${time}`;
+  }
+  const date = d.toLocaleDateString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  });
+  return `${date}, ${time}`;
+}
 
 /**
  * One profile field. Read-only rows just show a value; editable rows flip to an inline
@@ -225,11 +248,11 @@ export function ProfileScreen(): React.JSX.Element {
   const summary = useProfileSummary();
   const { save } = useSaveProfile();
   const avatar = useAvatarUpload();
+  const { remoteAvatarUrl } = useProfileDetails();
 
-  const [name, setName] = useState(summary.displayName ?? '');
-  const [about, setAbout] = useState(summary.about ?? '');
-
-  const avatarUri = avatar.localUri ?? summary.avatarUri;
+  const name = summary.displayName ?? '';
+  const about = summary.about ?? '';
+  const avatarUri = avatar.localUri ?? summary.avatarUri ?? remoteAvatarUrl;
   const initial = name.trim().charAt(0).toUpperCase();
 
   // A freshly-uploaded photo attaches to the directory profile once its id lands.
@@ -237,17 +260,11 @@ export function ProfileScreen(): React.JSX.Element {
     if (avatar.mediaId) void save({ avatarMediaId: avatar.mediaId });
   }, [avatar.mediaId, save]);
 
-  const saveName = async (next: string): Promise<boolean> => {
-    if (next.length < 1) return false;
-    const ok = await save({ displayName: next });
-    if (ok) setName(next);
-    return ok;
-  };
-  const saveAbout = async (next: string): Promise<boolean> => {
-    const ok = await save({ about: next });
-    if (ok) setAbout(next);
-    return ok;
-  };
+  // Saves write straight through to the reactive MMKV mirror, so the row re-renders
+  // from `summary` the instant the PUT resolves — nothing to hold in local state.
+  const saveName = (next: string): Promise<boolean> =>
+    next.length < 1 ? Promise.resolve(false) : save({ displayName: next });
+  const saveAbout = (next: string): Promise<boolean> => save({ about: next });
 
   return (
     <Screen edges={['top']} padded={false}>
@@ -435,6 +452,20 @@ export function ProfileScreen(): React.JSX.Element {
             icon={CallIcon}
             label={tr('profile.phone')}
             value={summary.phone ?? ''}
+            placeholder="—"
+          />
+          <Divider style={{ marginHorizontal: t.spacing.xl }} />
+          <InfoRow
+            icon={MailIcon}
+            label={tr('profile.email')}
+            value={summary.email ?? ''}
+            placeholder={tr('profile.emailEmpty')}
+          />
+          <Divider style={{ marginHorizontal: t.spacing.xl }} />
+          <InfoRow
+            icon={ClockIcon}
+            label={tr('profile.lastLogin')}
+            value={formatLoginTime(summary.loginAt, tr('profile.today'))}
             placeholder="—"
           />
           <Divider style={{ marginHorizontal: t.spacing.xl }} />

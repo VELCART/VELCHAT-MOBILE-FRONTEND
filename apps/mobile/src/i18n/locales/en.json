@@ -103,7 +103,13 @@
     "phone": "Phone",
     "save": "Save",
     "nameHint": "This is not your username or PIN. This name will be visible to your contacts.",
-    "aboutEmpty": "Hey there! I'm using VelChat."
+    "aboutEmpty": "Hey there! I'm using VelChat.",
+    "email": "Email",
+    "emailEmpty": "Not added",
+    "lastLogin": "Last login",
+    "today": "Today",
+    "viewProfile": "View profile",
+    "changePhoto": "Change photo"
   },
   "header": {
     "search": "Search",
@@ -123,6 +129,7 @@
   },
   "common": {
     "empty": "Nothing here yet",
+    "dismiss": "Dismiss",
     "theme": "Theme: {{mode}} · tap to toggle",
     "offline": "You're offline — waiting for network",
     "flightMode": "Flight mode on — you're offline"

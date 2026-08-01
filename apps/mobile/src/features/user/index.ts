@@ -8,7 +8,9 @@ export { ProfileSetupSheet } from './ui/ProfileSetupSheet';
 export {
   useProfileGate,
   useProfileSummary,
+  useProfileDetails,
   useSaveProfile,
   useAvatarUpload,
+  useAvatarPicker,
 } from './hooks/useProfile';
 export type { Profile } from './api/userApi';
