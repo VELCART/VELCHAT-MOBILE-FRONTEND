@@ -31,6 +31,33 @@ const CLIENT_VERSION = '0.0.1';
 const DEFAULT_TIMEOUT = 60000;
 const MAX_RETRIES = 2;
 
+/**
+ * Wake the backend the moment the app launches (§ops). Render free-tier services
+ * HIBERNATE after ~15 min idle, so the first real request eats a 30-50s cold start and
+ * can time out. Firing these cheap, fire-and-forget health pings up front gives the
+ * login path (gateway + auth) — and the realtime host — a head start, so by the time
+ * the user taps "send code" it's already warm. Best-effort: failures are swallowed and
+ * it never blocks the UI. (Complements a server-side keep-warm cron for 24/7 uptime.)
+ */
+export function warmBackend(): void {
+  if (isFlightMode()) return;
+  const base = appEnv.apiBaseUrl.replace(/\/+$/, '');
+  const urls = [
+    `${base}/health`, // gateway
+    `${base}/.well-known/jwks.json`, // auth-service (login path)
+  ];
+  // The realtime gateway is a separate host — derive its /health from the ws URL.
+  const wsHealth = appEnv.wsUrl
+    .replace(/^ws/, 'http')
+    .replace(/\/ws\/?$/, '/health');
+  if (/^https?:\/\//.test(wsHealth)) urls.push(wsHealth);
+
+  for (const url of urls) {
+    // No await — fire-and-forget. A cold instance still wakes; we ignore the result.
+    void fetch(url, { method: 'GET' }).catch(() => undefined);
+  }
+}
+
 interface RetryConfig extends InternalAxiosRequestConfig {
   __retryCount?: number;
   __didAuthRetry?: boolean;

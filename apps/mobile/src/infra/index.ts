@@ -8,6 +8,7 @@ export {
   queryClient,
   api,
   refreshAccessToken,
+  warmBackend,
   AppError,
   isAppError,
   normalizeError,

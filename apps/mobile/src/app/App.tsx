@@ -17,6 +17,7 @@ import {
   KVKeys,
   getNetworkStatus,
   subscribeNetwork,
+  warmBackend,
 } from '../infra';
 import { RootNavigator } from '../navigation';
 import { useAuthBootstrap } from '../features/auth';
@@ -48,6 +49,9 @@ function Gate(): React.JSX.Element {
 export default function App(): React.JSX.Element {
   useEffect(() => {
     bootstrap();
+    // Wake the (free-tier, hibernating) backend up front so the login path is warm by
+    // the time the user reaches it — no 30-50s cold-start timeout on the first request.
+    warmBackend();
     // Mirror real network reachability into the connectivity store (offline banner + gating).
     const applyOnline = (connected: boolean): void =>
       useConnectivity.getState().setOnline(connected);
