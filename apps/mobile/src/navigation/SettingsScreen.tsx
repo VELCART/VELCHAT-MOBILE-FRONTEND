@@ -4,7 +4,7 @@
  * App language + Appearance are live rows — tap to cycle. Premium through spacing and
  * typography, not chrome. Themed light/dark; scrolls on short devices.
  */
-import React from 'react';
+import React, { useState } from 'react';
 import { ScrollView, View, Pressable, Image } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -31,6 +31,7 @@ import {
 import { appEnv } from '../core';
 import { useAuthStore } from '../features/auth';
 import { useProfileSummary } from '../features/user';
+import { ProfilePeek } from './ProfilePeek';
 import type { RootStackParamList } from './types';
 
 function TopIcon({
@@ -136,6 +137,7 @@ export function SettingsScreen(): React.JSX.Element {
   const { displayName, email, phone, avatarUri } = useProfileSummary();
   const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
   const signOut = useAuthStore(s => s.signOut);
+  const [peekOpen, setPeekOpen] = useState(false);
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
 
@@ -164,9 +166,9 @@ export function SettingsScreen(): React.JSX.Element {
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          gap: t.spacing.sm,
-          height: 56,
-          paddingHorizontal: t.spacing.md,
+          height: 58,
+          paddingLeft: t.spacing.xs,
+          paddingRight: t.spacing.sm,
         }}
       >
         <Pressable
@@ -190,13 +192,22 @@ export function SettingsScreen(): React.JSX.Element {
             />
           </View>
         </Pressable>
-        <Text variant="title" style={{ fontSize: 20 }}>
+        <Text
+          variant="title"
+          style={{ fontSize: 21, marginLeft: t.spacing.xxs }}
+        >
           {tr('tabs.settings')}
         </Text>
 
         <View style={{ flex: 1 }} />
 
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: t.spacing.xxs,
+          }}
+        >
           <TopIcon
             icon={SearchIcon}
             label={tr('header.search')}
@@ -211,16 +222,18 @@ export function SettingsScreen(): React.JSX.Element {
         contentContainerStyle={{ paddingBottom: t.spacing.huge }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Profile header */}
+        {/* Profile header — tap to open the Profile page, long-press to peek. */}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={displayName ?? tr('settings.addName')}
-          onPress={noop}
+          onPress={() => navigation.navigate('Profile')}
+          onLongPress={() => setPeekOpen(true)}
+          delayLongPress={220}
           style={({ pressed }) => ({
             flexDirection: 'row',
             alignItems: 'center',
             gap: t.spacing.md,
-            paddingHorizontal: t.spacing.xl,
+            paddingHorizontal: t.spacing.md,
             paddingVertical: t.spacing.md,
             opacity: pressed ? 0.6 : 1,
           })}
@@ -340,6 +353,8 @@ export function SettingsScreen(): React.JSX.Element {
           VelChat · {appEnv.name} · v0.1.0
         </Text>
       </ScrollView>
+
+      <ProfilePeek visible={peekOpen} onClose={() => setPeekOpen(false)} />
     </Screen>
   );
 }

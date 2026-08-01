@@ -28,6 +28,7 @@ import {
 import { useConnectivity, useActiveTab } from '../core';
 import { useProfileSummary } from '../features/user';
 import { HeaderMenu, type HeaderMenuItem } from './HeaderMenu';
+import { ProfilePeek } from './ProfilePeek';
 import type { RootStackParamList } from './types';
 
 // The rotating "active" halo around the avatar — a lively green even in the B&W theme.
@@ -144,8 +145,10 @@ export function HomeHeader(): React.JSX.Element {
   const { displayName, avatarUri } = useProfileSummary();
   const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [peekOpen, setPeekOpen] = useState(false);
 
   const openSettings = (): void => navigation.navigate('Settings');
+  const openProfile = (): void => navigation.navigate('Profile');
   const noop = (): void => undefined;
   const isChats = activeTab === 'Chats';
 
@@ -207,7 +210,9 @@ export function HomeHeader(): React.JSX.Element {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel="Profile"
-      onPress={openSettings}
+      onPress={openProfile}
+      onLongPress={() => setPeekOpen(true)}
+      delayLongPress={220}
       hitSlop={6}
       style={({ pressed }) => ({
         width: 36,
@@ -226,10 +231,10 @@ export function HomeHeader(): React.JSX.Element {
         }}
       >
         <SpinningRing
-          size={32}
+          size={33}
           color={RING_GREEN}
-          thickness={2.2}
-          durationMs={7000}
+          thickness={2.1}
+          durationMs={6000}
         />
         <View
           style={{
@@ -372,6 +377,8 @@ export function HomeHeader(): React.JSX.Element {
         onClose={() => setMenuOpen(false)}
         items={menuItems}
       />
+
+      <ProfilePeek visible={peekOpen} onClose={() => setPeekOpen(false)} />
     </View>
   );
 }

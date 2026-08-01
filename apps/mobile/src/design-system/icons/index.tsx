@@ -230,6 +230,20 @@ export function InfoIcon({
   );
 }
 
+/** Clock — timestamps (last login). */
+export function ClockIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={12} cy={12} r={9} {...stroke(color, strokeWidth)} />
+      <Path d="M12 7v5l3 2" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
 /** Log out. */
 export function LogOutIcon({
   size = 24,

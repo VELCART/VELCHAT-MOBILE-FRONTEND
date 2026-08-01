@@ -20,7 +20,7 @@ export {
   clearSession,
 } from './network';
 export type { AppErrorKind, SessionTokens } from './network';
-export { storage, kv, KVKeys } from './kv';
+export { storage, kv, KVKeys, useKVString } from './kv';
 export {
   ensureDeviceKey,
   signChallenge,

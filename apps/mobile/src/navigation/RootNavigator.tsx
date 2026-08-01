@@ -24,6 +24,7 @@ import {
 } from '../features/auth';
 import { AppTabs } from './AppTabs';
 import { SettingsScreen } from './SettingsScreen';
+import { ProfileScreen } from './ProfileScreen';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -46,6 +47,7 @@ const linking: LinkingOptions<RootStackParamList> = {
         },
       },
       Settings: 'settings',
+      Profile: 'profile',
     },
   },
 };
@@ -87,6 +89,11 @@ export function RootNavigator(): React.JSX.Element {
           <Stack.Screen
             name="Settings"
             component={SettingsScreen}
+            options={{ animation: 'slide_from_right' }}
+          />
+          <Stack.Screen
+            name="Profile"
+            component={ProfileScreen}
             options={{ animation: 'slide_from_right' }}
           />
         </Stack.Navigator>

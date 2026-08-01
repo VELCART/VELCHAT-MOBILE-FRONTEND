@@ -6,19 +6,42 @@
  * import); it's already set by the time the app reaches home.
  */
 import { useCallback, useEffect, useState } from 'react';
-import { launchImageLibrary } from 'react-native-image-picker';
-import { getAccountId, isAppError, kv, KVKeys } from '../../../infra';
+import type { Image as CroppedImage } from 'react-native-image-crop-picker';
+import {
+  getAccountId,
+  isAppError,
+  kv,
+  KVKeys,
+  useKVString,
+} from '../../../infra';
 import {
   getProfile,
   updateProfile,
   initUpload,
   uploadMediaFile,
+  getMediaUrl,
   type Profile,
 } from '../api/userApi';
 
 // Re-exported so feature UI gets haptics through the feature layer (UI must not
 // import infra directly — layer boundaries §M3).
 export { hapticTick } from '../../../infra';
+
+type CropPicker = typeof import('react-native-image-crop-picker').default;
+
+/**
+ * Lazily resolve the native cropper. On the New Architecture the module throws at
+ * import when its native side isn't in the binary yet (i.e. after adding the dep but
+ * before a rebuild). Loading it lazily + guarded means that only the "pick photo"
+ * action fails softly with a clear message — the rest of the app keeps working.
+ */
+function loadCropPicker(): CropPicker | null {
+  try {
+    return require('react-native-image-crop-picker').default as CropPicker;
+  } catch {
+    return null;
+  }
+}
 
 export function useProfileGate(): {
   needsSetup: boolean;
@@ -64,19 +87,80 @@ export function useProfileGate(): {
   return { needsSetup, markComplete };
 }
 
-/** Locally-mirrored profile summary for instant Settings render (no network). */
+/**
+ * Locally-mirrored profile summary — REACTIVE. Backed by the encrypted MMKV mirror, it
+ * re-renders every consumer (header, Settings, Profile) the instant a photo is picked or
+ * a field saved. Zero network on the render path; the UI never waits (§M0).
+ */
 export function useProfileSummary(): {
   displayName: string | null;
   email: string | null;
   phone: string | null;
+  about: string | null;
   avatarUri: string | null;
+  loginAt: string | null;
 } {
   return {
-    displayName: kv.getString(KVKeys.displayName) ?? null,
-    email: kv.getString(KVKeys.email) ?? null,
-    phone: kv.getString(KVKeys.phone) ?? null,
-    avatarUri: kv.getString(KVKeys.avatarUri) ?? null,
+    displayName: useKVString(KVKeys.displayName) ?? null,
+    email: useKVString(KVKeys.email) ?? null,
+    phone: useKVString(KVKeys.phone) ?? null,
+    about: useKVString(KVKeys.about) ?? null,
+    avatarUri: useKVString(KVKeys.avatarUri) ?? null,
+    loginAt: useKVString(KVKeys.loginAt) ?? null,
   };
+}
+
+/**
+ * Load the authoritative profile from the backend once (§B3) and mirror it locally so
+ * the reactive summary reflects the server truth. Resolves the avatar's mediaId to a
+ * signed URL for display when there's no local picked copy (e.g. a fresh install).
+ * Offline-first: any failure is non-blocking — the mirror already rendered instantly.
+ */
+export function useProfileDetails(): {
+  loading: boolean;
+  error: string | null;
+  remoteAvatarUrl: string | null;
+  reload: () => Promise<void>;
+} {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [remoteAvatarUrl, setRemoteAvatarUrl] = useState<string | null>(null);
+
+  const reload = useCallback(async (): Promise<void> => {
+    const accountId = getAccountId();
+    if (!accountId) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const profile = await getProfile(accountId);
+      if (profile.displayName) kv.set(KVKeys.displayName, profile.displayName);
+      if (profile.about !== undefined)
+        kv.set(KVKeys.about, profile.about ?? '');
+      if (profile.avatarMediaId) {
+        try {
+          const { url } = await getMediaUrl(profile.avatarMediaId);
+          setRemoteAvatarUrl(url);
+        } catch {
+          // A missing signed URL just means we keep whatever local copy we have.
+        }
+      }
+    } catch (e) {
+      setError(
+        isAppError(e) ? e.message : 'Could not refresh your profile just now.',
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void reload();
+  }, [reload]);
+
+  return { loading, error, remoteAvatarUrl, reload };
 }
 
 export function useSaveProfile(): {
@@ -98,8 +182,9 @@ export function useSaveProfile(): {
       setError(null);
       try {
         await updateProfile(accountId, patch);
-        // Mirror name locally so Settings can render instantly without a fetch.
+        // Mirror name/about locally so Settings + Profile render instantly (no fetch).
         if (patch.displayName) kv.set(KVKeys.displayName, patch.displayName);
+        if (patch.about !== undefined) kv.set(KVKeys.about, patch.about);
         // Email isn't a directory field — it's a verified identifier. Keep it locally
         // for now; server-side attach/verify (magic-link for an existing account) is a
         // backend follow-up.
@@ -143,29 +228,48 @@ export function useAvatarUpload(): {
   const pick = useCallback(async (): Promise<void> => {
     const accountId = getAccountId();
     if (!accountId) return;
-    const result = await launchImageLibrary({
-      mediaType: 'photo',
-      selectionLimit: 1,
-      quality: 0.8,
-    });
-    if (result.didCancel) return;
-    const asset = result.assets?.[0];
-    if (!asset?.uri) {
-      if (result.errorCode) setError('Could not open the gallery.');
+    const cropper = loadCropPicker();
+    if (!cropper) {
+      // Native module absent → the app hasn't been rebuilt since adding the cropper.
+      setError(
+        'Photo cropping needs a fresh app build — please rebuild the app.',
+      );
       return;
     }
-    setLocalUri(asset.uri);
+    // Open the gallery straight into a circular crop UI (WhatsApp/Instagram-style),
+    // square-forced to 512² JPEG so avatars are consistent and light to upload.
+    let image: CroppedImage;
+    try {
+      image = await cropper.openPicker({
+        mediaType: 'photo',
+        cropping: true,
+        cropperCircleOverlay: true,
+        width: 512,
+        height: 512,
+        compressImageQuality: 0.85,
+        forceJpg: true,
+        hideBottomControls: true,
+        showCropGuidelines: false,
+      });
+    } catch (e) {
+      // Backing out of the picker/cropper is a normal cancel, not an error.
+      if ((e as { code?: string })?.code === 'E_PICKER_CANCELLED') return;
+      setError('Could not open the gallery.');
+      return;
+    }
+    if (!image?.path) return;
+    setLocalUri(image.path);
     // Persist the local uri so the header + Settings show the photo immediately and
     // across launches on this device (the server copy rides on avatarMediaId).
-    kv.set(KVKeys.avatarUri, asset.uri);
+    kv.set(KVKeys.avatarUri, image.path);
     setError(null);
     setUploading(true);
     try {
-      const mime = asset.type ?? 'image/jpeg';
+      const mime = image.mime ?? 'image/jpeg';
       const { mediaId: id, uploadPath } = await initUpload(accountId, mime);
       await uploadMediaFile(uploadPath, {
-        uri: asset.uri,
-        name: asset.fileName ?? 'avatar.jpg',
+        uri: image.path,
+        name: image.filename ?? 'avatar.jpg',
         type: mime,
       });
       setMediaId(id);
@@ -180,4 +284,24 @@ export function useAvatarUpload(): {
   }, []);
 
   return { pick, localUri, mediaId, uploading, error };
+}
+
+/**
+ * Pick + upload + attach an avatar to the directory profile in one call. Wraps
+ * `useAvatarUpload` and, once the upload yields a mediaId, PUTs it onto the profile —
+ * so changing the photo from anywhere (Profile page OR the long-press peek) fully
+ * persists, and the reactive mirror shows it everywhere at once.
+ */
+export function useAvatarPicker(): {
+  pick: () => Promise<void>;
+  uploading: boolean;
+  localUri: string | null;
+  error: string | null;
+} {
+  const { pick, localUri, mediaId, uploading, error } = useAvatarUpload();
+  const { save } = useSaveProfile();
+  useEffect(() => {
+    if (mediaId) void save({ avatarMediaId: mediaId });
+  }, [mediaId, save]);
+  return { pick, uploading, localUri, error };
 }

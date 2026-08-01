@@ -126,6 +126,7 @@ export function useOtpAuth(): {
   clearError: () => void;
 } {
   const provision = useAuthStore(s => s.provision);
+  const rememberPhone = useAuthStore(s => s.rememberPhone);
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -178,6 +179,9 @@ export function useOtpAuth(): {
           );
           return false;
         }
+        // Persist the verified number so the Profile page can show it (the active OTP
+        // flow, unlike reverse-OTP, otherwise never records it).
+        rememberPhone(phone);
         provision(tokens); // → state 'active' (stays logged in next launch)
         return true;
       } catch (e) {
@@ -191,7 +195,7 @@ export function useOtpAuth(): {
         setVerifying(false);
       }
     },
-    [provision],
+    [provision, rememberPhone],
   );
 
   const clearError = useCallback(() => setError(null), []);

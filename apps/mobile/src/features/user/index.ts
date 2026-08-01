@@ -5,5 +5,12 @@
  * Dependency rule (§M3): UI → Feature → Domain → Infra. Never the reverse.
  */
 export { ProfileSetupSheet } from './ui/ProfileSetupSheet';
-export { useProfileGate, useProfileSummary } from './hooks/useProfile';
+export {
+  useProfileGate,
+  useProfileSummary,
+  useProfileDetails,
+  useSaveProfile,
+  useAvatarUpload,
+  useAvatarPicker,
+} from './hooks/useProfile';
 export type { Profile } from './api/userApi';

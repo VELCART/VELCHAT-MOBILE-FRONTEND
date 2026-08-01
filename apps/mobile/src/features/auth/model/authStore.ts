@@ -64,6 +64,8 @@ export const useAuthStore = create<AuthStore>(set => ({
     });
     kv.set(KVKeys.accountId, tokens.accountId);
     kv.set(KVKeys.deviceId, tokens.deviceId);
+    // Stamp the sign-in time so the Profile page can show "last login".
+    kv.set(KVKeys.loginAt, new Date().toISOString());
     set({ accountId: tokens.accountId, state: 'active' });
   },
 
@@ -74,6 +76,13 @@ export const useAuthStore = create<AuthStore>(set => ({
     clearSession();
     clearDeviceKey(); // full logout — next sign-in re-provisions via OTP (no silent relogin)
     kv.delete(KVKeys.phone);
+    kv.delete(KVKeys.loginAt);
+    // Drop the mirrored profile so the next account never sees the previous one.
+    kv.delete(KVKeys.displayName);
+    kv.delete(KVKeys.email);
+    kv.delete(KVKeys.about);
+    kv.delete(KVKeys.avatarUri);
+    kv.delete(KVKeys.profileComplete);
     set({ state: 'signed_out', accountId: null, sessionId: null, phone: null });
   },
 }));
