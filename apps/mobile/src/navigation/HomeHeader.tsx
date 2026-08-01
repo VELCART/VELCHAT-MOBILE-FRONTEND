@@ -228,8 +228,8 @@ export function HomeHeader(): React.JSX.Element {
         <SpinningRing
           size={32}
           color={RING_GREEN}
-          thickness={2.2}
-          durationMs={7000}
+          thickness={2.6}
+          durationMs={6000}
         />
         <View
           style={{

@@ -5,7 +5,7 @@
  * typography, not chrome. Themed light/dark; scrolls on short devices.
  */
 import React from 'react';
-import { ScrollView, View, Pressable, Image } from 'react-native';
+import { ScrollView, View, Pressable, Image, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTranslation, useLanguage } from '../i18n';
@@ -133,7 +133,7 @@ export function SettingsScreen(): React.JSX.Element {
   const { t: tr } = useTranslation();
   const { mode, setMode } = useThemeMode();
   const { language, setLanguage, supported, names } = useLanguage();
-  const { displayName, email, phone, avatarUri } = useProfileSummary();
+  const { displayName, avatarUri } = useProfileSummary();
   const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
   const signOut = useAuthStore(s => s.signOut);
   const navigation =
@@ -164,9 +164,9 @@ export function SettingsScreen(): React.JSX.Element {
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          gap: t.spacing.sm,
-          height: 56,
-          paddingHorizontal: t.spacing.md,
+          height: 58,
+          paddingLeft: t.spacing.xs,
+          paddingRight: t.spacing.sm,
         }}
       >
         <Pressable
@@ -190,13 +190,22 @@ export function SettingsScreen(): React.JSX.Element {
             />
           </View>
         </Pressable>
-        <Text variant="title" style={{ fontSize: 20 }}>
+        <Text
+          variant="title"
+          style={{ fontSize: 21, marginLeft: t.spacing.xxs }}
+        >
           {tr('tabs.settings')}
         </Text>
 
         <View style={{ flex: 1 }} />
 
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: t.spacing.xxs,
+          }}
+        >
           <TopIcon
             icon={SearchIcon}
             label={tr('header.search')}
@@ -211,73 +220,89 @@ export function SettingsScreen(): React.JSX.Element {
         contentContainerStyle={{ paddingBottom: t.spacing.huge }}
         showsVerticalScrollIndicator={false}
       >
-        {/* Profile header */}
+        {/* Profile header — Apple-style rounded account card */}
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={displayName ?? tr('settings.addName')}
-          onPress={noop}
+          onPress={() => navigation.navigate('Profile')}
           style={({ pressed }) => ({
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: t.spacing.md,
-            paddingHorizontal: t.spacing.xl,
-            paddingVertical: t.spacing.md,
-            opacity: pressed ? 0.6 : 1,
+            marginHorizontal: t.spacing.lg,
+            marginTop: t.spacing.xs,
+            marginBottom: t.spacing.sm,
+            transform: [{ scale: pressed ? 0.99 : 1 }],
+            opacity: pressed ? 0.9 : 1,
           })}
         >
           <View
-            style={{
-              width: 58,
-              height: 58,
-              borderRadius: 29,
-              backgroundColor: t.colors.bgSubtle,
-              alignItems: 'center',
-              justifyContent: 'center',
-              overflow: 'hidden',
-            }}
+            style={[
+              {
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: t.spacing.md,
+                backgroundColor: t.colors.surface,
+                borderRadius: t.radius.lg,
+                paddingVertical: t.spacing.md,
+                paddingHorizontal: t.spacing.md,
+                borderWidth: t.scheme === 'dark' ? StyleSheet.hairlineWidth : 0,
+                borderColor: t.colors.hairline,
+              },
+              t.elevation.e1,
+            ]}
           >
-            {avatarUri ? (
-              <Image
-                source={{ uri: avatarUri }}
-                style={{ width: 58, height: 58 }}
-                resizeMode="cover"
-              />
-            ) : initial ? (
-              <Text
-                variant="title"
-                style={{ color: t.colors.textPrimary, fontSize: 24 }}
-              >
-                {initial}
-              </Text>
-            ) : (
-              <UserIcon
-                size={28}
-                color={t.colors.textSecondary}
-                strokeWidth={2}
-              />
-            )}
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text variant="title" numberOfLines={1} style={{ fontSize: 19 }}>
-              {displayName ?? tr('settings.addName')}
-            </Text>
-            <Text
-              variant="body"
-              color="secondary"
-              numberOfLines={1}
-              style={{ marginTop: 2 }}
+            <View
+              style={{
+                width: 64,
+                height: 64,
+                borderRadius: 32,
+                backgroundColor: t.colors.bgSubtle,
+                alignItems: 'center',
+                justifyContent: 'center',
+                overflow: 'hidden',
+              }}
             >
-              {phone ?? email ?? tr('settings.addName')}
-            </Text>
+              {avatarUri ? (
+                <Image
+                  source={{ uri: avatarUri }}
+                  style={{ width: 64, height: 64 }}
+                  resizeMode="cover"
+                />
+              ) : initial ? (
+                <Text
+                  variant="title"
+                  style={{ color: t.colors.textSecondary, fontSize: 27 }}
+                >
+                  {initial}
+                </Text>
+              ) : (
+                <UserIcon
+                  size={30}
+                  color={t.colors.textTertiary}
+                  strokeWidth={1.9}
+                />
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text variant="title" numberOfLines={1} style={{ fontSize: 20 }}>
+                {displayName ?? tr('settings.addName')}
+              </Text>
+              <Text
+                variant="caption"
+                color="secondary"
+                numberOfLines={1}
+                style={{ marginTop: 3 }}
+              >
+                {tr('settings.profileSub')}
+              </Text>
+            </View>
+            <ChevronRightIcon
+              size={20}
+              color={t.colors.textTertiary}
+              strokeWidth={2}
+            />
           </View>
-          <ChevronRightIcon
-            size={20}
-            color={t.colors.textTertiary}
-            strokeWidth={2}
-          />
         </Pressable>
 
-        <Divider style={{ marginVertical: t.spacing.xs }} />
+        <View style={{ height: t.spacing.xs }} />
 
         <SettingRow
           icon={UserIcon}

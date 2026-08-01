@@ -69,12 +69,14 @@ export function useProfileSummary(): {
   displayName: string | null;
   email: string | null;
   phone: string | null;
+  about: string | null;
   avatarUri: string | null;
 } {
   return {
     displayName: kv.getString(KVKeys.displayName) ?? null,
     email: kv.getString(KVKeys.email) ?? null,
     phone: kv.getString(KVKeys.phone) ?? null,
+    about: kv.getString(KVKeys.about) ?? null,
     avatarUri: kv.getString(KVKeys.avatarUri) ?? null,
   };
 }
@@ -98,8 +100,9 @@ export function useSaveProfile(): {
       setError(null);
       try {
         await updateProfile(accountId, patch);
-        // Mirror name locally so Settings can render instantly without a fetch.
+        // Mirror name/about locally so Settings + Profile render instantly (no fetch).
         if (patch.displayName) kv.set(KVKeys.displayName, patch.displayName);
+        if (patch.about !== undefined) kv.set(KVKeys.about, patch.about);
         // Email isn't a directory field — it's a verified identifier. Keep it locally
         // for now; server-side attach/verify (magic-link for an existing account) is a
         // backend follow-up.

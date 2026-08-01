@@ -3,7 +3,8 @@
     "title": "Connect. Chat.\nStay Close.",
     "subtitle": "Instant messaging, voice & video calls, and more — all in one secure app.",
     "cta": "Start Chatting",
-    "skip": "Skip"
+    "skip": "Skip",
+    "chooseLanguage": "Choose your language"
   },
   "signin": {
     "title": "Let's get started.",
@@ -72,6 +73,7 @@
     "storage": "Storage & Data",
     "help": "Help & About",
     "addName": "Add your name",
+    "profileSub": "Profile photo, name, and about",
     "accountSub": "Security notifications, change number",
     "privacySub": "Block contacts, disappearing messages",
     "notificationsSub": "Message, group & call tones",
@@ -94,7 +96,14 @@
     "next": "Next",
     "done": "Done",
     "back": "Back",
-    "addPhoto": "Add photo"
+    "addPhoto": "Add photo",
+    "pageTitle": "Profile",
+    "name": "Name",
+    "about": "About",
+    "phone": "Phone",
+    "save": "Save",
+    "nameHint": "This is not your username or PIN. This name will be visible to your contacts.",
+    "aboutEmpty": "Hey there! I'm using VelChat."
   },
   "header": {
     "search": "Search",

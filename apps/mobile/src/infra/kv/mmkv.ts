@@ -36,6 +36,8 @@ export const KVKeys = {
   email: 'user.email',
   // display name mirrored locally so Settings renders instantly (no network)
   displayName: 'user.displayName',
+  // about/bio mirrored locally so the Profile page renders instantly (no network)
+  about: 'user.about',
   // local uri of the picked avatar photo — shown instantly in header/settings
   avatarUri: 'user.avatarUri',
 } as const;

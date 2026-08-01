@@ -9,6 +9,7 @@ export type RootStackParamList = {
   ReverseOtp: undefined;
   AppTabs: undefined;
   Settings: undefined;
+  Profile: undefined;
 };
 
 /** Bottom tabs (WhatsApp-parity): Chats · Updates · Communities · Calls.

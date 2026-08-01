@@ -1,20 +1,24 @@
 /**
- * Welcome screen (§F1) — hero = the provided orbit-of-people art (white bg, so it
- * blends into the white onboarding screen), bold heading, muted subtitle, floating
- * pill CTA with a trailing arrow. Staggered fade-in on mount. Locked to light.
+ * Welcome screen (§F1) — hero art, bold heading, muted subtitle, floating pill CTA.
+ * A language selector pill sits at the top: tap it to open a bottom-sheet dropdown and
+ * pick the app language before signing up. Staggered fade-in on mount. Locked to light.
  */
-import React from 'react';
-import { StatusBar, View, Image } from 'react-native';
+import React, { useState } from 'react';
+import { StatusBar, View, Image, Pressable } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { useTranslation } from '../../../i18n';
+import { useTranslation, useLanguage } from '../../../i18n';
 import { useTheme } from '../../../theme';
 import {
   Screen,
   Text,
   PillButton,
   Column,
+  Divider,
   FadeInUp,
+  BottomSheet,
+  GlobeIcon,
+  ChevronRightIcon,
 } from '../../../design-system';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useRequestNotifications } from '../hooks/useAuth';
@@ -26,6 +30,8 @@ export function WelcomeScreen(): React.JSX.Element {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { check } = useRequestNotifications();
+  const { language, setLanguage, supported, names } = useLanguage();
+  const [langOpen, setLangOpen] = useState(false);
 
   // Skip the notifications page only when permission is already granted; otherwise
   // (never asked OR denied) show it so the user can still turn notifications on.
@@ -38,11 +44,45 @@ export function WelcomeScreen(): React.JSX.Element {
     <Screen>
       <StatusBar barStyle="dark-content" />
       <View style={{ flex: 1, alignItems: 'center' }}>
+        <FadeInUp style={{ alignItems: 'center' }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={tr('welcome.chooseLanguage')}
+            onPress={() => setLangOpen(true)}
+            style={({ pressed }) => ({
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: t.spacing.xs,
+              paddingVertical: t.spacing.xs,
+              paddingHorizontal: t.spacing.md,
+              borderRadius: t.radius.pill,
+              backgroundColor: t.colors.bgSubtle,
+              opacity: pressed ? 0.7 : 1,
+            })}
+          >
+            <GlobeIcon
+              size={16}
+              color={t.colors.textSecondary}
+              strokeWidth={2}
+            />
+            <Text variant="caption" style={{ fontSize: 13 }}>
+              {names[language]}
+            </Text>
+            <View style={{ transform: [{ rotate: '90deg' }] }}>
+              <ChevronRightIcon
+                size={14}
+                color={t.colors.textSecondary}
+                strokeWidth={2.4}
+              />
+            </View>
+          </Pressable>
+        </FadeInUp>
+
         <FadeInUp style={{ width: '100%', alignItems: 'center' }}>
           <Image
             source={HERO}
             resizeMode="contain"
-            style={{ width: '100%', height: 400, marginTop: t.spacing.sm }}
+            style={{ width: '100%', height: 380, marginTop: t.spacing.xs }}
           />
         </FadeInUp>
 
@@ -74,6 +114,64 @@ export function WelcomeScreen(): React.JSX.Element {
           />
         </FadeInUp>
       </View>
+
+      <BottomSheet visible={langOpen} onClose={() => setLangOpen(false)}>
+        <View
+          style={{
+            paddingHorizontal: t.spacing.xl,
+            paddingTop: t.spacing.xs,
+            paddingBottom: t.spacing.sm,
+          }}
+        >
+          <Text variant="title" align="center" style={{ fontSize: 20 }}>
+            {tr('welcome.chooseLanguage')}
+          </Text>
+          <View style={{ marginTop: t.spacing.md }}>
+            {supported.map((code, i) => {
+              const active = code === language;
+              return (
+                <React.Fragment key={code}>
+                  {i > 0 ? <Divider /> : null}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityState={{ selected: active }}
+                    onPress={() => {
+                      setLanguage(code);
+                      setLangOpen(false);
+                    }}
+                    style={({ pressed }) => ({
+                      flexDirection: 'row',
+                      alignItems: 'center',
+                      paddingVertical: t.spacing.md,
+                      opacity: pressed ? 0.6 : 1,
+                    })}
+                  >
+                    <Text
+                      variant="body"
+                      style={{
+                        flex: 1,
+                        color: active
+                          ? t.colors.brandFrom
+                          : t.colors.textPrimary,
+                      }}
+                    >
+                      {names[code]}
+                    </Text>
+                    {active ? (
+                      <Text
+                        variant="label"
+                        style={{ color: t.colors.brandFrom }}
+                      >
+                        ✓
+                      </Text>
+                    ) : null}
+                  </Pressable>
+                </React.Fragment>
+              );
+            })}
+          </View>
+        </View>
+      </BottomSheet>
     </Screen>
   );
 }
