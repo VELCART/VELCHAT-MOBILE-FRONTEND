@@ -1,7 +1,7 @@
 /**
  * FrostedCircle (§M16) — a premium frosted-glass disc: a REAL gaussian blur of whatever
- * is behind it (@react-native-community/blur), a milky theme-aware tint, a glossy sheen
- * + specular highlight + light rim (GlassBubble), and the caller's content on top.
+ * is behind it (@react-native-community/blur), a milky tint, and a thin theme-aware rim,
+ * with the caller's content on top.
  *
  * The blur module is loaded lazily and guarded: if the native side isn't in the binary
  * yet (dep added but app not rebuilt) it falls back to a heavier translucent tint so the
@@ -10,7 +10,6 @@
 import React from 'react';
 import { View, StyleSheet, type ViewStyle } from 'react-native';
 import { useTheme } from '../theme';
-import { GlassBubble } from './GlassBubble';
 
 type BlurComponent = React.ComponentType<{
   style?: ViewStyle | ViewStyle[];
@@ -46,15 +45,18 @@ export function FrostedCircle({
         overflow: 'hidden',
         alignItems: 'center',
         justifyContent: 'center',
+        // Thin, theme-aware rim.
+        borderWidth: 1,
+        borderColor: t.colors.hairline,
       }}
     >
       {BlurView ? (
         <BlurView
           style={StyleSheet.absoluteFill as ViewStyle}
           blurType={dark ? 'dark' : 'light'}
-          blurAmount={24}
+          blurAmount={20}
           reducedTransparencyFallbackColor={
-            dark ? 'rgba(28,28,30,0.55)' : 'rgba(255,255,255,0.45)'
+            dark ? 'rgba(180, 180, 187, 0.65)' : 'rgba(255, 255, 255, 0.48)'
           }
         />
       ) : null}
@@ -65,13 +67,11 @@ export function FrostedCircle({
           StyleSheet.absoluteFill,
           {
             backgroundColor: BlurView
-              ? 'rgba(255,255,255,0.06)'
-              : 'rgba(255,255,255,0.16)',
+              ? 'rgba(209, 202, 202, 0.5)'
+              : 'rgba(221, 217, 217, 0.45)',
           },
         ]}
       />
-      {/* Glossy sheen + specular highlight + light rim on top of the frost. */}
-      <GlassBubble size={size} />
       {children}
     </View>
   );

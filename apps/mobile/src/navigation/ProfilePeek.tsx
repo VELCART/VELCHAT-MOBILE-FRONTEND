@@ -54,9 +54,9 @@ function PeekAction({
       })}
     >
       <FrostedCircle size={64}>
-        <Icon size={25} color="#FFFFFF" strokeWidth={2} />
+        <Icon size={25} color="#000" strokeWidth={2} />
       </FrostedCircle>
-      <Text variant="caption" style={{ color: 'rgba(255,255,255,0.92)' }}>
+      <Text variant="caption" style={{ color: 'rgb(255, 255, 255)' }}>
         {label}
       </Text>
     </Pressable>
@@ -168,6 +168,9 @@ export function ProfilePeek({
                 alignItems: 'center',
                 justifyContent: 'center',
                 overflow: 'hidden',
+                // Thin, theme-aware border around the photo.
+                borderWidth: 1,
+                borderColor: t.colors.hairline,
               }}
             >
               {avatarUri ? (
