@@ -17,6 +17,9 @@ Profile & connectivity pass:
   clear the mirrored profile on sign-out.
 - **Media**: circular avatar crop via `react-native-image-crop-picker` (ADR-0003),
   real frosted-glass blur via `@react-native-community/blur` (ADR-0004).
+- **Account snapshot**: Profile page now shows SERVER-truth phone/email + **member since**
+  (account created) and **last login** (last active), via a new read-only backend
+  `GET /auth/account`, mirrored offline-first. Graceful if the endpoint isn't deployed yet.
 - **Ops / connectivity**: point stage `WS_URL` at the realtime-gateway host; **warm the
   backend on app launch** so a hibernating free-tier service doesn't cause a cold-start
   timeout on first request.

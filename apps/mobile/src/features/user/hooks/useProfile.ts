@@ -99,6 +99,7 @@ export function useProfileSummary(): {
   about: string | null;
   avatarUri: string | null;
   loginAt: string | null;
+  memberSince: string | null;
 } {
   return {
     displayName: useKVString(KVKeys.displayName) ?? null,
@@ -107,6 +108,7 @@ export function useProfileSummary(): {
     about: useKVString(KVKeys.about) ?? null,
     avatarUri: useKVString(KVKeys.avatarUri) ?? null,
     loginAt: useKVString(KVKeys.loginAt) ?? null,
+    memberSince: useKVString(KVKeys.memberSince) ?? null,
   };
 }
 

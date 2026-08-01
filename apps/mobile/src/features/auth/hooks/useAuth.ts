@@ -14,6 +14,9 @@ import {
   getRefreshToken,
   refreshAccessToken,
   getDeviceId,
+  getAccountId,
+  kv,
+  KVKeys,
   type NotificationPermission,
 } from '../../../infra';
 import {
@@ -23,6 +26,7 @@ import {
   verifyOtp,
   requestChallenge,
   loginWithDeviceKey,
+  getAccountInfo,
 } from '../api/authApi';
 import { useAuthStore } from '../model/authStore';
 
@@ -276,4 +280,30 @@ export function useAuthBootstrap(): boolean {
   }, [hydrate, provision]);
 
   return ready;
+}
+
+/**
+ * Refresh the account snapshot (verified phone/email + created/last-active timestamps)
+ * from the backend and mirror it into MMKV so the Profile page shows SERVER truth, not a
+ * client guess. Offline-first + graceful: any failure (offline, or the endpoint not
+ * deployed yet) is a no-op — the local mirror already rendered. Runs once on mount.
+ */
+export function useAccountInfo(): void {
+  useEffect(() => {
+    const accountId = getAccountId();
+    if (!accountId) return undefined;
+    let active = true;
+    getAccountInfo(accountId)
+      .then(info => {
+        if (!active) return;
+        if (info.phone) kv.set(KVKeys.phone, info.phone);
+        if (info.email) kv.set(KVKeys.email, info.email);
+        if (info.lastActiveAt) kv.set(KVKeys.loginAt, info.lastActiveAt);
+        if (info.createdAt) kv.set(KVKeys.memberSince, info.createdAt);
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 }
