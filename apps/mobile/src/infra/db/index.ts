@@ -8,6 +8,7 @@
 export { database } from './database';
 export { schema } from './schema';
 export { observeConversations, seedDevConversations } from './queries';
+export { observeMessages, sendMessageLocal, seedDevMessages } from './messages';
 export {
   Conversation,
   Message,

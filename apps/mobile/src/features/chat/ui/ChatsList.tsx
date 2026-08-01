@@ -6,9 +6,12 @@
 import React, { useCallback } from 'react';
 import { View, Pressable, Image } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
+import { useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../../theme';
 import { useTranslation } from '../../../i18n';
 import { Text, UserIcon, Screen } from '../../../design-system';
+import type { RootStackParamList } from '../../../navigation/types';
 import { useConversations } from '../hooks/useConversations';
 
 // The row type flows from the hook — the UI layer never reaches into infra directly.
@@ -34,7 +37,13 @@ function timeLabel(ts?: number): string {
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
-function Row({ item }: { item: ConversationItem }): React.JSX.Element {
+function Row({
+  item,
+  onPress,
+}: {
+  item: ConversationItem;
+  onPress: () => void;
+}): React.JSX.Element {
   const t = useTheme();
   const initial = (item.name ?? '?').trim().charAt(0).toUpperCase();
   const unread = item.unreadCount > 0;
@@ -42,6 +51,7 @@ function Row({ item }: { item: ConversationItem }): React.JSX.Element {
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={item.name ?? 'Chat'}
+      onPress={onPress}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
@@ -139,10 +149,22 @@ function Row({ item }: { item: ConversationItem }): React.JSX.Element {
 export function ChatsList(): React.JSX.Element {
   const t = useTheme();
   const { t: tr } = useTranslation();
+  const navigation =
+    useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const rows = useConversations();
   const renderItem = useCallback(
-    ({ item }: { item: ConversationItem }) => <Row item={item} />,
-    [],
+    ({ item }: { item: ConversationItem }) => (
+      <Row
+        item={item}
+        onPress={() =>
+          navigation.navigate('Chat', {
+            conversationId: item.id,
+            name: item.name,
+          })
+        }
+      />
+    ),
+    [navigation],
   );
 
   if (rows.length === 0) {

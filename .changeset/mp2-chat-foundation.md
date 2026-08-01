@@ -12,4 +12,9 @@ MP2 foundation — offline-first chat:
   (pinned → most-recent, unread pills, instant open). Replaces the Chats placeholder; a
   dev seed fills it until the MP2 sync engine feeds real conversations.
 
+- **Chat screen** — tap a row → the conversation: a reversed FlashList of message bubbles
+  (mine right / theirs left, ✓/✓✓ ticks) reading the DB, and a keyboard-aware composer
+  that sends OPTIMISTICALLY (writes the DB → the bubble appears instantly; the MP2 outbox
+  transmits + reconciles later). Dev-seeded messages until sync lands.
+
 Needs a native rebuild (WatermelonDB + FlashList are native modules).

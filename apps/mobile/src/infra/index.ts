@@ -28,6 +28,9 @@ export {
   Message,
   observeConversations,
   seedDevConversations,
+  observeMessages,
+  sendMessageLocal,
+  seedDevMessages,
 } from './db';
 export {
   ensureDeviceKey,

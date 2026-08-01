@@ -5,4 +5,5 @@
  * Dependency rule (§M3): UI → Feature → Domain → Infra. Never the reverse.
  */
 export { ChatsList } from './ui/ChatsList';
+export { ChatScreen } from './ui/ChatScreen';
 export { useConversations } from './hooks/useConversations';

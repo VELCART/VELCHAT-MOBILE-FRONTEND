@@ -59,6 +59,10 @@
     "calls": "Calls",
     "settings": "Settings"
   },
+  "chat": {
+    "messagePlaceholder": "Message",
+    "send": "Send"
+  },
   "settings": {
     "language": "Language",
     "languageSubtitle": "Choose the app language",
