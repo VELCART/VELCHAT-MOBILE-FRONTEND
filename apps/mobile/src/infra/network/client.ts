@@ -40,6 +40,9 @@ const MAX_RETRIES = 2;
  * it never blocks the UI. (Complements a server-side keep-warm cron for 24/7 uptime.)
  */
 export function warmBackend(): void {
+  // Diagnostic: prints the baked base URL so you can SEE which backend the build
+  // actually targets (a stale/cached .env bakes the wrong host → every call times out).
+  log.info('backend base', { env: appEnv.name, apiBaseUrl: appEnv.apiBaseUrl });
   if (isFlightMode()) return;
   const base = appEnv.apiBaseUrl.replace(/\/+$/, '');
   const urls = [
