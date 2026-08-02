@@ -13,8 +13,33 @@ export {
   normalizeServerMessage,
 } from './chat';
 export type { SendMessageInput, SendAck, ServerMessage } from './chat';
+export {
+  createDm,
+  getConversationDetails,
+  getConversationMembers,
+} from './conversations';
+export {
+  getPresence,
+  subscribePresence,
+  normalizePresenceEvent,
+} from './presence';
+export type { PresenceResult, PresenceEvent } from './presence';
+export type {
+  CreateDmResult,
+  ConversationDetails,
+  ConversationType,
+} from './conversationShape';
 export { AppError, isAppError, normalizeError } from './errors';
 export type { AppErrorKind } from './errors';
+export {
+  getOprfKey,
+  oprfEvaluate,
+  oprfRegister,
+  oprfMatch,
+  OPRF_EVALUATE_BATCH_CAP,
+  OPRF_MATCH_BATCH_CAP,
+} from './discovery';
+export type { OprfKeyResponse, OprfEvaluateResponse } from './discovery';
 export {
   getAccessToken,
   getRefreshToken,

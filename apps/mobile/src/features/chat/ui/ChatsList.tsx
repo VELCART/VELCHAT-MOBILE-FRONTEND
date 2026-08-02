@@ -10,7 +10,8 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../../theme';
 import { useTranslation } from '../../../i18n';
-import { Text, UserIcon, Screen } from '../../../design-system';
+import { Text, UserIcon, ChatIcon, ChatPlusIcon } from '../../../design-system';
+import { useTypingUser } from '../../../core';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useConversations } from '../hooks/useConversations';
 
@@ -48,8 +49,11 @@ const Row = React.memo(function Row({
   onOpen: (id: string, name?: string) => void;
 }): React.JSX.Element {
   const t = useTheme();
+  const { t: tr } = useTranslation();
   const initial = (item.name ?? '?').trim().charAt(0).toUpperCase();
   const unread = item.unreadCount > 0;
+  // Typing wins over the last-message preview for this conversation (§C4, ephemeral store).
+  const typing = useTypingUser(item.id) !== null;
   return (
     <Pressable
       accessibilityRole="button"
@@ -115,14 +119,24 @@ const Row = React.memo(function Row({
             gap: t.spacing.xs,
           }}
         >
-          <Text
-            variant="caption"
-            color="secondary"
-            numberOfLines={1}
-            style={{ flex: 1, fontSize: 14 }}
-          >
-            {item.lastMessagePreview ?? ''}
-          </Text>
+          {typing ? (
+            <Text
+              variant="caption"
+              numberOfLines={1}
+              style={{ flex: 1, fontSize: 14, color: t.colors.brandFrom }}
+            >
+              {tr('chat.typing')}
+            </Text>
+          ) : (
+            <Text
+              variant="caption"
+              color="secondary"
+              numberOfLines={1}
+              style={{ flex: 1, fontSize: 14 }}
+            >
+              {item.lastMessagePreview ?? ''}
+            </Text>
+          )}
           {unread ? (
             <View
               style={{
@@ -161,6 +175,9 @@ export function ChatsList(): React.JSX.Element {
     },
     [navigation],
   );
+  const openNewChat = useCallback(() => {
+    navigation.navigate('NewChat');
+  }, [navigation]);
   const renderItem = useCallback(
     ({ item }: { item: ConversationItem }) => (
       <Row item={item} onOpen={onOpen} />
@@ -168,25 +185,65 @@ export function ChatsList(): React.JSX.Element {
     [onOpen],
   );
 
-  if (rows.length === 0) {
-    return (
-      <Screen center>
-        <Text variant="body" color="tertiary">
-          {tr('common.empty')}
-        </Text>
-      </Screen>
-    );
-  }
-
   return (
     <View style={{ flex: 1, backgroundColor: t.colors.bgBase }}>
-      <FlashList
-        data={rows}
-        keyExtractor={item => item.id}
-        renderItem={renderItem}
-        contentContainerStyle={{ paddingVertical: t.spacing.xs }}
-        showsVerticalScrollIndicator={false}
-      />
+      {rows.length === 0 ? (
+        <View
+          style={{
+            flex: 1,
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: t.spacing.xl,
+            gap: t.spacing.xs,
+          }}
+        >
+          <ChatIcon size={44} color={t.colors.textTertiary} strokeWidth={1.6} />
+          <Text
+            variant="title"
+            align="center"
+            style={{ marginTop: t.spacing.sm, fontSize: 19 }}
+          >
+            {tr('chat.emptyTitle')}
+          </Text>
+          <Text variant="body" color="tertiary" align="center">
+            {tr('chat.emptySub')}
+          </Text>
+        </View>
+      ) : (
+        <FlashList
+          data={rows}
+          keyExtractor={item => item.id}
+          renderItem={renderItem}
+          contentContainerStyle={{ paddingVertical: t.spacing.xs }}
+          showsVerticalScrollIndicator={false}
+        />
+      )}
+
+      {/* Compose FAB — the entry point to start a new chat (§F2). */}
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={tr('chat.newChat')}
+        onPress={openNewChat}
+        style={({ pressed }) => ({
+          position: 'absolute',
+          right: t.spacing.lg,
+          bottom: t.spacing.xl,
+          width: 58,
+          height: 58,
+          borderRadius: 29,
+          backgroundColor: t.colors.brandFrom,
+          alignItems: 'center',
+          justifyContent: 'center',
+          opacity: pressed ? 0.85 : 1,
+          shadowColor: '#000',
+          shadowOpacity: 0.2,
+          shadowRadius: 8,
+          shadowOffset: { width: 0, height: 3 },
+          elevation: 5,
+        })}
+      >
+        <ChatPlusIcon size={24} color={t.colors.actionFg} strokeWidth={2.2} />
+      </Pressable>
     </View>
   );
 }

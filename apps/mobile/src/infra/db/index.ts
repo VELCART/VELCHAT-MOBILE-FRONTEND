@@ -11,7 +11,9 @@ export {
   seedDevConversations,
   listConversationIds,
   clearUnread,
+  upsertConversation,
 } from './queries';
+export type { ConversationPatch } from './queries';
 export {
   observeMessages,
   sendMessageLocal,
@@ -41,6 +43,13 @@ export {
   MAX_SEND_ATTEMPTS,
 } from './syncLogic';
 export type { ReconcileAction, BackoffOptions } from './syncLogic';
+export {
+  searchConversations,
+  searchMessages,
+  fetchConversationNames,
+  sanitizeLikeQuery,
+} from './search';
+export type { ConversationSearchHit, MessageSearchHit } from './search';
 export {
   Conversation,
   Message,

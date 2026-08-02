@@ -23,6 +23,7 @@ export { BottomSheet } from './BottomSheet';
 export { OtpInput } from './OtpInput';
 export {
   ChatIcon,
+  ChatPlusIcon,
   CallIcon,
   SettingsIcon,
   UpdatesIcon,
@@ -57,5 +58,10 @@ export {
   HeadphonesIcon,
   ImageIcon,
   PlayIcon,
+  SmileyIcon,
+  PaperclipIcon,
+  MicIcon,
+  SendIcon,
+  ChevronDownIcon,
 } from './icons';
 export type { IconProps } from './icons';

@@ -61,7 +61,35 @@
   },
   "chat": {
     "messagePlaceholder": "Message",
-    "send": "Send"
+    "send": "Send",
+    "emptyTitle": "No chats yet",
+    "emptySub": "Tap the compose button to start your first conversation.",
+    "newChat": "New chat",
+    "call": "Voice call",
+    "videoCall": "Video call",
+    "more": "More options",
+    "attach": "Attach",
+    "emoji": "Emoji",
+    "camera": "Camera",
+    "voice": "Voice message",
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "jumpToLatest": "Jump to latest",
+    "typing": "typing…",
+    "online": "online",
+    "lastSeen": "last seen {{time}}"
+  },
+  "newChat": {
+    "title": "New chat",
+    "loading": "Loading contacts…",
+    "empty": "Add contacts to start chatting",
+    "emptySub": "Your contacts will appear here.",
+    "contactsError": "Couldn't load your contacts.",
+    "retry": "Try again",
+    "error": "Couldn't start the chat. Please try again.",
+    "devTitle": "Start a DM by account ID (dev)",
+    "devPlaceholder": "Paste an account ID",
+    "start": "Start"
   },
   "settings": {
     "language": "Language",

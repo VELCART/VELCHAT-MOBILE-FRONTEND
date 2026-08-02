@@ -54,6 +54,10 @@ export interface RealtimeSocketCallbacks {
   onConnected?: (data: unknown) => void;
   onMessage?: (data: unknown) => void;
   onReceipt?: (data: unknown) => void;
+  /** Inbound ephemeral typing (§C4): `data` = `{conversationId,userId}`; `state` from the frame type. */
+  onTyping?: (data: unknown, state: 'start' | 'stop') => void;
+  /** Inbound ephemeral presence (§A15): `data` = a `PresenceChangedPayload`-shaped object. */
+  onPresence?: (data: unknown) => void;
   onReconnectRequested?: () => void;
   /** Fires exactly once per socket for a NON-intentional close (network/server/watchdog). */
   onClose?: (code: number, reason: string) => void;
@@ -139,6 +143,25 @@ export class RealtimeSocket {
     }
   }
 
+  /**
+   * Send a client EPHEMERAL control frame. The gateway's inbound router (`ws-fabric` `onInbound`)
+   * reads control fields at the TOP LEVEL of the frame (`msg.conversationId`, `msg.state`) — it does
+   * NOT unwrap a `data` envelope for INBOUND frames — so an ephemeral client frame is FLAT:
+   * `{ kind:'ephemeral', type, ...fields }`. Returns false (dropped) when the socket isn't OPEN;
+   * ephemeral loss is by design (§C4 — typing is never re-synced).
+   */
+  sendEphemeral(type: string, fields: Record<string, unknown>): boolean {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WS_OPEN) return false;
+    try {
+      ws.send(JSON.stringify({ kind: 'ephemeral', type, ...fields }));
+      return true;
+    } catch (e) {
+      log.warn('ws sendEphemeral failed', { type, reason: String(e) });
+      return false;
+    }
+  }
+
   /** Intentional teardown by the owner: no onClose callback (the owner initiated it). */
   close(): void {
     this.reported = true; // suppress the report for an owner-initiated close
@@ -173,6 +196,18 @@ export class RealtimeSocket {
       case 'receipt':
       case 'caption':
         this.cb.onReceipt?.(data);
+        break;
+      case 'typing.started':
+        this.cb.onTyping?.(data, 'start');
+        break;
+      case 'typing.stopped':
+        this.cb.onTyping?.(data, 'stop');
+        break;
+      // The realtime-gw may fan presence as either `presence` or `presence.changed` (not yet wired
+      // server-side); accept both so live presence works the moment the backend enables it.
+      case 'presence':
+      case 'presence.changed':
+        this.cb.onPresence?.(data);
         break;
       case 'reconnect':
         this.cb.onReconnectRequested?.();

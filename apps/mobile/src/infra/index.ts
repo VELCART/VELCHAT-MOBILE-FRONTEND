@@ -13,6 +13,12 @@ export {
   fetchMessagesAfter,
   normalizeSendAck,
   normalizeServerMessage,
+  createDm,
+  getConversationDetails,
+  getConversationMembers,
+  getPresence,
+  subscribePresence,
+  normalizePresenceEvent,
   AppError,
   isAppError,
   normalizeError,
@@ -23,6 +29,12 @@ export {
   hasSession,
   setTokens,
   clearSession,
+  getOprfKey,
+  oprfEvaluate,
+  oprfRegister,
+  oprfMatch,
+  OPRF_EVALUATE_BATCH_CAP,
+  OPRF_MATCH_BATCH_CAP,
 } from './network';
 export type {
   AppErrorKind,
@@ -30,6 +42,11 @@ export type {
   SendMessageInput,
   SendAck,
   ServerMessage,
+  CreateDmResult,
+  ConversationDetails,
+  ConversationType,
+  OprfKeyResponse,
+  OprfEvaluateResponse,
 } from './network';
 export { storage, kv, KVKeys, useKVString } from './kv';
 export {
@@ -39,6 +56,7 @@ export {
   seedDevConversations,
   listConversationIds,
   clearUnread,
+  upsertConversation,
   observeMessages,
   sendMessageLocal,
   seedDevMessages,
@@ -60,12 +78,19 @@ export {
   backoffMs,
   nextOutboxRetry,
   MAX_SEND_ATTEMPTS,
+  searchConversations,
+  searchMessages,
+  fetchConversationNames,
+  sanitizeLikeQuery,
 } from './db';
 export type {
   OutboxItem,
   OutboxStats,
   ReconcileAction,
   BackoffOptions,
+  ConversationPatch,
+  ConversationSearchHit,
+  MessageSearchHit,
 } from './db';
 export { RealtimeSocket, WS_CODE_DEAD, WS_CODE_UNAUTHORIZED } from './realtime';
 export type { RealtimeSocketCallbacks } from './realtime';
@@ -76,7 +101,20 @@ export {
   clearDeviceKey,
   bytesToBase64,
   base64ToBytes,
+  hashToBigInt,
+  blind,
+  unblind,
+  mgf1,
+  parseOprfPublicKey,
+  modPow,
+  modInverse,
+  bytesToBigInt,
+  bigIntToBytes,
+  bigIntToBase64Url,
+  base64UrlToBigInt,
+  randomBigIntBelow,
 } from './crypto';
+export type { OprfPublicKey, BlindResult } from './crypto';
 export {
   getBatteryStatus,
   getNetworkStatus,
