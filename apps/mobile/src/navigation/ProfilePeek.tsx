@@ -19,7 +19,6 @@ import { useTranslation } from '../i18n';
 import { useTheme } from '../theme';
 import {
   Text,
-  FrostedCircle,
   UserIcon,
   CameraIcon,
   TrashIcon,
@@ -54,9 +53,22 @@ function PeekAction({
         transform: [{ scale: pressed ? 0.93 : 1 }],
       })}
     >
-      <FrostedCircle size={64}>
+      {/* A light translucent disc (NOT a live gaussian blur) — reads as glass on the
+          dark scrim but composites cheaply, so the peek springs in without stutter. */}
+      <View
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 32,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(255,255,255,0.9)',
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.45)',
+        }}
+      >
         <Icon size={25} color="#000" strokeWidth={2} />
-      </FrostedCircle>
+      </View>
       <Text variant="caption" style={{ color: 'rgb(255, 255, 255)' }}>
         {label}
       </Text>

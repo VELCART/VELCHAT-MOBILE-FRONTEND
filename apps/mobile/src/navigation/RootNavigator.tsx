@@ -103,7 +103,7 @@ export function RootNavigator(): React.JSX.Element {
           <Stack.Screen
             name="Search"
             component={SearchScreen}
-            options={{ animation: 'fade' }}
+            options={{ animation: 'slide_from_right' }}
           />
           <Stack.Screen
             name="Chat"

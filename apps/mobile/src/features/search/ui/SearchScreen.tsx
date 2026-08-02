@@ -9,8 +9,14 @@
  * (`/search`) + the local DB, wired in a later slice. It is shaped so swapping the
  * source is a drop-in: the UI, filtering, and highlighting all stay as-is.
  */
-import React, { useMemo, useRef, useState } from 'react';
-import { View, TextInput, Pressable, ScrollView } from 'react-native';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  TextInput,
+  Pressable,
+  ScrollView,
+  InteractionManager,
+} from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -477,6 +483,15 @@ export function SearchScreen(): React.JSX.Element {
   const browsing = query.trim() === '';
   const showRecent = browsing && filterIdx === 0;
 
+  // Focus the field only AFTER the screen transition settles — auto-focusing during the
+  // navigation animation makes the keyboard fight the transition (janky, worst in dark).
+  useEffect(() => {
+    const task = InteractionManager.runAfterInteractions(() => {
+      inputRef.current?.focus();
+    });
+    return () => task.cancel();
+  }, []);
+
   return (
     <View
       style={{
@@ -485,81 +500,53 @@ export function SearchScreen(): React.JSX.Element {
         paddingTop: insets.top,
       }}
     >
-      {/* Header — back · wordmark · filters */}
+      {/* Search field — the back arrow lives INSIDE the bar (in place of the search
+          icon); no separate header row, so the whole control sits in one clean place. */}
       <View
         style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          height: 56,
-          paddingLeft: t.spacing.xs,
-          paddingRight: t.spacing.sm,
+          paddingHorizontal: t.spacing.lg,
+          paddingTop: t.spacing.xs,
+          paddingBottom: t.spacing.sm,
         }}
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Back"
-          onPress={() => navigation.goBack()}
-          hitSlop={10}
-          style={({ pressed }) => ({
-            width: 40,
-            height: 40,
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: pressed ? 0.6 : 1,
-          })}
-        >
-          <View style={{ transform: [{ rotate: '180deg' }] }}>
-            <ChevronRightIcon
-              size={26}
-              color={t.colors.textPrimary}
-              strokeWidth={2.2}
-            />
-          </View>
-        </Pressable>
-        <View style={{ flexDirection: 'row', alignItems: 'baseline', flex: 1 }}>
-          <Text variant="title" style={{ fontSize: 20 }}>
-            {tr('search.title')}{' '}
-          </Text>
-          <Text variant="title" style={{ fontSize: 20 }}>
-            Vel
-          </Text>
-          <Text
-            variant="title"
-            style={{ fontSize: 20, color: t.colors.brandFrom }}
-          >
-            Chat
-          </Text>
-        </View>
-        {/* A right-side spacer so the wordmark stays optically centred against the
-            back button (no dead "filters" control — the chip row IS the filter UI). */}
-        <View style={{ width: 40 }} />
-      </View>
-
-      {/* Search field */}
-      <View
-        style={{ paddingHorizontal: t.spacing.lg, paddingBottom: t.spacing.sm }}
       >
         <View
           style={{
             flexDirection: 'row',
             alignItems: 'center',
-            gap: t.spacing.sm,
-            height: 46,
+            gap: t.spacing.xs,
+            height: 48,
             borderRadius: t.radius.pill,
             backgroundColor: t.colors.bgSubtle,
-            paddingHorizontal: t.spacing.md,
+            paddingLeft: t.spacing.xxs,
+            paddingRight: t.spacing.md,
           }}
         >
-          <SearchIcon
-            size={19}
-            color={t.colors.textSecondary}
-            strokeWidth={2}
-          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Back"
+            onPress={() => navigation.goBack()}
+            hitSlop={8}
+            style={({ pressed }) => ({
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: pressed ? 0.5 : 1,
+            })}
+          >
+            <View style={{ transform: [{ rotate: '180deg' }] }}>
+              <ChevronRightIcon
+                size={24}
+                color={t.colors.textPrimary}
+                strokeWidth={2.2}
+              />
+            </View>
+          </Pressable>
           <TextInput
             ref={inputRef}
             value={query}
             onChangeText={setQuery}
-            autoFocus
             placeholder={tr('search.placeholder')}
             placeholderTextColor={t.colors.textTertiary}
             returnKeyType="search"

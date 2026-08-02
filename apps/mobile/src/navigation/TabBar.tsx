@@ -69,11 +69,9 @@ function TabButton({
   }, [active, reduceMotion, anim]);
 
   const Icon = ICONS[routeName] ?? ChatIcon;
-  // Distinctive active state: the icon sits in a SOLID brand pill. The glyph MUST
-  // contrast with that pill in both themes — actionFg is white on the black pill
-  // (light) and black on the white pill (dark). ('#FFFFFF' went white-on-white in dark.)
-  const iconColor = active ? t.colors.actionFg : t.colors.textTertiary;
-  const labelColor = active ? t.colors.brandFrom : t.colors.textTertiary;
+  // Simple, flat active state (no heavy pill): the icon + label go full-contrast, with a
+  // slim brand indicator that grows in above; inactive stays muted. Clean + not tall.
+  const color = active ? t.colors.textPrimary : t.colors.textTertiary;
 
   return (
     <Pressable
@@ -83,73 +81,43 @@ function TabButton({
       onPress={onPress}
       onLongPress={onLongPress}
       hitSlop={6}
-      // Native, borderless ripple on Android (premium platform feel centred on the
-      // icon); iOS keeps the subtle press-dim since it has no ripple primitive.
+      // Native, borderless ripple on Android; iOS keeps a subtle press-dim.
       android_ripple={{
-        color: `${t.colors.brandFrom}22`,
+        color: `${t.colors.brandFrom}18`,
         borderless: true,
-        radius: 34,
+        radius: 30,
       }}
       style={({ pressed }) => ({
         flex: 1,
-        // A comfortable, consistent touch target (≥48dp) on every density.
-        minHeight: 48,
+        minHeight: 44,
         alignItems: 'center',
         justifyContent: 'center',
         opacity: Platform.OS === 'ios' && pressed ? 0.6 : 1,
       })}
     >
-      <View
+      {/* Slim brand indicator — fades + grows in on the active tab (the only motion). */}
+      <Animated.View
+        pointerEvents="none"
         style={{
-          height: 32,
-          width: 56,
-          alignItems: 'center',
-          justifyContent: 'center',
+          position: 'absolute',
+          top: 0,
+          width: 20,
+          height: 3,
+          borderRadius: 2,
+          backgroundColor: t.colors.brandFrom,
+          opacity: anim,
+          transform: [{ scaleX: anim }],
         }}
-      >
-        <Animated.View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            width: 52,
-            height: 32,
-            borderRadius: 16,
-            backgroundColor: t.colors.brandFrom,
-            opacity: anim,
-            transform: [
-              {
-                scale: anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.6, 1],
-                }),
-              },
-            ],
-            ...t.elevation.e1,
-          }}
-        />
-        <Animated.View
-          style={{
-            transform: [
-              {
-                scale: anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [1, 1.05],
-                }),
-              },
-            ],
-          }}
-        >
-          <Icon size={26} color={iconColor} strokeWidth={active ? 2.2 : 1.9} />
-        </Animated.View>
-      </View>
+      />
+      <Icon size={24} color={color} strokeWidth={active ? 2.3 : 1.9} />
       <Text
         variant="caption"
         numberOfLines={1}
         style={{
-          fontSize: 10.5,
-          lineHeight: 13,
+          fontSize: 11,
+          lineHeight: 14,
           marginTop: 3,
-          color: labelColor,
+          color,
           fontFamily: active
             ? t.typography.label.fontFamily
             : t.typography.caption.fontFamily,
@@ -200,7 +168,7 @@ export function TabBar({
         backgroundColor: t.colors.surface,
         borderTopWidth: StyleSheet.hairlineWidth,
         borderTopColor: t.colors.hairline,
-        paddingTop: 8,
+        paddingTop: 6,
         // Sit above the system nav bar on EVERY Android nav mode (gesture bar OR
         // 3-button) and the iOS home indicator — insets.bottom is the real height when
         // edge-to-edge; fall back to a comfortable min when it's 0 (older 3-button).
