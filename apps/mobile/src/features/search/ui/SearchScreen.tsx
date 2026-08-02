@@ -1,15 +1,22 @@
 /**
  * Search screen (§F1) — the app-wide search opened from the home header. WhatsApp/Slack
  * parity: an "Ask Vel AI or Search" field, scrollable type filters (All · Unread ·
- * Photos · Videos · Links · Docs · Audio · Contacts), a frequent-contacts row, and a
- * rich multi-type result list (chats, messages, files, media, links, contacts) with the
- * matched term highlighted. Fully theme-aware (light + dark) via design tokens.
+ * Photos · Videos · Links · Docs · Audio · Contacts), a recent-chats row, and a result
+ * list with the matched term highlighted. Fully theme-aware (light + dark) via tokens.
  *
- * The result feed is placeholder data for now — the real source is the search-service
- * (`/search`) + the local DB, wired in a later slice. It is shaped so swapping the
- * source is a drop-in: the UI, filtering, and highlighting all stay as-is.
+ * Data is REAL and LOCAL (§M0): `useSearch` queries the same WatermelonDB the chat list +
+ * chat screen read — conversations + messages, offline-first, never the network. There is
+ * no server full-text search for personal chats (content is/will be opaque). The `chat` +
+ * `message` kinds are backed by real rows; the media filters (Photos/Videos/Links/Docs/
+ * Audio) have no local index yet, so they honestly show the empty state — never fabricated.
  */
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { View, TextInput, Pressable, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -31,120 +38,8 @@ import {
   type IconProps,
 } from '../../../design-system';
 import type { RootStackParamList } from '../../../navigation/types';
-
-type ResultKind =
-  | 'chat'
-  | 'message'
-  | 'image'
-  | 'video'
-  | 'file'
-  | 'audio'
-  | 'link'
-  | 'contact';
-
-interface SearchResult {
-  id: string;
-  kind: ResultKind;
-  title: string;
-  subtitle: string;
-  time?: string;
-  unread?: boolean;
-}
-
-// Placeholder feed (see file header). Ordered newest-first, mixed types.
-const MOCK_RESULTS: readonly SearchResult[] = [
-  {
-    id: 'r1',
-    kind: 'chat',
-    title: 'Rahul Sharma',
-    subtitle: 'You: Resume bhej diya.',
-    time: 'Yesterday',
-    unread: true,
-  },
-  {
-    id: 'r2',
-    kind: 'file',
-    title: 'Resume.pdf',
-    subtitle: '2.4 MB · Shared by Rahul Sharma',
-    time: 'Yesterday',
-  },
-  {
-    id: 'r3',
-    kind: 'file',
-    title: 'Resume_Final.docx',
-    subtitle: '1.1 MB · Shared in HR Team',
-    time: '3d ago',
-  },
-  {
-    id: 'r4',
-    kind: 'image',
-    title: 'Resume Screenshot.png',
-    subtitle: 'Image · In chat with Rahul Sharma',
-    time: '2d ago',
-  },
-  {
-    id: 'r5',
-    kind: 'image',
-    title: 'My Resume 2025.jpg',
-    subtitle: 'Image · In chat with you',
-    time: '5d ago',
-  },
-  {
-    id: 'r6',
-    kind: 'video',
-    title: 'Resume Tips.mp4',
-    subtitle: 'Video · Shared by Aman Verma',
-    time: '1w ago',
-  },
-  {
-    id: 'r7',
-    kind: 'audio',
-    title: 'Voice note',
-    subtitle: '0:42 · From Riya Singh',
-    time: '4d ago',
-  },
-  {
-    id: 'r8',
-    kind: 'link',
-    title: 'Resume — Google Drive',
-    subtitle: 'drive.google.com/drive/folders/1abc…',
-    time: '2d ago',
-  },
-  {
-    id: 'r9',
-    kind: 'link',
-    title: 'Rahul Sharma | LinkedIn',
-    subtitle: 'linkedin.com/in/rahul_sharma',
-    time: '1w ago',
-  },
-  {
-    id: 'r10',
-    kind: 'message',
-    title: 'Aman Verma',
-    subtitle: 'Sent the resume template link',
-    time: '1w ago',
-    unread: true,
-  },
-  {
-    id: 'r11',
-    kind: 'contact',
-    title: 'Rahul Sharma',
-    subtitle: '+91 98266 52257',
-  },
-];
-
-const MOCK_FREQUENT: readonly string[] = [
-  'Rahul Sharma',
-  'Riya Singh',
-  'Aman Verma',
-  'Karan Malhotra',
-  'Ishita Mehta',
-];
-
-// The placeholder feed renders ONLY in dev. A release build shows the honest empty /
-// pre-search state until the search-service (/search) + local DB are wired in.
-const RESULTS: readonly SearchResult[] = __DEV__ ? MOCK_RESULTS : [];
-const FREQUENT: readonly string[] = __DEV__ ? MOCK_FREQUENT : [];
+import { useSearch } from '../hooks/useSearch';
+import type { ResultKind, SearchResult, FrequentChat } from '../model/types';
 
 interface FilterDef {
   key: string;
@@ -153,6 +48,9 @@ interface FilterDef {
   unreadOnly?: boolean;
 }
 
+// Only `chat`/`message` are backed by real local data. `all` shows both; `unread` narrows to
+// unread conversations; `contacts` narrows to conversation (people/chat) matches. The media
+// kinds have no local index yet → selecting one honestly yields the empty state.
 const FILTERS: readonly FilterDef[] = [
   { key: 'all', kinds: null },
   {
@@ -166,10 +64,8 @@ const FILTERS: readonly FilterDef[] = [
   { key: 'links', icon: LinkIcon, kinds: ['link'] },
   { key: 'docs', icon: FileTextIcon, kinds: ['file'] },
   { key: 'audio', icon: HeadphonesIcon, kinds: ['audio'] },
-  { key: 'contacts', icon: UserIcon, kinds: ['contact'] },
+  { key: 'contacts', icon: UserIcon, kinds: ['chat'] },
 ];
-
-const UNREAD_COUNT = RESULTS.filter(r => r.unread).length;
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -300,15 +196,18 @@ function Leading({
 function ResultRow({
   result,
   query,
+  onPress,
 }: {
   result: SearchResult;
   query: string;
+  onPress: () => void;
 }): React.JSX.Element {
   const t = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={result.title}
+      onPress={onPress}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
@@ -419,13 +318,20 @@ function FilterChip({
   );
 }
 
-function FrequentAvatar({ name }: { name: string }): React.JSX.Element {
+function FrequentAvatar({
+  name,
+  onPress,
+}: {
+  name: string;
+  onPress: () => void;
+}): React.JSX.Element {
   const t = useTheme();
   const initial = name.trim().charAt(0).toUpperCase();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={name}
+      onPress={onPress}
       style={({ pressed }) => ({
         width: 72,
         alignItems: 'center',
@@ -467,19 +373,35 @@ export function SearchScreen(): React.JSX.Element {
   const [query, setQuery] = useState('');
   const [filterIdx, setFilterIdx] = useState(0);
 
+  // REAL data — the local DB (§M0), via the feature hook. `results` re-runs on the debounced
+  // query; `frequent` is the live most-recent-chats row for the browse state.
+  const { results, frequent } = useSearch(query);
+
+  // The active chip narrows the already-query-matched results by kind (+ unread). Media chips
+  // map to kinds we don't produce yet → an honest empty state, never a fabricated row.
   const filtered = useMemo(() => {
     const active = FILTERS[filterIdx];
-    const q = query.trim().toLowerCase();
-    return RESULTS.filter(r => {
+    return results.filter(r => {
       if (active?.kinds && !active.kinds.includes(r.kind)) return false;
       if (active?.unreadOnly && !r.unread) return false;
-      if (!q) return true;
-      return `${r.title} ${r.subtitle}`.toLowerCase().includes(q);
+      return true;
     });
-  }, [query, filterIdx]);
+  }, [results, filterIdx]);
+
+  // Unread badge on the Unread chip = number of unread conversations in the current results.
+  const unreadCount = useMemo(
+    () => results.filter(r => r.unread).length,
+    [results],
+  );
 
   const browsing = query.trim() === '';
-  const showRecent = browsing && filterIdx === 0;
+
+  const openChat = useCallback(
+    (conversationId: string, name?: string) => {
+      navigation.navigate('Chat', { conversationId, name });
+    },
+    [navigation],
+  );
 
   // Let the screen paint FIRST (navigation feels instant), then focus on the very next
   // frame so raising the keyboard can't jank the push. autoFocus does it DURING the push
@@ -604,7 +526,7 @@ export function SearchScreen(): React.JSX.Element {
             label={tr(`search.filters.${f.key}`)}
             {...(f.icon ? { icon: f.icon } : {})}
             active={i === filterIdx}
-            {...(f.unreadOnly && UNREAD_COUNT ? { badge: UNREAD_COUNT } : {})}
+            {...(f.unreadOnly && unreadCount ? { badge: unreadCount } : {})}
             onPress={() => setFilterIdx(i)}
           />
         ))}
@@ -619,9 +541,10 @@ export function SearchScreen(): React.JSX.Element {
           paddingBottom: insets.bottom + t.spacing.xl,
         }}
       >
-        {/* Frequent people — only in the browse state; hidden once you start typing so
-            an active search shows results alone (standard search behaviour). */}
-        {browsing ? (
+        {/* Frequent (most-recent) chats — only in the browse state; hidden once you start
+            typing so an active search shows results alone (standard search behaviour).
+            Hidden entirely when there are no local conversations yet. */}
+        {browsing && frequent.length > 0 ? (
           <View style={{ marginTop: t.spacing.xs, marginBottom: t.spacing.sm }}>
             <Text
               variant="caption"
@@ -636,26 +559,32 @@ export function SearchScreen(): React.JSX.Element {
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={{ gap: t.spacing.sm }}
             >
-              {FREQUENT.map(name => (
-                <FrequentAvatar key={name} name={name} />
+              {frequent.map((c: FrequentChat) => (
+                <FrequentAvatar
+                  key={c.id}
+                  name={c.name}
+                  onPress={() => openChat(c.id, c.name)}
+                />
               ))}
             </ScrollView>
           </View>
         ) : null}
 
-        {/* Results / empty */}
-        {showRecent ? (
-          <Text
-            variant="caption"
-            color="tertiary"
-            style={{ marginTop: t.spacing.xs, marginBottom: t.spacing.xxs }}
-          >
-            {tr('search.recent')}
-          </Text>
-        ) : null}
-
-        {filtered.length > 0 ? (
-          filtered.map(r => <ResultRow key={r.id} result={r} query={query} />)
+        {/* Results / empty — only once a query is active. The browse state above stands in
+            for the empty query (no "No results for ''"). */}
+        {browsing ? null : filtered.length > 0 ? (
+          filtered.map(r => (
+            <ResultRow
+              key={r.id}
+              result={r}
+              query={query}
+              onPress={() => {
+                if (r.conversationId) {
+                  openChat(r.conversationId, r.conversationName);
+                }
+              }}
+            />
+          ))
         ) : (
           <View style={{ alignItems: 'center', paddingTop: t.spacing.huge }}>
             <SearchIcon

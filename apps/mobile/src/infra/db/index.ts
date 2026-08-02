@@ -44,6 +44,13 @@ export {
 } from './syncLogic';
 export type { ReconcileAction, BackoffOptions } from './syncLogic';
 export {
+  searchConversations,
+  searchMessages,
+  fetchConversationNames,
+  sanitizeLikeQuery,
+} from './search';
+export type { ConversationSearchHit, MessageSearchHit } from './search';
+export {
   Conversation,
   Message,
   Receipt,

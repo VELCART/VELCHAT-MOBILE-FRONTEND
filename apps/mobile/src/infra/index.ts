@@ -75,6 +75,10 @@ export {
   backoffMs,
   nextOutboxRetry,
   MAX_SEND_ATTEMPTS,
+  searchConversations,
+  searchMessages,
+  fetchConversationNames,
+  sanitizeLikeQuery,
 } from './db';
 export type {
   OutboxItem,
@@ -82,6 +86,8 @@ export type {
   ReconcileAction,
   BackoffOptions,
   ConversationPatch,
+  ConversationSearchHit,
+  MessageSearchHit,
 } from './db';
 export { RealtimeSocket, WS_CODE_DEAD, WS_CODE_UNAUTHORIZED } from './realtime';
 export type { RealtimeSocketCallbacks } from './realtime';
