@@ -198,6 +198,41 @@ export function markFailed(
   });
 }
 
+/**
+ * Startup crash-recovery. A process killed mid-send (backgrounded during an in-flight POST
+ * — routine on a low-RAM device) leaves its row stuck in `sending`: nothing re-claims a
+ * `sending` row, and single-flight blocks every later message in that conversation, so the
+ * queue wedges forever (and the engine's timer busy-loops). Reset every `sending` row back
+ * to `queued`, due now — re-sending is safe (idempotent by clientMsgId server-side).
+ *
+ * MUST be called once at engine start, BEFORE the first drain, when nothing is genuinely
+ * in-flight — so any `sending` row is necessarily an orphan from a prior process. Returns
+ * how many rows were recovered.
+ */
+export function recoverStuckSends(): Promise<number> {
+  return withOutboxLock(async () => {
+    const db = getDatabase();
+    const col = db.get<Outbox>('outbox');
+    const stuck = await col
+      .query(Q.where('kind', KIND_SEND), Q.where('state', 'sending'))
+      .fetch();
+    if (stuck.length === 0) return 0;
+    const now = Date.now();
+    await db.write(async () => {
+      await db.batch(
+        stuck.map(o =>
+          o.prepareUpdate(row => {
+            row.state = 'queued';
+            row.nextAttemptAt = now;
+            row.updatedAt = now;
+          }),
+        ),
+      );
+    });
+    return stuck.length;
+  });
+}
+
 /** Snapshot for the engine's self-adjusting timer (never poll a hot loop). */
 export function outboxStats(): Promise<OutboxStats> {
   return withOutboxLock(async () => {

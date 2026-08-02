@@ -34,6 +34,7 @@ import {
   claimNextDue,
   markAckd,
   markFailed,
+  recoverStuckSends,
   outboxStats,
   nextOutboxRetry,
   backoffMs,
@@ -56,12 +57,20 @@ class SyncEngine {
   private started = false;
   private stopped = true;
   private draining = false;
+  // One-shot crash-recovery: resets outbox rows orphaned in `sending` by a prior kill.
+  // The first drain awaits it so it can't claim behind a stuck row.
+  private recovery: Promise<unknown> | null = null;
 
   // ── lifecycle ────────────────────────────────────────────────────────────
   start(): void {
     if (this.started) return;
     this.started = true;
     this.stopped = false;
+    // Recover any send orphaned in `sending` by a previous app-kill BEFORE the first
+    // drain (the drain awaits this) — otherwise that row wedges its conversation forever.
+    this.recovery = recoverStuckSends().catch((e: unknown) => {
+      log.warn('outbox recovery failed', { reason: String(e) });
+    });
     this.netUnsub = subscribeNetwork(s => this.onNetwork(s.connected));
     // Seed the initial connectivity (the subscription only fires on CHANGES).
     void getNetworkStatus()
@@ -260,6 +269,8 @@ class SyncEngine {
     if (this.draining) return;
     this.draining = true;
     try {
+      // Never claim before crash-recovery has un-stuck orphaned `sending` rows.
+      if (this.recovery) await this.recovery;
       for (;;) {
         if (this.stopped || !this.online || !hasSession()) break;
         const item = await claimNextDue(Date.now());

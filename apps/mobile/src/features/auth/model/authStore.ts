@@ -78,10 +78,14 @@ export const useAuthStore = create<AuthStore>(set => ({
     kv.delete(KVKeys.phone);
     kv.delete(KVKeys.loginAt);
     // Drop the mirrored profile so the next account never sees the previous one.
+    // MUST include every profile-mirror key — a miss leaks the prior user's data (e.g.
+    // `avatarUrl` fell through to the header/Settings on the next sign-in).
     kv.delete(KVKeys.displayName);
     kv.delete(KVKeys.email);
     kv.delete(KVKeys.about);
     kv.delete(KVKeys.avatarUri);
+    kv.delete(KVKeys.avatarUrl);
+    kv.delete(KVKeys.memberSince);
     kv.delete(KVKeys.profileComplete);
     set({ state: 'signed_out', accountId: null, sessionId: null, phone: null });
   },

@@ -93,7 +93,7 @@ export function RootNavigator(): React.JSX.Element {
           <Stack.Screen
             name="Settings"
             component={SettingsScreen}
-            options={{ animation: 'slide_from_right' }}
+            options={{ animation: 'none' }}
           />
           <Stack.Screen
             name="Profile"
@@ -103,7 +103,7 @@ export function RootNavigator(): React.JSX.Element {
           <Stack.Screen
             name="Search"
             component={SearchScreen}
-            options={{ animation: 'slide_from_right' }}
+            options={{ animation: 'none' }}
           />
           <Stack.Screen
             name="Chat"

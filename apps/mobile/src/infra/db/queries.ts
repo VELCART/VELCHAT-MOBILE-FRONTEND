@@ -95,9 +95,11 @@ async function doSeed(): Promise<void> {
   });
 }
 
-/** Insert a few sample conversations once (dev). Serialised so concurrent effect calls
- * (React StrictMode double-invoke) can't both read count 0 and double-insert. */
+/** Insert a few sample conversations once (DEV ONLY). Serialised so concurrent effect
+ * calls (React StrictMode double-invoke) can't both read count 0 and double-insert.
+ * Hard `__DEV__` gate so a release build never writes fake chats into the real DB. */
 export function seedDevConversations(): Promise<void> {
+  if (!__DEV__) return Promise.resolve();
   if (!seedOnce) seedOnce = doSeed();
   return seedOnce;
 }

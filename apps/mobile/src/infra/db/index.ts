@@ -27,6 +27,7 @@ export {
   claimNextDue,
   markAckd,
   markFailed,
+  recoverStuckSends,
   outboxStats,
 } from './outbox';
 export type { OutboxItem, OutboxStats } from './outbox';

@@ -51,6 +51,7 @@ export {
   claimNextDue,
   markAckd,
   markFailed,
+  recoverStuckSends,
   outboxStats,
   reconcileDecision,
   backoffMs,

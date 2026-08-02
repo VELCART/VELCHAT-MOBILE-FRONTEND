@@ -10,13 +10,7 @@
  * source is a drop-in: the UI, filtering, and highlighting all stay as-is.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import {
-  View,
-  TextInput,
-  Pressable,
-  ScrollView,
-  InteractionManager,
-} from 'react-native';
+import { View, TextInput, Pressable, ScrollView } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -59,7 +53,7 @@ interface SearchResult {
 }
 
 // Placeholder feed (see file header). Ordered newest-first, mixed types.
-const RESULTS: readonly SearchResult[] = [
+const MOCK_RESULTS: readonly SearchResult[] = [
   {
     id: 'r1',
     kind: 'chat',
@@ -140,13 +134,18 @@ const RESULTS: readonly SearchResult[] = [
   },
 ];
 
-const FREQUENT: readonly string[] = [
+const MOCK_FREQUENT: readonly string[] = [
   'Rahul Sharma',
   'Riya Singh',
   'Aman Verma',
   'Karan Malhotra',
   'Ishita Mehta',
 ];
+
+// The placeholder feed renders ONLY in dev. A release build shows the honest empty /
+// pre-search state until the search-service (/search) + local DB are wired in.
+const RESULTS: readonly SearchResult[] = __DEV__ ? MOCK_RESULTS : [];
+const FREQUENT: readonly string[] = __DEV__ ? MOCK_FREQUENT : [];
 
 interface FilterDef {
   key: string;
@@ -483,13 +482,13 @@ export function SearchScreen(): React.JSX.Element {
   const browsing = query.trim() === '';
   const showRecent = browsing && filterIdx === 0;
 
-  // Focus the field only AFTER the screen transition settles — auto-focusing during the
-  // navigation animation makes the keyboard fight the transition (janky, worst in dark).
+  // Let the screen paint FIRST (navigation feels instant), then focus on the very next
+  // frame so raising the keyboard can't jank the push. autoFocus does it DURING the push
+  // (Android window-resize hitch → "slow"); InteractionManager waits too long. rAF is the
+  // sweet spot: instant screen, keyboard ~1 frame later.
   useEffect(() => {
-    const task = InteractionManager.runAfterInteractions(() => {
-      inputRef.current?.focus();
-    });
-    return () => task.cancel();
+    const id = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(id);
   }, []);
 
   return (

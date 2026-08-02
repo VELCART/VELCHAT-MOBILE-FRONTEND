@@ -11,10 +11,16 @@ import { reconcileDecision } from './syncLogic';
 import { getAccountId } from '../network/tokens';
 import type { ServerMessage, SendAck } from '../network/chat';
 
+/** Newest-N window loaded into the chat view (§R5 — bound memory/open cost; a full
+ * history could be thousands of rows). "Load older" pagination lands with real sync. */
+const MESSAGE_WINDOW = 50;
+
 /**
- * Observe a conversation's messages newest-first (fed into a reversed list).
- * `observeWithColumns` so in-place changes (a bubble ticking sending→sent→read, reactions)
- * re-render even though the sort key (`created_at`) is immutable.
+ * Observe a conversation's newest {@link MESSAGE_WINDOW} messages, newest-first (fed into a
+ * reversed list). Bounded by `Q.take` so a large history never materialises on the render
+ * path. `observeWithColumns(['state'])` re-emits when a bubble ticks sending→sent→read;
+ * reactions/attachments are intentionally NOT observed (the bubble doesn't render them yet)
+ * so a receipt burst can't trigger an O(n) re-query for columns nothing draws.
  */
 export function observeMessages(conversationId: string) {
   return getDatabase()
@@ -23,8 +29,9 @@ export function observeMessages(conversationId: string) {
       Q.where('conversation_id', conversationId),
       Q.where('deleted', false),
       Q.sortBy('created_at', Q.desc),
+      Q.take(MESSAGE_WINDOW),
     )
-    .observeWithColumns(['state', 'reactions', 'attachments']);
+    .observeWithColumns(['state']);
 }
 
 /** A short client message id (server seq is assigned later, on ACK). */
@@ -381,6 +388,8 @@ export function seedDevMessages(
   conversationId: string,
   meId: string,
 ): Promise<void> {
+  // Hard DEV-only gate so a release build never writes fake messages into the real DB.
+  if (!__DEV__) return Promise.resolve();
   let p = seededConversations.get(conversationId);
   if (!p) {
     p = doSeedMessages(conversationId, meId);

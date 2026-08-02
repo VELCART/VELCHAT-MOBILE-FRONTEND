@@ -95,13 +95,14 @@ function TabButton({
         opacity: Platform.OS === 'ios' && pressed ? 0.6 : 1,
       })}
     >
-      {/* Slim brand indicator — fades + grows in on the active tab (the only motion). */}
+      {/* Slim brand indicator — sits ON the tab bar's TOP border (not above the icon);
+          the -6 cancels the bar's paddingTop so it rides the top edge. Fades + grows in. */}
       <Animated.View
         pointerEvents="none"
         style={{
           position: 'absolute',
-          top: 0,
-          width: 20,
+          top: -6,
+          width: 26,
           height: 3,
           borderRadius: 2,
           backgroundColor: t.colors.brandFrom,
