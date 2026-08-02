@@ -133,6 +133,32 @@
     "hintMedia": "media",
     "hintAi": "AI search"
   },
+  "search": {
+    "placeholder": "Ask Vel AI or Search",
+    "recent": "Recent searches",
+    "clearAll": "Clear all",
+    "frequent": "Frequent",
+    "noResults": "No results for “{{q}}”",
+    "noResultsSub": "Try a different word or filter.",
+    "filters": {
+      "all": "All",
+      "unread": "Unread",
+      "photos": "Photos",
+      "videos": "Videos",
+      "links": "Links",
+      "docs": "Docs",
+      "audio": "Audio",
+      "contacts": "Contacts"
+    },
+    "sections": {
+      "chats": "Chats",
+      "messages": "Messages",
+      "files": "Files",
+      "media": "Media",
+      "links": "Links",
+      "contacts": "Contacts"
+    }
+  },
   "common": {
     "empty": "Nothing here yet",
     "dismiss": "Dismiss",

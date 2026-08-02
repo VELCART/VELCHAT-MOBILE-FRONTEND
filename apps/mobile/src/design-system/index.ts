@@ -50,5 +50,12 @@ export {
   MailIcon,
   VideoIcon,
   TrashIcon,
+  SparkleIcon,
+  SlidersIcon,
+  LinkIcon,
+  FileTextIcon,
+  HeadphonesIcon,
+  ImageIcon,
+  PlayIcon,
 } from './icons';
 export type { IconProps } from './icons';

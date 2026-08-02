@@ -490,3 +490,124 @@ export function TrashIcon({
     </Svg>
   );
 }
+
+/** Sparkle — AI / smart actions (Ask Vel AI). */
+export function SparkleIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z"
+        {...stroke(color, strokeWidth)}
+      />
+      <Path
+        d="M18 15l.7 1.9L20.5 17.6l-1.8.7L18 20l-.7-1.7L15.5 17.6l1.8-.7z"
+        {...stroke(color, strokeWidth)}
+      />
+    </Svg>
+  );
+}
+
+/** Sliders — filters / adjustments. */
+export function SlidersIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M3 8h18" {...stroke(color, strokeWidth)} />
+      <Circle cx={16} cy={8} r={2.6} {...stroke(color, strokeWidth)} />
+      <Path d="M3 16h18" {...stroke(color, strokeWidth)} />
+      <Circle cx={8} cy={16} r={2.6} {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Link — a chain (shared links). */
+export function LinkIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"
+        {...stroke(color, strokeWidth)}
+      />
+      <Path
+        d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"
+        {...stroke(color, strokeWidth)}
+      />
+    </Svg>
+  );
+}
+
+/** File with text lines — documents. */
+export function FileTextIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"
+        {...stroke(color, strokeWidth)}
+      />
+      <Path d="M14 2v6h6" {...stroke(color, strokeWidth)} />
+      <Path d="M16 13H8M16 17H8M10 9H8" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Headphones — audio. */
+export function HeadphonesIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M3 18v-6a9 9 0 0 1 18 0v6" {...stroke(color, strokeWidth)} />
+      <Path
+        d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"
+        {...stroke(color, strokeWidth)}
+      />
+    </Svg>
+  );
+}
+
+/** Image — photos. */
+export function ImageIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"
+        {...stroke(color, strokeWidth)}
+      />
+      <Circle cx={8.5} cy={8.5} r={1.6} {...stroke(color, strokeWidth)} />
+      <Path d="M21 15l-5-5L5 21" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Play — filled triangle (video thumbnails). */
+export function PlayIcon({
+  size = 24,
+  color = '#000',
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M8 5v14l11-7z" fill={color} />
+    </Svg>
+  );
+}

@@ -117,6 +117,32 @@
     "hintMedia": "الوسائط",
     "hintAi": "بحث الذكاء الاصطناعي"
   },
+  "search": {
+    "placeholder": "اسأل Vel AI أو ابحث",
+    "recent": "عمليات البحث الأخيرة",
+    "clearAll": "مسح الكل",
+    "frequent": "المتكرر",
+    "noResults": "لا نتائج لـ ”{{q}}“",
+    "noResultsSub": "جرّب كلمة أو عامل تصفية آخر.",
+    "filters": {
+      "all": "الكل",
+      "unread": "غير المقروء",
+      "photos": "الصور",
+      "videos": "الفيديو",
+      "links": "الروابط",
+      "docs": "المستندات",
+      "audio": "الصوت",
+      "contacts": "جهات الاتصال"
+    },
+    "sections": {
+      "chats": "الدردشات",
+      "messages": "الرسائل",
+      "files": "الملفات",
+      "media": "الوسائط",
+      "links": "الروابط",
+      "contacts": "جهات الاتصال"
+    }
+  },
   "common": {
     "empty": "لا يوجد شيء هنا بعد",
     "dismiss": "إغلاق",

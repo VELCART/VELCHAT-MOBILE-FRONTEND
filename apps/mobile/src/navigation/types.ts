@@ -10,6 +10,7 @@ export type RootStackParamList = {
   AppTabs: undefined;
   Settings: undefined;
   Profile: undefined;
+  Search: undefined;
   Chat: { conversationId: string; name?: string | undefined };
 };
 

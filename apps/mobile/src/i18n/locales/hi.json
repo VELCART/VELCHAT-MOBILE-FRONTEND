@@ -133,6 +133,32 @@
     "hintMedia": "मीडिया",
     "hintAi": "AI सर्च"
   },
+  "search": {
+    "placeholder": "Vel AI से पूछें या खोजें",
+    "recent": "हाल की खोजें",
+    "clearAll": "सब हटाएं",
+    "frequent": "अक्सर",
+    "noResults": "“{{q}}” के लिए कोई परिणाम नहीं",
+    "noResultsSub": "कोई दूसरा शब्द या फ़िल्टर आज़माएं।",
+    "filters": {
+      "all": "सभी",
+      "unread": "अपठित",
+      "photos": "फ़ोटो",
+      "videos": "वीडियो",
+      "links": "लिंक",
+      "docs": "दस्तावेज़",
+      "audio": "ऑडियो",
+      "contacts": "संपर्क"
+    },
+    "sections": {
+      "chats": "चैट",
+      "messages": "मैसेज",
+      "files": "फ़ाइलें",
+      "media": "मीडिया",
+      "links": "लिंक",
+      "contacts": "संपर्क"
+    }
+  },
   "common": {
     "empty": "यहाँ अभी कुछ नहीं है",
     "dismiss": "बंद करें",

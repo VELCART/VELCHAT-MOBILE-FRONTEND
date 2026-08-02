@@ -149,6 +149,7 @@ export function HomeHeader(): React.JSX.Element {
 
   const openSettings = (): void => navigation.navigate('Settings');
   const openProfile = (): void => navigation.navigate('Profile');
+  const openSearch = (): void => navigation.navigate('Search');
   const noop = (): void => undefined;
   const isChats = activeTab === 'Chats';
 
@@ -160,7 +161,7 @@ export function HomeHeader(): React.JSX.Element {
             key: 'search',
             Icon: SearchIcon,
             label: tr('header.search'),
-            onPress: noop,
+            onPress: openSearch,
           },
           {
             key: 'download',
@@ -348,7 +349,7 @@ export function HomeHeader(): React.JSX.Element {
           <Pressable
             accessibilityRole="search"
             accessibilityLabel={tr('header.search')}
-            onPress={noop}
+            onPress={openSearch}
             style={({ pressed }) => ({
               flexDirection: 'row',
               alignItems: 'center',
