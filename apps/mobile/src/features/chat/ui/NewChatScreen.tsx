@@ -42,11 +42,12 @@ import { useStartDm } from '../hooks/useStartDm';
 
 const AVATAR = 48;
 
-// ── row model (one FlashList over section headers + two contact kinds) ──────────
+// ── row model (one FlashList over section headers + contact kinds) ──────────────
 type Row =
   | { kind: 'header'; id: string; label: string }
   | { kind: 'velchat'; id: string; contact: VelchatContact }
-  | { kind: 'invite'; id: string; contact: InviteContact };
+  | { kind: 'invite'; id: string; contact: InviteContact }
+  | { kind: 'lookup'; id: string; contact: InviteContact };
 
 /** Circular avatar: photo → initial → glyph. */
 function Avatar({
@@ -216,19 +217,23 @@ const InviteRow = React.memo(function InviteRow({
 });
 
 /**
- * "Message a number that isn't saved" (§G2) — shown when the search box holds a valid E.164
- * that isn't already a matched contact. Tap → look the number up in the directory: found →
- * open the DM; not found → offer an invite. Owns its own idle/searching/notfound state; resets
- * whenever the number changes.
+ * Resolve-on-tap row (§G2). Used two ways: for a bare number typed into search ("message a
+ * number that isn't saved"), and for a saved contact when membership couldn't be checked up
+ * front (backend degraded). Tap → look the number up in the directory: found → open the DM;
+ * not found → offer an invite. Owns its own idle/searching/notfound state; resets on change.
  */
-const NumberSearchRow = React.memo(function NumberSearchRow({
+const LookupRow = React.memo(function LookupRow({
   e164,
+  name,
+  thumbnailPath,
   disabled,
   lookup,
   onFound,
   onInvite,
 }: {
   e164: string;
+  name?: string | undefined;
+  thumbnailPath?: string | undefined;
   disabled: boolean;
   lookup: (e164: string) => Promise<string | null>;
   onFound: (accountId: string, name: string) => void;
@@ -244,22 +249,27 @@ const NumberSearchRow = React.memo(function NumberSearchRow({
     setState('searching');
     try {
       const acc = await lookup(e164);
-      if (acc) onFound(acc, e164);
+      if (acc) onFound(acc, name ?? e164);
       else setState('notfound');
     } catch {
       setState('notfound');
     }
-  }, [state, disabled, lookup, e164, onFound]);
+  }, [state, disabled, lookup, e164, name, onFound]);
 
+  // Title = the contact name if we have one, else the number itself. Subtitle carries the
+  // number (named row) or the search hint (bare number); "Not on VelChat" once a tap misses.
+  const title = name ?? e164;
   const subtitle =
     state === 'notfound'
       ? tr('newChat.numberNotFound')
-      : tr('newChat.numberSearchHint');
+      : name
+        ? e164
+        : tr('newChat.numberSearchHint');
 
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${tr('newChat.numberSearchHint')}: ${e164}`}
+      accessibilityLabel={`${tr('newChat.numberSearchHint')}: ${title}`}
       disabled={state === 'notfound'}
       onPress={() => void onPress()}
       style={({ pressed }) => ({
@@ -271,21 +281,25 @@ const NumberSearchRow = React.memo(function NumberSearchRow({
         backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
       })}
     >
-      <View
-        style={{
-          width: AVATAR,
-          height: AVATAR,
-          borderRadius: AVATAR / 2,
-          backgroundColor: t.colors.brandFrom,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <SearchIcon size={22} color={t.colors.actionFg} strokeWidth={2.2} />
-      </View>
+      {name ? (
+        <Avatar name={name} thumbnailPath={thumbnailPath} />
+      ) : (
+        <View
+          style={{
+            width: AVATAR,
+            height: AVATAR,
+            borderRadius: AVATAR / 2,
+            backgroundColor: t.colors.brandFrom,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <SearchIcon size={22} color={t.colors.actionFg} strokeWidth={2.2} />
+        </View>
+      )}
       <View style={{ flex: 1, gap: 2 }}>
         <Text variant="body" numberOfLines={1} style={{ fontSize: 16 }}>
-          {e164}
+          {title}
         </Text>
         <Text variant="caption" color="tertiary" numberOfLines={1}>
           {subtitle}
@@ -296,7 +310,7 @@ const NumberSearchRow = React.memo(function NumberSearchRow({
       ) : state === 'notfound' ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${tr('newChat.invite')}: ${e164}`}
+          accessibilityLabel={`${tr('newChat.invite')}: ${title}`}
           onPress={() => onInvite(e164)}
           hitSlop={8}
           style={({ pressed }) => ({
@@ -398,7 +412,8 @@ export function NewChatScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { status, onVelchat, invitable, request, reload } = useDeviceContacts();
+  const { status, onVelchat, invitable, discoveryFailed, request, reload } =
+    useDeviceContacts();
   const startDm = useStartDm();
   const { normalize, lookup } = useNumberSearch();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -446,14 +461,28 @@ export function NewChatScreen(): React.JSX.Element {
     return c && !matchedNumbers.has(c) ? c : null;
   }, [normalize, query, matchedNumbers]);
 
-  // Filter + flatten the two sections into one recycled list.
+  // Filter + flatten the sections into one recycled list. When membership couldn't be checked
+  // (discoveryFailed), every contact becomes a "lookup" row that resolves on tap.
   const rows = useMemo<Row[]>(() => {
     const q = query.trim().toLowerCase();
     const match = (name: string, phone: string): boolean =>
       q === '' || name.toLowerCase().includes(q) || phone.includes(q);
+    const out: Row[] = [];
+    if (discoveryFailed) {
+      const all = invitable.filter(c => match(c.name, c.phoneE164));
+      if (all.length > 0) {
+        out.push({
+          kind: 'header',
+          id: 'h-contacts',
+          label: tr('newChat.contactsSection'),
+        });
+        for (const c of all)
+          out.push({ kind: 'lookup', id: `l-${c.key}`, contact: c });
+      }
+      return out;
+    }
     const vel = onVelchat.filter(c => match(c.name, c.phoneE164));
     const inv = invitable.filter(c => match(c.name, c.phoneE164));
-    const out: Row[] = [];
     if (vel.length > 0) {
       out.push({
         kind: 'header',
@@ -472,7 +501,7 @@ export function NewChatScreen(): React.JSX.Element {
         out.push({ kind: 'invite', id: `i-${c.key}`, contact: c });
     }
     return out;
-  }, [onVelchat, invitable, query, tr]);
+  }, [onVelchat, invitable, discoveryFailed, query, tr]);
 
   const renderItem = useCallback(
     ({ item }: { item: Row }): React.JSX.Element | null => {
@@ -487,6 +516,19 @@ export function NewChatScreen(): React.JSX.Element {
           />
         );
       }
+      if (item.kind === 'lookup') {
+        return (
+          <LookupRow
+            e164={item.contact.phoneE164}
+            name={item.contact.name}
+            thumbnailPath={item.contact.thumbnailPath}
+            disabled={busyId !== null}
+            lookup={lookup}
+            onFound={openChat}
+            onInvite={shareInvite}
+          />
+        );
+      }
       return (
         <InviteRow
           contact={item.contact}
@@ -495,7 +537,7 @@ export function NewChatScreen(): React.JSX.Element {
         />
       );
     },
-    [busyId, openChat, onInvite, tr],
+    [busyId, openChat, onInvite, shareInvite, lookup, tr],
   );
 
   const body = ((): React.JSX.Element => {
@@ -680,13 +722,27 @@ export function NewChatScreen(): React.JSX.Element {
 
       {/* "Message a number that isn't saved" — a valid E.164 that isn't already a match. */}
       {candidate ? (
-        <NumberSearchRow
+        <LookupRow
           e164={candidate}
           disabled={busyId !== null}
           lookup={lookup}
           onFound={openChat}
           onInvite={shareInvite}
         />
+      ) : null}
+
+      {/* Degraded: address book read, but membership couldn't be checked — tap resolves it. */}
+      {status === 'ready' && discoveryFailed && rows.length > 0 ? (
+        <Text
+          variant="caption"
+          color="tertiary"
+          style={{
+            paddingHorizontal: t.spacing.lg,
+            paddingBottom: t.spacing.xs,
+          }}
+        >
+          {tr('newChat.discoveryOffline')}
+        </Text>
       ) : null}
 
       {startError ? (

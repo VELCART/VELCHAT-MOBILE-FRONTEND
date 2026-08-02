@@ -53,6 +53,9 @@ export interface UseDeviceContacts {
   status: DeviceContactsStatus;
   onVelchat: VelchatContact[];
   invitable: InviteContact[];
+  /** True when we read the address book but couldn't check VelChat membership (backend down
+   * or no own number). The contacts still show — the UI resolves each one on tap instead. */
+  discoveryFailed: boolean;
   /** Ask for permission (prompts) then load — wired to the "Allow access" button. */
   request: () => void;
   /** Re-run discovery (permission already granted) — wired to pull-to-refresh / retry. */
@@ -67,6 +70,7 @@ export function useDeviceContacts(): UseDeviceContacts {
   const [status, setStatus] = useState<DeviceContactsStatus>('checking');
   const [onVelchat, setOnVelchat] = useState<VelchatContact[]>([]);
   const [invitable, setInvitable] = useState<InviteContact[]>([]);
+  const [discoveryFailed, setDiscoveryFailed] = useState(false);
 
   // Alive flag + load sequence: ignore results from a superseded/aborted run (§M20.3).
   const aliveRef = useRef(true);
@@ -80,13 +84,10 @@ export function useDeviceContacts(): UseDeviceContacts {
     settle(() => setStatus('loading'));
 
     // The caller's own number seeds the region (local-format contacts) and is the discovery
-    // input; without it we can't normalize or match.
+    // input. It may be missing (rare) — that only disables membership matching, it must NOT
+    // hide the address book.
     const rawOwn = getPhone();
     const myPhoneE164 = rawOwn ? (toE164(rawOwn) ?? rawOwn) : undefined;
-    if (!myPhoneE164) {
-      settle(() => setStatus('error'));
-      return;
-    }
     const region = regionFromE164(myPhoneE164);
     const myAccount = getAccountId();
 
@@ -113,41 +114,49 @@ export function useDeviceContacts(): UseDeviceContacts {
       }))
       .filter(x => x.e164s.length > 0);
 
-    // The global, deduped number set to discover (capped).
-    const seen = new Set<string>();
-    const numbers: string[] = [];
-    for (const { e164s } of perContact) {
-      for (const n of e164s) {
-        if (n === myPhoneE164) continue; // never discover/invite yourself
-        if (!seen.has(n)) {
-          seen.add(n);
-          numbers.push(n);
+    // Best-effort membership check. A missing own number or a backend failure degrades to
+    // showing every contact (resolved on tap) rather than an empty/error screen.
+    let matches = new Map<string, string>();
+    let failed = false;
+    if (myPhoneE164) {
+      const seen = new Set<string>();
+      const numbers: string[] = [];
+      for (const { e164s } of perContact) {
+        for (const n of e164s) {
+          if (n === myPhoneE164) continue; // never discover/invite yourself
+          if (!seen.has(n)) {
+            seen.add(n);
+            numbers.push(n);
+          }
         }
       }
-    }
-    const capped = numbers.slice(0, MAX_DISCOVERY);
-
-    let matches: Map<string, string>;
-    try {
-      matches = await discoverContacts(myPhoneE164, capped);
-    } catch {
-      settle(() => setStatus('error'));
-      return;
+      try {
+        matches = await discoverContacts(
+          myPhoneE164,
+          numbers.slice(0, MAX_DISCOVERY),
+        );
+      } catch {
+        failed = true;
+      }
+    } else {
+      failed = true;
     }
 
     const vel: VelchatContact[] = [];
     const inv: InviteContact[] = [];
     const usedAccounts = new Set<string>();
     for (const { c, e164s } of perContact) {
-      // First of this contact's numbers that resolved to a VelChat account.
+      // First of this contact's numbers that resolved to a VelChat account (skip if degraded).
       let acc: string | undefined;
       let phone: string | undefined;
-      for (const n of e164s) {
-        const m = matches.get(n);
-        if (m) {
-          acc = m;
-          phone = n;
-          break;
+      if (!failed) {
+        for (const n of e164s) {
+          const m = matches.get(n);
+          if (m) {
+            acc = m;
+            phone = n;
+            break;
+          }
         }
       }
       if (acc && phone) {
@@ -180,6 +189,7 @@ export function useDeviceContacts(): UseDeviceContacts {
     settle(() => {
       setOnVelchat(vel);
       setInvitable(inv);
+      setDiscoveryFailed(failed);
       setStatus('ready');
     });
   }, []);
@@ -220,5 +230,5 @@ export function useDeviceContacts(): UseDeviceContacts {
     };
   }, [runLoad]);
 
-  return { status, onVelchat, invitable, request, reload };
+  return { status, onVelchat, invitable, discoveryFailed, request, reload };
 }

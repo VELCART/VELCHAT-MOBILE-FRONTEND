@@ -97,6 +97,8 @@
     "invite": "Invite",
     "numberSearchHint": "Search on VelChat",
     "numberNotFound": "Not on VelChat",
+    "contactsSection": "Contacts",
+    "discoveryOffline": "Couldn't check who's on VelChat right now — tap a contact to try.",
     "noVelchatTitle": "No contacts on VelChat yet",
     "noVelchatSub": "Invite friends below to start chatting.",
     "inviteMessage": "Let's chat on VelChat — a fast, private messenger.",

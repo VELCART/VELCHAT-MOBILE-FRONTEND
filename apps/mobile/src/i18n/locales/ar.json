@@ -97,6 +97,8 @@
     "invite": "دعوة",
     "numberSearchHint": "ابحث في VelChat",
     "numberNotFound": "غير موجود على VelChat",
+    "contactsSection": "جهات الاتصال",
+    "discoveryOffline": "تعذّر معرفة من على VelChat الآن — اضغط على جهة اتصال للمحاولة.",
     "noVelchatTitle": "لا توجد جهات اتصال على VelChat بعد",
     "noVelchatSub": "ادعُ أصدقاءك أدناه لبدء المحادثة.",
     "inviteMessage": "لنتحدّث على VelChat — مرسال سريع وخاص.",
