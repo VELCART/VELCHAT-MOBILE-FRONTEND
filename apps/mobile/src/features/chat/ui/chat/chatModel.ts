@@ -68,3 +68,27 @@ export function dayCategory(ts: number, now: number): DayCategory {
   if (isSameDay(ts, yesterday.getTime())) return 'yesterday';
   return 'other';
 }
+
+/**
+ * Compact last-seen token for the header presence line (§A15): time-of-day when it was today,
+ * a caller-supplied localised "yesterday" word for yesterday, else a short date. Mirrors the
+ * chat-list `timeLabel` buckets so the two surfaces read consistently. Empty string for an
+ * invalid timestamp. The `chat.lastSeen` i18n string wraps this as its `{{time}}` param.
+ */
+export function presenceTimeLabel(
+  ts: number,
+  now: number,
+  yesterdayLabel: string,
+): string {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  const cat = dayCategory(ts, now);
+  if (cat === 'today') {
+    return d.toLocaleTimeString(undefined, {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  }
+  if (cat === 'yesterday') return yesterdayLabel;
+  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+}

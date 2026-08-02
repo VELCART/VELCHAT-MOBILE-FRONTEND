@@ -74,7 +74,10 @@
     "voice": "رسالة صوتية",
     "today": "اليوم",
     "yesterday": "أمس",
-    "jumpToLatest": "الانتقال إلى الأحدث"
+    "jumpToLatest": "الانتقال إلى الأحدث",
+    "typing": "يكتب الآن…",
+    "online": "متصل",
+    "lastSeen": "آخر ظهور {{time}}"
   },
   "newChat": {
     "title": "محادثة جديدة",

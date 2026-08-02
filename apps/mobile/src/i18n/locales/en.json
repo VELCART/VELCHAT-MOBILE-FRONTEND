@@ -74,7 +74,10 @@
     "voice": "Voice message",
     "today": "Today",
     "yesterday": "Yesterday",
-    "jumpToLatest": "Jump to latest"
+    "jumpToLatest": "Jump to latest",
+    "typing": "typing…",
+    "online": "online",
+    "lastSeen": "last seen {{time}}"
   },
   "newChat": {
     "title": "New chat",

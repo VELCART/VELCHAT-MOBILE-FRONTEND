@@ -11,6 +11,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../../theme';
 import { useTranslation } from '../../../i18n';
 import { Text, UserIcon, ChatIcon, ChatPlusIcon } from '../../../design-system';
+import { useTypingUser } from '../../../core';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useConversations } from '../hooks/useConversations';
 
@@ -48,8 +49,11 @@ const Row = React.memo(function Row({
   onOpen: (id: string, name?: string) => void;
 }): React.JSX.Element {
   const t = useTheme();
+  const { t: tr } = useTranslation();
   const initial = (item.name ?? '?').trim().charAt(0).toUpperCase();
   const unread = item.unreadCount > 0;
+  // Typing wins over the last-message preview for this conversation (§C4, ephemeral store).
+  const typing = useTypingUser(item.id) !== null;
   return (
     <Pressable
       accessibilityRole="button"
@@ -115,14 +119,24 @@ const Row = React.memo(function Row({
             gap: t.spacing.xs,
           }}
         >
-          <Text
-            variant="caption"
-            color="secondary"
-            numberOfLines={1}
-            style={{ flex: 1, fontSize: 14 }}
-          >
-            {item.lastMessagePreview ?? ''}
-          </Text>
+          {typing ? (
+            <Text
+              variant="caption"
+              numberOfLines={1}
+              style={{ flex: 1, fontSize: 14, color: t.colors.brandFrom }}
+            >
+              {tr('chat.typing')}
+            </Text>
+          ) : (
+            <Text
+              variant="caption"
+              color="secondary"
+              numberOfLines={1}
+              style={{ flex: 1, fontSize: 14 }}
+            >
+              {item.lastMessagePreview ?? ''}
+            </Text>
+          )}
           {unread ? (
             <View
               style={{

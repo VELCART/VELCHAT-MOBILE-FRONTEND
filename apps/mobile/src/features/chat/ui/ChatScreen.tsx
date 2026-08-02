@@ -29,6 +29,7 @@ import {
   useSendMessage,
   useRetrySend,
 } from '../hooks/useMessages';
+import { useTyping } from '../hooks/useTyping';
 import { ChatHeader } from './chat/ChatHeader';
 import { Composer } from './chat/Composer';
 import { JumpToLatest } from './chat/JumpToLatest';
@@ -50,7 +51,17 @@ export function ChatScreen(): React.JSX.Element {
   const { messages, meId } = useMessages(conversationId);
   const send = useSendMessage(conversationId);
   const retry = useRetrySend();
+  const { notifyTyping, stopTyping } = useTyping(conversationId);
   const [text, setText] = useState('');
+
+  // Feed each keystroke to the throttled typing signal (§C4) alongside the local text state.
+  const onChangeText = useCallback(
+    (v: string) => {
+      setText(v);
+      notifyTyping(v);
+    },
+    [notifyTyping],
+  );
 
   // Stable "now" for date-separator classification — it must not shift each render (that
   // would rebuild every chip label) and needn't track the midnight rollover mid-session.
@@ -78,7 +89,8 @@ export function ChatScreen(): React.JSX.Element {
     if (!text.trim()) return;
     send(text);
     setText('');
-  }, [text, send]);
+    stopTyping();
+  }, [text, send, stopTyping]);
 
   const dateLabelFor = useCallback(
     (ts: number): string => {
@@ -113,7 +125,7 @@ export function ChatScreen(): React.JSX.Element {
 
   return (
     <Screen edges={['top']} padded={false}>
-      <ChatHeader name={name} onBack={onBack} />
+      <ChatHeader conversationId={conversationId} name={name} onBack={onBack} />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
@@ -134,7 +146,7 @@ export function ChatScreen(): React.JSX.Element {
           {showJump ? <JumpToLatest onPress={jumpToLatest} /> : null}
         </View>
 
-        <Composer value={text} onChangeText={setText} onSend={onSend} />
+        <Composer value={text} onChangeText={onChangeText} onSend={onSend} />
       </KeyboardAvoidingView>
     </Screen>
   );

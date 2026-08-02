@@ -11,13 +11,23 @@
  * and disposed in `stop()` (§M7). Pure decision logic (reconcile branch, backoff schedule,
  * retry threshold) lives in `infra/db/syncLogic.ts` — this file is the wiring.
  */
-import { appEnv, log } from '../../core';
+import {
+  appEnv,
+  log,
+  useRealtimeStore,
+  normalizePresenceStatus,
+  TYPING_TTL_MS,
+} from '../../core';
 import {
   RealtimeSocket,
   WS_CODE_UNAUTHORIZED,
   hasSession,
   getAccessToken,
   getAccountId,
+  getConversationMembers,
+  getPresence,
+  subscribePresence,
+  normalizePresenceEvent,
   subscribeNetwork,
   getNetworkStatus,
   isAppError,
@@ -60,6 +70,13 @@ class SyncEngine {
   private started = false;
   private stopped = true;
   private draining = false;
+  // Ephemeral realtime (§C4/§A15) — NEVER persisted. One owned expiry timer per typing
+  // conversation; `activePresencePeers` maps an open DM → the peer we're watching.
+  private readonly typingTimers = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
+  private readonly activePresencePeers = new Map<string, string>();
   // One-shot crash-recovery: resets outbox rows orphaned in `sending` by a prior kill.
   // The first drain awaits it so it can't claim behind a stuck row.
   private recovery: Promise<unknown> | null = null;
@@ -90,6 +107,9 @@ class SyncEngine {
     }
     this.clearReconnectTimer();
     this.clearOutboxTimer();
+    this.clearAllTyping();
+    this.activePresencePeers.clear();
+    useRealtimeStore.getState().reset();
     const s = this.socket;
     this.socket = null;
     s?.close();
@@ -138,6 +158,12 @@ class SyncEngine {
       onReceipt: data => {
         void this.onInboundReceipt(data);
       },
+      onTyping: (data, state) => {
+        this.onInboundTyping(data, state);
+      },
+      onPresence: data => {
+        this.onInboundPresence(data);
+      },
       onReconnectRequested: () => {
         this.onServerReconnect();
       },
@@ -151,6 +177,8 @@ class SyncEngine {
 
   private onSocketClose(code: number, reason: string): void {
     this.socket = null;
+    // Peers' "typing" is no longer trustworthy once the link drops — clear all indicators.
+    this.clearAllTyping();
     log.info('ws closed', { code, reason });
     if (this.stopped) return;
     if (code === WS_CODE_UNAUTHORIZED) {
@@ -218,6 +246,8 @@ class SyncEngine {
   private async onInboundMessage(data: unknown): Promise<void> {
     const m = normalizeServerMessage(data);
     if (!m) return;
+    // A new message from the peer means they've stopped typing — clear the indicator (§C4).
+    this.clearTyping(m.conversationId);
     try {
       await applyServerMessage(m);
       if (m.senderId !== getAccountId()) {
@@ -384,6 +414,125 @@ class SyncEngine {
     if (!requeued) return;
     await markMessageSending(clientMsgId);
     this.kickOutbox();
+  }
+
+  // ── typing (§C4) ───────────────────────────────────────────────────────────
+  /**
+   * Tell the server I'm typing / stopped (ephemeral, best-effort). The gateway reads these fields
+   * at the frame's TOP LEVEL (`sendEphemeral` sends a FLAT `{kind:'ephemeral',type:'typing',…}`),
+   * then relays `typing.started`/`typing.stopped` to the OTHER members. Dropped when offline — that
+   * is fine (§C4: typing is never re-synced).
+   */
+  sendTyping(conversationId: string, state: 'start' | 'stop'): void {
+    this.socket?.sendEphemeral('typing', { conversationId, state });
+  }
+
+  /** Inbound `typing.started`/`typing.stopped` → the live store, with an owned auto-expire timer. */
+  private onInboundTyping(data: unknown, state: 'start' | 'stop'): void {
+    const d =
+      data && typeof data === 'object' ? (data as Record<string, unknown>) : {};
+    const conversationId =
+      typeof d.conversationId === 'string'
+        ? d.conversationId
+        : typeof d.conversation_id === 'string'
+          ? d.conversation_id
+          : undefined;
+    const userId =
+      typeof d.userId === 'string'
+        ? d.userId
+        : typeof d.user_id === 'string'
+          ? d.user_id
+          : typeof d.account_id === 'string'
+            ? d.account_id
+            : undefined;
+    if (conversationId === undefined || userId === undefined) return;
+    if (state === 'stop') {
+      this.clearTyping(conversationId);
+      return;
+    }
+    useRealtimeStore
+      .getState()
+      .setTyping(conversationId, userId, Date.now() + TYPING_TTL_MS);
+    // Owned expiry timer (§M7): replace any existing one so the indicator self-clears if no
+    // refresh / `stop` / message arrives within the TTL (the store change re-renders it away).
+    const existing = this.typingTimers.get(conversationId);
+    if (existing) clearTimeout(existing);
+    this.typingTimers.set(
+      conversationId,
+      setTimeout(() => {
+        this.typingTimers.delete(conversationId);
+        useRealtimeStore.getState().clearTyping(conversationId);
+      }, TYPING_TTL_MS),
+    );
+  }
+
+  /** Clear one conversation's typing indicator + cancel its expiry timer. */
+  private clearTyping(conversationId: string): void {
+    const timer = this.typingTimers.get(conversationId);
+    if (timer) {
+      clearTimeout(timer);
+      this.typingTimers.delete(conversationId);
+    }
+    useRealtimeStore.getState().clearTyping(conversationId);
+  }
+
+  /** Cancel every typing timer + drop all indicators (socket drop / engine stop). */
+  private clearAllTyping(): void {
+    for (const timer of this.typingTimers.values()) clearTimeout(timer);
+    this.typingTimers.clear();
+    useRealtimeStore.getState().resetTyping();
+  }
+
+  // ── presence (§A15) ────────────────────────────────────────────────────────
+  /**
+   * A chat became active → resolve its DM peer (members − me), subscribe to the peer's live presence
+   * (fan-out targets subscribers only), and fetch the current snapshot into the store. Returns the
+   * peerId, or `null` for a group / note-to-self (no single-peer presence line). Never blocks the UI:
+   * every network call is best-effort and off the render path.
+   */
+  async activatePresence(conversationId: string): Promise<string | null> {
+    const me = getAccountId();
+    if (!me) return null;
+    let peerId: string | null = null;
+    try {
+      const members = await getConversationMembers(conversationId);
+      const others = members.filter(m => m !== me);
+      peerId = others.length === 1 ? (others[0] ?? null) : null;
+    } catch (e) {
+      log.warn('presence members resolve failed', { reason: String(e) });
+      return null;
+    }
+    if (peerId === null) return null;
+    this.activePresencePeers.set(conversationId, peerId);
+    const peer = peerId;
+    void subscribePresence(me, [peer]).catch((e: unknown) => {
+      log.warn('presence subscribe failed', { reason: String(e) });
+    });
+    try {
+      const p = await getPresence(peer, me);
+      useRealtimeStore.getState().setPresence(peer, {
+        status: normalizePresenceStatus(p.status),
+        lastSeen: p.lastSeen,
+      });
+    } catch (e) {
+      log.warn('presence fetch failed', { reason: String(e) });
+    }
+    return peer;
+  }
+
+  /** A chat closed → stop tracking its peer (the last-known snapshot may stay in the store). */
+  deactivatePresence(conversationId: string): void {
+    this.activePresencePeers.delete(conversationId);
+  }
+
+  /** Inbound live presence frame (`presence`/`presence.changed`) → the store. */
+  private onInboundPresence(data: unknown): void {
+    const ev = normalizePresenceEvent(data);
+    if (!ev) return;
+    useRealtimeStore.getState().setPresence(ev.userId, {
+      status: normalizePresenceStatus(ev.status),
+      lastSeen: ev.lastSeen,
+    });
   }
 }
 

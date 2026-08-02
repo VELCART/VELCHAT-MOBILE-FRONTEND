@@ -18,6 +18,12 @@ export {
   getConversationDetails,
   getConversationMembers,
 } from './conversations';
+export {
+  getPresence,
+  subscribePresence,
+  normalizePresenceEvent,
+} from './presence';
+export type { PresenceResult, PresenceEvent } from './presence';
 export type {
   CreateDmResult,
   ConversationDetails,

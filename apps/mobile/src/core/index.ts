@@ -18,3 +18,16 @@ export type { FeatureFlags, FeatureFlagKey } from './feature-flags';
 export { useConnectivity, isOffline, isFlightMode } from './connectivity';
 export { useActiveTab } from './activeTab';
 export type { TabName } from './activeTab';
+export {
+  useRealtimeStore,
+  useTypingUser,
+  usePresence,
+  isTypingActive,
+  normalizePresenceStatus,
+  TYPING_TTL_MS,
+} from './realtimeStore';
+export type {
+  PresenceStatus,
+  PresenceEntry,
+  TypingEntry,
+} from './realtimeStore';

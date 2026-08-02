@@ -17,8 +17,36 @@ import {
   UserIcon,
   type IconProps,
 } from '../../../../design-system';
+import { useChatHeaderPresence } from '../../hooks/useChatHeaderPresence';
+import { presenceTimeLabel } from './chatModel';
 
 const AVATAR = 40;
+
+/**
+ * Resolve the reserved presence-line text + colour: typing WINS (brand), else online / last-seen
+ * from presence, else `null` (a blank spacer keeps the header height stable).
+ */
+function usePresenceLine(conversationId: string): {
+  text: string | null;
+  brand: boolean;
+} {
+  const { t: tr } = useTranslation();
+  const { typing, presence } = useChatHeaderPresence(conversationId);
+  if (typing) return { text: tr('chat.typing'), brand: true };
+  if (presence) {
+    if (presence.status !== 'offline')
+      return { text: tr('chat.online'), brand: false };
+    if (presence.lastSeen !== null) {
+      const time = presenceTimeLabel(
+        presence.lastSeen,
+        Date.now(),
+        tr('chat.yesterday'),
+      );
+      return { text: tr('chat.lastSeen', { time }), brand: false };
+    }
+  }
+  return { text: null, brand: false };
+}
 
 const noop = (): void => undefined;
 
@@ -52,9 +80,11 @@ function HeaderIconButton({
 }
 
 export function ChatHeader({
+  conversationId,
   name,
   onBack,
 }: {
+  conversationId: string;
   name: string | undefined;
   onBack: () => void;
 }): React.JSX.Element {
@@ -62,6 +92,7 @@ export function ChatHeader({
   const { t: tr } = useTranslation();
   const title = name ?? tr('tabs.chats');
   const initial = (name ?? '').trim().charAt(0).toUpperCase();
+  const presenceLine = usePresenceLine(conversationId);
   return (
     <View
       style={{
@@ -126,14 +157,20 @@ export function ChatHeader({
         >
           {title}
         </Text>
-        {/* Reserved presence line — real online/last-seen status lands later; keeping the
-            line stops the header height from jumping when it arrives. */}
+        {/* Reserved presence line (§A15/§C4): typing wins (brand), else online / last-seen, else a
+            blank spacer so the header height never jumps. */}
         <Text
           variant="caption"
           numberOfLines={1}
-          style={{ fontSize: 12, lineHeight: 15, color: t.colors.textTertiary }}
+          style={{
+            fontSize: 12,
+            lineHeight: 15,
+            color: presenceLine.brand
+              ? t.colors.brandFrom
+              : t.colors.textTertiary,
+          }}
         >
-          {' '}
+          {presenceLine.text ?? ' '}
         </Text>
       </View>
 

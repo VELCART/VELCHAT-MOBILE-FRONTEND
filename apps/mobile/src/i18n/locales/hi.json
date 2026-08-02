@@ -74,7 +74,10 @@
     "voice": "वॉइस मैसेज",
     "today": "आज",
     "yesterday": "कल",
-    "jumpToLatest": "नए मैसेज पर जाएं"
+    "jumpToLatest": "नए मैसेज पर जाएं",
+    "typing": "टाइप कर रहे हैं…",
+    "online": "ऑनलाइन",
+    "lastSeen": "अंतिम बार देखा {{time}}"
   },
   "newChat": {
     "title": "नई चैट",
