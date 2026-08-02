@@ -14,7 +14,7 @@
  *
  * PRIVACY: never log a name or number — only counts.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   checkContactsPermission,
   ensureContactsPermission,
@@ -60,6 +60,8 @@ export interface UseDeviceContacts {
   /** True when we read the address book but couldn't check VelChat membership (backend down
    * or no own number). The contacts still show — the UI resolves each one on tap instead. */
   discoveryFailed: boolean;
+  /** The signed-in account id (for the "Message yourself" self-chat row), or undefined. */
+  self: string | undefined;
   /** Ask for permission (prompts) then load — wired to the "Allow access" button. */
   request: () => void;
   /** Re-run discovery (permission already granted) — wired to pull-to-refresh / retry. */
@@ -87,6 +89,7 @@ export function useDeviceContacts(): UseDeviceContacts {
   const [onVelchat, setOnVelchat] = useState<VelchatContact[]>([]);
   const [invitable, setInvitable] = useState<InviteContact[]>([]);
   const [discoveryFailed, setDiscoveryFailed] = useState(false);
+  const self = useMemo(() => getAccountId(), []);
 
   // Alive flag + load sequence: ignore results from a superseded/aborted run (§M20.3).
   const aliveRef = useRef(true);
@@ -272,5 +275,13 @@ export function useDeviceContacts(): UseDeviceContacts {
     };
   }, [runLoad]);
 
-  return { status, onVelchat, invitable, discoveryFailed, request, reload };
+  return {
+    status,
+    onVelchat,
+    invitable,
+    discoveryFailed,
+    self,
+    request,
+    reload,
+  };
 }

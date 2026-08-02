@@ -82,6 +82,8 @@
   "newChat": {
     "title": "New chat",
     "selectContact": "Select contact",
+    "messageYourself": "Message yourself",
+    "noteToSelf": "Notes, reminders",
     "searchPlaceholder": "Search name or number",
     "onVelchatSection": "Contacts on VelChat",
     "inviteSection": "Invite to VelChat",

@@ -82,6 +82,8 @@
   "newChat": {
     "title": "محادثة جديدة",
     "selectContact": "اختر جهة اتصال",
+    "messageYourself": "راسل نفسك",
+    "noteToSelf": "ملاحظات وتذكيرات",
     "searchPlaceholder": "ابحث بالاسم أو الرقم",
     "onVelchatSection": "جهات الاتصال على VelChat",
     "inviteSection": "الدعوة إلى VelChat",

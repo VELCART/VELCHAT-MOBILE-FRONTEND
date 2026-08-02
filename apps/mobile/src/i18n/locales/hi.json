@@ -82,6 +82,8 @@
   "newChat": {
     "title": "नई चैट",
     "selectContact": "संपर्क चुनें",
+    "messageYourself": "खुद को संदेश भेजें",
+    "noteToSelf": "नोट्स, रिमाइंडर",
     "searchPlaceholder": "नाम या नंबर खोजें",
     "onVelchatSection": "VelChat पर मौजूद संपर्क",
     "inviteSection": "VelChat पर आमंत्रित करें",

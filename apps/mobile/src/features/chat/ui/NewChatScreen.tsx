@@ -443,8 +443,15 @@ export function NewChatScreen(): React.JSX.Element {
   const insets = useSafeAreaInsets();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { status, onVelchat, invitable, discoveryFailed, request, reload } =
-    useDeviceContacts();
+  const {
+    status,
+    onVelchat,
+    invitable,
+    discoveryFailed,
+    self,
+    request,
+    reload,
+  } = useDeviceContacts();
   const startDm = useStartDm();
   const { normalize, lookup } = useNumberSearch();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -750,6 +757,54 @@ export function NewChatScreen(): React.JSX.Element {
           }}
         />
       </View>
+
+      {/* Message yourself (WhatsApp-style self-chat) — pinned at the top when not searching. */}
+      {self && query.trim() === '' ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={tr('newChat.messageYourself')}
+          disabled={busyId !== null}
+          onPress={() => void openChat(self, tr('newChat.messageYourself'))}
+          style={({ pressed }) => ({
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: t.spacing.md,
+            paddingHorizontal: t.spacing.lg,
+            paddingVertical: t.spacing.sm,
+            backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
+          })}
+        >
+          <View
+            style={{
+              width: AVATAR,
+              height: AVATAR,
+              borderRadius: AVATAR / 2,
+              backgroundColor: t.colors.brandFrom,
+              alignItems: 'center',
+              justifyContent: 'center',
+            }}
+          >
+            <UserIcon size={22} color={t.colors.actionFg} strokeWidth={2.2} />
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text variant="body" numberOfLines={1} style={{ fontSize: 16 }}>
+              {tr('newChat.messageYourself')}
+            </Text>
+            <Text variant="caption" color="tertiary" numberOfLines={1}>
+              {tr('newChat.noteToSelf')}
+            </Text>
+          </View>
+          {busyId === self ? (
+            <ActivityIndicator size="small" color={t.colors.brandFrom} />
+          ) : (
+            <ChevronRightIcon
+              size={20}
+              color={t.colors.textTertiary}
+              strokeWidth={2}
+            />
+          )}
+        </Pressable>
+      ) : null}
 
       {/* "Message a number that isn't saved" — a valid E.164 that isn't already a match. */}
       {candidate ? (
