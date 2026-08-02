@@ -32,11 +32,13 @@ import {
   bigIntToBase64Url,
   blind,
   getAccountId,
+  getPhone,
   getOprfKey,
   oprfEvaluate,
   oprfMatch,
   oprfRegister,
   parseOprfPublicKey,
+  toE164,
   unblind,
   OPRF_EVALUATE_BATCH_CAP,
   OPRF_MATCH_BATCH_CAP,
@@ -87,6 +89,28 @@ async function tokenizeInputs(
     tokenByInput.set(input, unblind(base64UrlToBigInt(ev), b.r, pub));
   }
   return tokenByInput;
+}
+
+/**
+ * Register ONLY the caller's own number for discovery (opt-in) — so this account becomes
+ * findable by contacts WITHOUT waiting for the user to open New Chat. Discovery is opt-in on
+ * the backend (a token is stored only when `register` runs), so calling this at login makes
+ * every account discoverable. Best-effort + idempotent; safe to call once per account. No-op
+ * without an authenticated session or a known own number.
+ */
+export async function registerSelfForDiscovery(): Promise<void> {
+  const accountId = getAccountId();
+  const rawPhone = getPhone();
+  if (!accountId || !rawPhone) return;
+  const myPhoneE164 = toE164(rawPhone) ?? rawPhone;
+
+  const pub = parseOprfPublicKey(await getOprfKey());
+  const tokenByInput = await tokenizeInputs(accountId, [myPhoneE164], pub);
+  const myToken = tokenByInput.get(myPhoneE164);
+  if (myToken !== undefined) {
+    await oprfRegister(accountId, myToken, pub.version);
+    log.info('discovery: self registered');
+  }
 }
 
 /**

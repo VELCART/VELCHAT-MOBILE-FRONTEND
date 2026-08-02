@@ -49,6 +49,9 @@ export const KVKeys = {
   avatarUrl: 'user.avatarUrl',
   // one-time flag: legacy dev-seed rows have been purged from the local DB (set once)
   chatPurged: 'db.chatPurged.v1',
+  // accountId this device last registered for contact discovery (opt-in OPRF token) — so we
+  // register once per account, making it findable by contacts without opening New Chat
+  discoverySelfRegistered: 'discovery.selfRegistered',
 } as const;
 
 export const kv = {

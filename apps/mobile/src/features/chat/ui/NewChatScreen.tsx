@@ -49,41 +49,72 @@ type Row =
   | { kind: 'invite'; id: string; contact: InviteContact }
   | { kind: 'lookup'; id: string; contact: InviteContact };
 
-/** Circular avatar: photo → initial → glyph. */
+// A stable, cheerful colour per contact (WhatsApp-style) so a no-photo avatar is a coloured
+// initial, not a grey blob. Same name → same colour across renders.
+const AVATAR_COLORS = [
+  '#7C3AED',
+  '#DB2777',
+  '#2563EB',
+  '#059669',
+  '#D97706',
+  '#DC2626',
+  '#0891B2',
+  '#9333EA',
+];
+function avatarColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i += 1)
+    h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length] ?? '#7C3AED';
+}
+
+/**
+ * Circular avatar. `plain` (an invite / not-on-VelChat contact) is just a simple person glyph.
+ * Otherwise: saved photo → coloured initial → person glyph — a real, colourful avatar.
+ */
 function Avatar({
   name,
   thumbnailPath,
+  plain,
 }: {
   name: string;
   thumbnailPath?: string | undefined;
+  plain?: boolean;
 }): React.JSX.Element {
   const t = useTheme();
   const initial = name.trim().charAt(0).toUpperCase();
-  return (
-    <View
-      style={{
-        width: AVATAR,
-        height: AVATAR,
-        borderRadius: AVATAR / 2,
-        backgroundColor: t.colors.bgSubtle,
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-      }}
-    >
-      {thumbnailPath ? (
+  const base = {
+    width: AVATAR,
+    height: AVATAR,
+    borderRadius: AVATAR / 2,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  } as const;
+
+  if (!plain && thumbnailPath) {
+    return (
+      <View style={{ ...base, backgroundColor: t.colors.bgSubtle }}>
         <Image
           source={{ uri: thumbnailPath }}
           style={{ width: AVATAR, height: AVATAR }}
           resizeMode="cover"
         />
-      ) : initial ? (
-        <Text variant="title" style={{ color: t.colors.textSecondary }}>
-          {initial}
-        </Text>
-      ) : (
+      </View>
+    );
+  }
+  if (plain || !initial) {
+    return (
+      <View style={{ ...base, backgroundColor: t.colors.bgSubtle }}>
         <UserIcon size={22} color={t.colors.textTertiary} strokeWidth={2} />
-      )}
+      </View>
+    );
+  }
+  return (
+    <View style={{ ...base, backgroundColor: avatarColor(name) }}>
+      <Text variant="title" style={{ color: '#fff' }}>
+        {initial}
+      </Text>
     </View>
   );
 }
@@ -182,7 +213,7 @@ const InviteRow = React.memo(function InviteRow({
         paddingVertical: t.spacing.sm,
       }}
     >
-      <Avatar name={contact.name} thumbnailPath={contact.thumbnailPath} />
+      <Avatar name={contact.name} plain />
       <View style={{ flex: 1, gap: 2 }}>
         <Text variant="body" numberOfLines={1} style={{ fontSize: 16 }}>
           {contact.name}

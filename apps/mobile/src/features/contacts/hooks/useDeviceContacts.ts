@@ -4,9 +4,13 @@
  * directory (OPRF) to split contacts into "on VelChat" (tap → DM) and "invite".
  *
  * Own state machine (§M20.3): checking → needsPermission → loading → ready, plus the terminal
- * blocked / unavailable / error branches. The async load is guarded by a monotonic sequence so
- * a fast reload/unmount never applies a stale result. No plaintext number is ever sent — the
- * OPRF pipeline blinds each one client-side (see domain/discovery).
+ * blocked / unavailable branches. The async load is guarded by a monotonic sequence so a fast
+ * reload/unmount never applies a stale result. No plaintext number is ever sent — the OPRF
+ * pipeline blinds each one client-side (see domain/discovery).
+ *
+ * Instant re-open: the last successful result is cached in-module (per account). Re-entering
+ * New Chat shows it immediately (no spinner — like WhatsApp); a stale cache refreshes silently
+ * in the background without downgrading a good list.
  *
  * PRIVACY: never log a name or number — only counts.
  */
@@ -66,6 +70,18 @@ export interface UseDeviceContacts {
 // follow-up in domain/discovery). A few thousand numbers is already generous for a phone book.
 const MAX_DISCOVERY = 2000;
 
+// In-module snapshot for instant re-open. Keyed by account so switching users never shows the
+// previous account's contacts. A stale snapshot (older than the TTL) refreshes silently.
+interface Snapshot {
+  accountId: string | undefined;
+  onVelchat: VelchatContact[];
+  invitable: InviteContact[];
+  discoveryFailed: boolean;
+  at: number;
+}
+let snapshot: Snapshot | null = null;
+const CACHE_TTL_MS = 5 * 60_000;
+
 export function useDeviceContacts(): UseDeviceContacts {
   const [status, setStatus] = useState<DeviceContactsStatus>('checking');
   const [onVelchat, setOnVelchat] = useState<VelchatContact[]>([]);
@@ -76,12 +92,14 @@ export function useDeviceContacts(): UseDeviceContacts {
   const aliveRef = useRef(true);
   const seqRef = useRef(0);
 
-  const runLoad = useCallback(async (): Promise<void> => {
+  // `silent` = a background refresh over a shown cache: don't flip to the spinner, and never
+  // downgrade a good (matched) list to a degraded one on a transient backend blip.
+  const runLoad = useCallback(async (silent: boolean): Promise<void> => {
     const seq = ++seqRef.current;
     const settle = (fn: () => void): void => {
       if (aliveRef.current && seq === seqRef.current) fn();
     };
-    settle(() => setStatus('loading'));
+    if (!silent) settle(() => setStatus('loading'));
 
     // The caller's own number seeds the region (local-format contacts) and is the discovery
     // input. It may be missing (rare) — that only disables membership matching, it must NOT
@@ -95,8 +113,9 @@ export function useDeviceContacts(): UseDeviceContacts {
     try {
       contacts = await readDeviceContacts();
     } catch {
-      // Native module not linked into this build yet → ask the user to update.
-      settle(() => setStatus('unavailable'));
+      // Native module not linked into this build yet → ask the user to update (unless this is
+      // a silent refresh over a good cache, in which case leave the cache on screen).
+      if (!silent) settle(() => setStatus('unavailable'));
       return;
     }
 
@@ -187,10 +206,19 @@ export function useDeviceContacts(): UseDeviceContacts {
     inv.sort((a, b) => a.name.localeCompare(b.name));
 
     settle(() => {
+      // Don't let a transient silent failure replace a good matched list with a degraded one.
+      if (silent && failed && snapshot && !snapshot.discoveryFailed) return;
       setOnVelchat(vel);
       setInvitable(inv);
       setDiscoveryFailed(failed);
       setStatus('ready');
+      snapshot = {
+        accountId: myAccount,
+        onVelchat: vel,
+        invitable: inv,
+        discoveryFailed: failed,
+        at: Date.now(),
+      };
     });
   }, []);
 
@@ -199,7 +227,7 @@ export function useDeviceContacts(): UseDeviceContacts {
       const access = await ensureContactsPermission();
       if (!aliveRef.current) return;
       if (access === 'granted') {
-        void runLoad();
+        void runLoad(false);
       } else if (access === 'blocked') {
         setStatus('blocked');
       } else if (access === 'unavailable') {
@@ -211,17 +239,31 @@ export function useDeviceContacts(): UseDeviceContacts {
   }, [runLoad]);
 
   const reload = useCallback((): void => {
-    void runLoad();
+    void runLoad(false);
   }, [runLoad]);
 
-  // On mount: silently check permission (no prompt). Load if already granted, else show the
-  // explainer so the OS dialog only fires on the user's tap.
   useEffect(() => {
     aliveRef.current = true;
+
+    // Instant re-open: a cached result for THIS account shows immediately (no spinner). A
+    // stale cache refreshes silently in the background.
+    if (snapshot && snapshot.accountId === getAccountId()) {
+      setOnVelchat(snapshot.onVelchat);
+      setInvitable(snapshot.invitable);
+      setDiscoveryFailed(snapshot.discoveryFailed);
+      setStatus('ready');
+      if (Date.now() - snapshot.at > CACHE_TTL_MS) void runLoad(true);
+      return () => {
+        aliveRef.current = false;
+      };
+    }
+
+    // First open: silently check permission (no prompt). Load if already granted, else show
+    // the explainer so the OS dialog only fires on the user's tap.
     void (async () => {
       const access = await checkContactsPermission();
       if (!aliveRef.current) return;
-      if (access === 'granted') void runLoad();
+      if (access === 'granted') void runLoad(false);
       else if (access === 'unavailable') setStatus('unavailable');
       else setStatus('needsPermission');
     })();

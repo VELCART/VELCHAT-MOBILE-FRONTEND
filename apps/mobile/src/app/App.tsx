@@ -19,9 +19,11 @@ import {
   subscribeNetwork,
   warmBackend,
   purgeAllLocalChat,
+  getAccountId,
 } from '../infra';
 import { RootNavigator } from '../navigation';
 import { startSync, stopSync } from '../domain/sync';
+import { registerSelfForDiscovery } from '../domain';
 import { useAuthBootstrap } from '../features/auth';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Splash } from './Splash';
@@ -54,6 +56,15 @@ export default function App(): React.JSX.Element {
     // Wake the (free-tier, hibernating) backend up front so the login path is warm by
     // the time the user reaches it — no 30-50s cold-start timeout on the first request.
     warmBackend();
+    // Make this account findable by contacts (opt-in OPRF token) — once per account, off the
+    // render path. Discovery is opt-in server-side, so without this an account that never
+    // opens New Chat stays invisible to its contacts. No-op when signed out.
+    const acc = getAccountId();
+    if (acc && kv.getString(KVKeys.discoverySelfRegistered) !== acc) {
+      void registerSelfForDiscovery()
+        .then(() => kv.set(KVKeys.discoverySelfRegistered, acc))
+        .catch(() => undefined);
+    }
     // Mirror real network reachability into the connectivity store (offline banner + gating).
     const applyOnline = (connected: boolean): void =>
       useConnectivity.getState().setOnline(connected);
