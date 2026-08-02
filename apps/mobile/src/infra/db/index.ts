@@ -6,8 +6,41 @@
  * Dependency rule (§M3): UI → Feature → Domain → Infra. Never the reverse.
  */
 export { schema } from './schema';
-export { observeConversations, seedDevConversations } from './queries';
-export { observeMessages, sendMessageLocal, seedDevMessages } from './messages';
+export {
+  observeConversations,
+  seedDevConversations,
+  listConversationIds,
+  clearUnread,
+} from './queries';
+export {
+  observeMessages,
+  sendMessageLocal,
+  seedDevMessages,
+  applyServerMessage,
+  applyServerMessages,
+  markMessageSent,
+  markMessageFailed,
+  markMessageSending,
+  maxSeqForConversation,
+  applyReceipt,
+} from './messages';
+export {
+  enqueueSend,
+  claimNextDue,
+  markAckd,
+  markFailed,
+  recoverStuckSends,
+  requeueFailed,
+  outboxStats,
+} from './outbox';
+export type { OutboxItem, OutboxStats } from './outbox';
+export {
+  reconcileDecision,
+  backoffMs,
+  nextOutboxRetry,
+  MAX_SEND_ATTEMPTS,
+} from './syncLogic';
+export type { ReconcileAction, BackoffOptions } from './syncLogic';
 export {
   Conversation,
   Message,

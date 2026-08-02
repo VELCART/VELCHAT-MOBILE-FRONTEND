@@ -28,6 +28,37 @@ export function observeConversations() {
     ]);
 }
 
+/**
+ * All known conversation ids (§L6 reconnect) — the sync engine walks these to send a
+ * per-conversation `sync {cursor}` and pull the `afterSeq` backfill. Non-archived only is
+ * not required here; sync should catch up every conversation we hold locally.
+ */
+export async function listConversationIds(): Promise<string[]> {
+  const rows = await getDatabase()
+    .get<Conversation>('conversations')
+    .query()
+    .fetch();
+  return rows.map(c => c.id);
+}
+
+/**
+ * Clear a conversation's unread badge (§F2) — called when the user opens the chat. A
+ * no-op if it's already 0 so an open doesn't churn a needless write/re-emit.
+ */
+export async function clearUnread(conversationId: string): Promise<void> {
+  const db = getDatabase();
+  const conv = await db
+    .get<Conversation>('conversations')
+    .find(conversationId)
+    .catch(() => null);
+  if (!conv || conv.unreadCount === 0) return;
+  await db.write(async () => {
+    await conv.update(c => {
+      c.unreadCount = 0;
+    });
+  });
+}
+
 const SEED = [
   {
     name: 'Aarav Sharma',
@@ -82,9 +113,11 @@ async function doSeed(): Promise<void> {
   });
 }
 
-/** Insert a few sample conversations once (dev). Serialised so concurrent effect calls
- * (React StrictMode double-invoke) can't both read count 0 and double-insert. */
+/** Insert a few sample conversations once (DEV ONLY). Serialised so concurrent effect
+ * calls (React StrictMode double-invoke) can't both read count 0 and double-insert.
+ * Hard `__DEV__` gate so a release build never writes fake chats into the real DB. */
 export function seedDevConversations(): Promise<void> {
+  if (!__DEV__) return Promise.resolve();
   if (!seedOnce) seedOnce = doSeed();
   return seedOnce;
 }

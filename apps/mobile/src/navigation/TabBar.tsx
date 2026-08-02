@@ -11,11 +11,12 @@ import {
   Animated,
   AccessibilityInfo,
   StyleSheet,
+  Platform,
 } from 'react-native';
 import type { MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
-import { useActiveTab } from '../core';
+import { useActiveTab, type TabName } from '../core';
 import {
   Text,
   ChatIcon,
@@ -68,11 +69,9 @@ function TabButton({
   }, [active, reduceMotion, anim]);
 
   const Icon = ICONS[routeName] ?? ChatIcon;
-  // Distinctive active state: the icon sits in a SOLID brand pill. The glyph MUST
-  // contrast with that pill in both themes — actionFg is white on the black pill
-  // (light) and black on the white pill (dark). ('#FFFFFF' went white-on-white in dark.)
-  const iconColor = active ? t.colors.actionFg : t.colors.textTertiary;
-  const labelColor = active ? t.colors.brandFrom : t.colors.textTertiary;
+  // Simple, flat active state (no heavy pill): the icon + label go full-contrast, with a
+  // slim brand indicator that grows in above; inactive stays muted. Clean + not tall.
+  const color = active ? t.colors.textPrimary : t.colors.textTertiary;
 
   return (
     <Pressable
@@ -82,63 +81,44 @@ function TabButton({
       onPress={onPress}
       onLongPress={onLongPress}
       hitSlop={6}
+      // Native, borderless ripple on Android; iOS keeps a subtle press-dim.
+      android_ripple={{
+        color: `${t.colors.brandFrom}18`,
+        borderless: true,
+        radius: 30,
+      }}
       style={({ pressed }) => ({
         flex: 1,
+        minHeight: 44,
         alignItems: 'center',
-        opacity: pressed ? 0.6 : 1,
+        justifyContent: 'center',
+        opacity: Platform.OS === 'ios' && pressed ? 0.6 : 1,
       })}
     >
-      <View
+      {/* Slim brand indicator — sits ON the tab bar's TOP border (not above the icon);
+          the -6 cancels the bar's paddingTop so it rides the top edge. Fades + grows in. */}
+      <Animated.View
+        pointerEvents="none"
         style={{
-          height: 32,
-          width: 56,
-          alignItems: 'center',
-          justifyContent: 'center',
+          position: 'absolute',
+          top: -6,
+          width: 26,
+          height: 3,
+          borderRadius: 2,
+          backgroundColor: t.colors.brandFrom,
+          opacity: anim,
+          transform: [{ scaleX: anim }],
         }}
-      >
-        <Animated.View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            width: 52,
-            height: 32,
-            borderRadius: 16,
-            backgroundColor: t.colors.brandFrom,
-            opacity: anim,
-            transform: [
-              {
-                scale: anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [0.6, 1],
-                }),
-              },
-            ],
-            ...t.elevation.e1,
-          }}
-        />
-        <Animated.View
-          style={{
-            transform: [
-              {
-                scale: anim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: [1, 1.05],
-                }),
-              },
-            ],
-          }}
-        >
-          <Icon size={26} color={iconColor} strokeWidth={active ? 2.2 : 1.9} />
-        </Animated.View>
-      </View>
+      />
+      <Icon size={24} color={color} strokeWidth={active ? 2.3 : 1.9} />
       <Text
         variant="caption"
         numberOfLines={1}
         style={{
-          fontSize: 10.5,
-          lineHeight: 13,
+          fontSize: 11,
+          lineHeight: 14,
           marginTop: 3,
-          color: labelColor,
+          color,
           fontFamily: active
             ? t.typography.label.fontFamily
             : t.typography.caption.fontFamily,
@@ -160,7 +140,8 @@ export function TabBar({
   const [reduceMotion, setReduceMotion] = useState(false);
 
   // Publish the focused tab so the shared HomeHeader can swap its title + actions.
-  const activeName = state.routes[state.index]?.name ?? 'Chats';
+  // The pager's routes ARE the four home tabs, so the name narrows safely to TabName.
+  const activeName = (state.routes[state.index]?.name ?? 'Chats') as TabName;
   useEffect(() => {
     useActiveTab.getState().setName(activeName);
   }, [activeName]);
@@ -189,14 +170,22 @@ export function TabBar({
         backgroundColor: t.colors.surface,
         borderTopWidth: StyleSheet.hairlineWidth,
         borderTopColor: t.colors.hairline,
-        paddingTop: 8,
-        paddingBottom: Math.max(insets.bottom, 10),
-        // Soft lift so the bar reads as a distinct surface above content.
+        paddingTop: 6,
+        // Sit above the system nav bar on EVERY Android nav mode (gesture bar OR
+        // 3-button) and the iOS home indicator — insets.bottom is the real height when
+        // edge-to-edge; fall back to a comfortable min when it's 0 (older 3-button).
+        paddingBottom: Math.max(insets.bottom, 12),
+        // Respect side notches/cutouts in landscape so tabs never hide under them.
+        paddingLeft: insets.left,
+        paddingRight: insets.right,
+        // Soft lift so the bar reads as a distinct surface above content. iOS draws the
+        // directional top shadow; Android uses elevation (its ambient shadow reads at
+        // the top edge of a bottom-docked bar) — kept modest for a flat, premium look.
         shadowColor: '#000000',
-        shadowOpacity: t.scheme === 'dark' ? 0.3 : 0.05,
+        shadowOpacity: t.scheme === 'dark' ? 0.3 : 0.06,
         shadowRadius: 12,
         shadowOffset: { width: 0, height: -3 },
-        elevation: 12,
+        elevation: 8,
       }}
     >
       {state.routes.map((route, index) => {

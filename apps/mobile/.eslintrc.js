@@ -66,7 +66,10 @@ module.exports = {
               'infra',
             ],
           },
-          { from: 'domain', allow: ['domain', 'core'] },
+          // §M3 forward edge: Domain -> Infra is allowed (the SyncEngine orchestrates the
+          // socket + DB writers + chat REST). Domain stays pure of React Native imports —
+          // that is enforced separately by the `boundaries/external` rule below.
+          { from: 'domain', allow: ['domain', 'core', 'infra', 'platform'] },
           { from: 'infra', allow: ['infra', 'domain', 'core', 'platform'] },
           {
             from: 'feature',

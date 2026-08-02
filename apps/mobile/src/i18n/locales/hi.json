@@ -114,7 +114,8 @@
     "memberSince": "सदस्य बने",
     "today": "आज",
     "viewProfile": "प्रोफ़ाइल देखें",
-    "changePhoto": "फ़ोटो बदलें"
+    "changePhoto": "फ़ोटो बदलें",
+    "removePhoto": "फ़ोटो हटाएं"
   },
   "header": {
     "search": "खोजें",
@@ -132,9 +133,28 @@
     "hintMedia": "मीडिया",
     "hintAi": "AI सर्च"
   },
+  "search": {
+    "placeholder": "Vel AI से पूछें या खोजें",
+    "recent": "हाल की खोजें",
+    "frequent": "अक्सर",
+    "noResults": "“{{q}}” के लिए कोई परिणाम नहीं",
+    "noResultsSub": "कोई दूसरा शब्द या फ़िल्टर आज़माएं।",
+    "filters": {
+      "all": "सभी",
+      "unread": "अपठित",
+      "photos": "फ़ोटो",
+      "videos": "वीडियो",
+      "links": "लिंक",
+      "docs": "दस्तावेज़",
+      "audio": "ऑडियो",
+      "contacts": "संपर्क"
+    }
+  },
   "common": {
     "empty": "यहाँ अभी कुछ नहीं है",
     "dismiss": "बंद करें",
+    "cancel": "रद्द करें",
+    "remove": "हटाएं",
     "theme": "थीम: {{mode}} · टॉगल करने के लिए टैप करें",
     "offline": "आप ऑफ़लाइन हैं — नेटवर्क का इंतज़ार",
     "flightMode": "फ़्लाइट मोड ऑन — आप ऑफ़लाइन हैं"

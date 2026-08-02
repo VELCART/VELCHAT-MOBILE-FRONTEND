@@ -19,9 +19,9 @@ import { useTranslation } from '../i18n';
 import { useTheme } from '../theme';
 import {
   Text,
-  FrostedCircle,
   UserIcon,
   CameraIcon,
+  TrashIcon,
   type IconProps,
 } from '../design-system';
 import { useProfileSummary, useAvatarPicker } from '../features/user';
@@ -53,9 +53,22 @@ function PeekAction({
         transform: [{ scale: pressed ? 0.93 : 1 }],
       })}
     >
-      <FrostedCircle size={64}>
+      {/* A light translucent disc (NOT a live gaussian blur) — reads as glass on the
+          dark scrim but composites cheaply, so the peek springs in without stutter. */}
+      <View
+        style={{
+          width: 64,
+          height: 64,
+          borderRadius: 32,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'rgba(255,255,255,0.9)',
+          borderWidth: 1,
+          borderColor: 'rgba(255,255,255,0.45)',
+        }}
+      >
         <Icon size={25} color="#000" strokeWidth={2} />
-      </FrostedCircle>
+      </View>
       <Text variant="caption" style={{ color: 'rgb(255, 255, 255)' }}>
         {label}
       </Text>
@@ -74,8 +87,8 @@ export function ProfilePeek({
   const { t: tr } = useTranslation();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { displayName, avatarUri } = useProfileSummary();
-  const { pick } = useAvatarPicker();
+  const { displayName, avatar } = useProfileSummary();
+  const { pick, remove } = useAvatarPicker();
   const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
 
   const [rendered, setRendered] = useState(visible);
@@ -118,6 +131,12 @@ export function ProfilePeek({
   const changePhoto = (): void => {
     onClose();
     void pick();
+  };
+  // Remove the photo straight away (no confirm) — clears it locally + on the server;
+  // the reactive mirror makes it disappear everywhere at once and it stays gone.
+  const removePhoto = (): void => {
+    onClose();
+    void remove();
   };
 
   return (
@@ -173,9 +192,9 @@ export function ProfilePeek({
                 borderColor: t.colors.hairline,
               }}
             >
-              {avatarUri ? (
+              {avatar ? (
                 <Image
-                  source={{ uri: avatarUri }}
+                  source={{ uri: avatar }}
                   style={{ width: SIZE, height: SIZE }}
                   resizeMode="cover"
                 />
@@ -232,6 +251,13 @@ export function ProfilePeek({
                 label={tr('profile.changePhoto')}
                 onPress={changePhoto}
               />
+              {avatar ? (
+                <PeekAction
+                  icon={TrashIcon}
+                  label={tr('profile.removePhoto')}
+                  onPress={removePhoto}
+                />
+              ) : null}
             </View>
           </Animated.View>
         </View>

@@ -44,6 +44,9 @@ export const KVKeys = {
   about: 'user.about',
   // local uri of the picked avatar photo — shown instantly in header/settings
   avatarUri: 'user.avatarUri',
+  // last-resolved signed URL of the server avatar — cached so it shows INSTANTLY (no
+  // wait for the media round-trip) across launches, then refreshed in the background
+  avatarUrl: 'user.avatarUrl',
 } as const;
 
 export const kv = {

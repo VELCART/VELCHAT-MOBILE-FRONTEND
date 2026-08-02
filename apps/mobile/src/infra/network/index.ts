@@ -6,6 +6,13 @@
  */
 export { queryClient } from './queryClient';
 export { api, refreshAccessToken, warmBackend } from './client';
+export {
+  sendChatMessage,
+  fetchMessagesAfter,
+  normalizeSendAck,
+  normalizeServerMessage,
+} from './chat';
+export type { SendMessageInput, SendAck, ServerMessage } from './chat';
 export { AppError, isAppError, normalizeError } from './errors';
 export type { AppErrorKind } from './errors';
 export {

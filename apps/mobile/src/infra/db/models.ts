@@ -19,6 +19,7 @@ export class Conversation extends Model {
   @field('is_muted_until') isMutedUntil?: number;
   @field('is_locked') isLocked!: boolean;
   @text('last_message_preview') lastMessagePreview?: string;
+  @field('last_message_seq') lastMessageSeq?: number;
   @field('last_message_at') lastMessageAt?: number;
   @field('unread_count') unreadCount!: number;
   @field('mention_count') mentionCount!: number;
@@ -72,6 +73,10 @@ export class Outbox extends Model {
   @text('payload') payload!: string;
   @text('state') state!: string;
   @field('attempts') attempts!: number;
+  @field('next_attempt_at') nextAttemptAt?: number;
+  @text('last_error') lastError?: string;
+  @field('created_at') createdAt!: number;
+  @field('updated_at') updatedAt!: number;
 }
 
 export class Draft extends Model {

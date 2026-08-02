@@ -37,8 +37,11 @@ export const palette: {
     surfaceElevated: '#FFFFFF',
     hairline: '#ECECEE',
     textPrimary: '#0B0B0C',
-    textSecondary: '#8A8A8E',
-    textTertiary: '#B0B0B5',
+    // Secondary/tertiary darkened for crisper text (was #8A8A8E / #B0B0B5 — washed out).
+    // Tertiary clears the WCAG 3:1 UI/large-text floor on white (≈3.5:1) — it labels
+    // timestamps, inactive tabs and placeholders — while staying a step below secondary.
+    textSecondary: '#6C6C72',
+    textTertiary: '#86868C',
     actionBg: '#0B0B0C',
     actionFg: '#FFFFFF',
     // Monochrome brand accent (§design B&W): black in light, white in dark.
@@ -56,8 +59,10 @@ export const palette: {
     surfaceElevated: '#232326',
     hairline: '#2A2A2E',
     textPrimary: '#F5F5F7',
-    textSecondary: '#9A9AA1',
-    textTertiary: '#6E6E75',
+    // Secondary/tertiary bumped lighter for crisper text on dark (was #9A9AA1 /
+    // #6E6E75 — read as dim/washed). Still a clear step below primary.
+    textSecondary: '#B0B0B8',
+    textTertiary: '#86868E',
     actionBg: '#FFFFFF',
     actionFg: '#0B0B0C',
     // Monochrome brand accent (§design B&W): white in dark, black in light.

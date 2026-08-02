@@ -114,7 +114,8 @@
     "memberSince": "Member since",
     "today": "Today",
     "viewProfile": "View profile",
-    "changePhoto": "Change photo"
+    "changePhoto": "Change",
+    "removePhoto": "Remove"
   },
   "header": {
     "search": "Search",
@@ -132,9 +133,28 @@
     "hintMedia": "media",
     "hintAi": "AI search"
   },
+  "search": {
+    "placeholder": "Ask Vel AI or Search",
+    "recent": "Recent searches",
+    "frequent": "Frequent",
+    "noResults": "No results for “{{q}}”",
+    "noResultsSub": "Try a different word or filter.",
+    "filters": {
+      "all": "All",
+      "unread": "Unread",
+      "photos": "Photos",
+      "videos": "Videos",
+      "links": "Links",
+      "docs": "Docs",
+      "audio": "Audio",
+      "contacts": "Contacts"
+    }
+  },
   "common": {
     "empty": "Nothing here yet",
     "dismiss": "Dismiss",
+    "cancel": "Cancel",
+    "remove": "Remove",
     "theme": "Theme: {{mode}} · tap to toggle",
     "offline": "You're offline — waiting for network",
     "flightMode": "Flight mode on — you're offline"

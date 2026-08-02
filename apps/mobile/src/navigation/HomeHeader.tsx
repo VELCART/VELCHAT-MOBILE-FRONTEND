@@ -7,7 +7,7 @@
  * the ⋮ menu, and NO profile. Themed, safe-area aware.
  */
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Pressable, Image, Animated } from 'react-native';
+import { View, Pressable, Image, Animated, AppState } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -95,7 +95,8 @@ function SearchHint(): React.JSX.Element {
   const fade = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    const id = setInterval(() => {
+    let id: ReturnType<typeof setInterval> | null = null;
+    const tick = (): void => {
       Animated.timing(fade, {
         toValue: 0,
         duration: 220,
@@ -108,8 +109,26 @@ function SearchHint(): React.JSX.Element {
           useNativeDriver: true,
         }).start();
       });
-    }, 2400);
-    return () => clearInterval(id);
+    };
+    // Run the cycling hint ONLY while foregrounded — no perpetual 2.4s JS wake +
+    // re-render while the app is backgrounded (§M13 overnight / §R6 battery).
+    const start = (): void => {
+      if (id === null) id = setInterval(tick, 2400);
+    };
+    const stop = (): void => {
+      if (id !== null) {
+        clearInterval(id);
+        id = null;
+      }
+    };
+    if (AppState.currentState === 'active') start();
+    const sub = AppState.addEventListener('change', s =>
+      s === 'active' ? start() : stop(),
+    );
+    return () => {
+      stop();
+      sub.remove();
+    };
   }, [fade]);
 
   return (
@@ -142,13 +161,14 @@ export function HomeHeader(): React.JSX.Element {
   const flightMode = useConnectivity(s => s.flightMode);
   const toggleFlight = useConnectivity(s => s.toggleFlightMode);
   const activeTab = useActiveTab(s => s.name);
-  const { displayName, avatarUri } = useProfileSummary();
+  const { displayName, avatar } = useProfileSummary();
   const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
   const [menuOpen, setMenuOpen] = useState(false);
   const [peekOpen, setPeekOpen] = useState(false);
 
   const openSettings = (): void => navigation.navigate('Settings');
   const openProfile = (): void => navigation.navigate('Profile');
+  const openSearch = (): void => navigation.navigate('Search');
   const noop = (): void => undefined;
   const isChats = activeTab === 'Chats';
 
@@ -160,7 +180,7 @@ export function HomeHeader(): React.JSX.Element {
             key: 'search',
             Icon: SearchIcon,
             label: tr('header.search'),
-            onPress: noop,
+            onPress: openSearch,
           },
           {
             key: 'download',
@@ -209,7 +229,7 @@ export function HomeHeader(): React.JSX.Element {
   const profile = (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Profile"
+      accessibilityLabel={tr('profile.pageTitle')}
       onPress={openProfile}
       onLongPress={() => setPeekOpen(true)}
       delayLongPress={220}
@@ -247,9 +267,9 @@ export function HomeHeader(): React.JSX.Element {
             overflow: 'hidden',
           }}
         >
-          {avatarUri ? (
+          {avatar ? (
             <Image
-              source={{ uri: avatarUri }}
+              source={{ uri: avatar }}
               style={{ width: 25, height: 25 }}
               resizeMode="cover"
             />
@@ -348,7 +368,7 @@ export function HomeHeader(): React.JSX.Element {
           <Pressable
             accessibilityRole="search"
             accessibilityLabel={tr('header.search')}
-            onPress={noop}
+            onPress={openSearch}
             style={({ pressed }) => ({
               flexDirection: 'row',
               alignItems: 'center',
@@ -378,7 +398,11 @@ export function HomeHeader(): React.JSX.Element {
         items={menuItems}
       />
 
-      <ProfilePeek visible={peekOpen} onClose={() => setPeekOpen(false)} />
+      {/* Mounted only while open — otherwise its profile hooks (7 reactive MMKV reads +
+          the avatar picker) would run idle on every header render. */}
+      {peekOpen ? (
+        <ProfilePeek visible onClose={() => setPeekOpen(false)} />
+      ) : null}
     </View>
   );
 }

@@ -17,6 +17,7 @@ import {
   getAccountId,
   kv,
   KVKeys,
+  useKVString,
   type NotificationPermission,
 } from '../../../infra';
 import {
@@ -134,6 +135,10 @@ export function useOtpAuth(): {
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Re-entrancy guard: OtpInput auto-fires onComplete at full length, and the field stays
+  // editable during verify — backspacing + retyping the last digit could fire a second
+  // verifyOtp (double provision / racing responses). This blocks a concurrent verify.
+  const verifyInFlight = useRef(false);
 
   const send = useCallback(
     async (
@@ -164,6 +169,8 @@ export function useOtpAuth(): {
 
   const verify = useCallback(
     async (phone: string, code: string): Promise<boolean> => {
+      if (verifyInFlight.current) return false;
+      verifyInFlight.current = true;
       setVerifying(true);
       setError(null);
       try {
@@ -178,9 +185,7 @@ export function useOtpAuth(): {
         // has been durably stored. Never navigate to the app without it: doing so
         // would make the next cold launch fall back to Welcome/Login.
         if (!tokens?.access || !tokens?.refresh) {
-          setError(
-            'Sign-in completed but no session was returned. Please try again.',
-          );
+          setError("We couldn't finish signing you in. Please try again.");
           return false;
         }
         // Persist the verified number so the Profile page can show it (the active OTP
@@ -197,6 +202,7 @@ export function useOtpAuth(): {
         return false;
       } finally {
         setVerifying(false);
+        verifyInFlight.current = false;
       }
     },
     [provision, rememberPhone],
@@ -238,6 +244,22 @@ export function useRequestNotifications(): {
  * any failure leaves the user signed-out (onboarding). Returns true once decided —
  * the app shows a splash until then, so there's no onboarding→home flicker.
  */
+/**
+ * Watch the persisted access token: if it vanishes while the machine is still `active`
+ * (the network client cleared it after a refresh that couldn't be recovered — a revoked or
+ * expired session), flip the machine to `signed_out`. The navigator observes that and
+ * reactively resets to sign-in, so a mid-session expiry can't strand the user on a zombie
+ * "logged-in" screen. Reactive via the encrypted-MMKV hook — no polling.
+ */
+export function useSessionWatch(): void {
+  const token = useKVString(KVKeys.accessToken);
+  const state = useAuthStore(s => s.state);
+  const sessionExpired = useAuthStore(s => s.sessionExpired);
+  useEffect(() => {
+    if (!token && state === 'active') sessionExpired();
+  }, [token, state, sessionExpired]);
+}
+
 export function useAuthBootstrap(): boolean {
   const [ready, setReady] = useState(false);
   const provision = useAuthStore(s => s.provision);

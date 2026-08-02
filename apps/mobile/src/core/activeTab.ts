@@ -6,9 +6,13 @@
  */
 import { create } from 'zustand';
 
+/** The four home tabs (§M17). Typed so a mistyped comparison (`'Communites'`) is a
+ * compile error instead of a silently-dead header branch. */
+export type TabName = 'Chats' | 'Updates' | 'Communities' | 'Calls';
+
 interface ActiveTabState {
-  readonly name: string;
-  setName: (name: string) => void;
+  readonly name: TabName;
+  setName: (name: TabName) => void;
 }
 
 export const useActiveTab = create<ActiveTabState>(set => ({

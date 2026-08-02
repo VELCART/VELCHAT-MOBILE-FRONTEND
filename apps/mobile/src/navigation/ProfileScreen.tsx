@@ -268,8 +268,7 @@ export function ProfileScreen(): React.JSX.Element {
 
   const name = summary.displayName ?? '';
   const about = summary.about ?? '';
-  const avatarUri = avatar.localUri ?? summary.avatarUri ?? remoteAvatarUrl;
-  const initial = name.trim().charAt(0).toUpperCase();
+  const avatarUri = avatar.localUri ?? summary.avatar ?? remoteAvatarUrl;
 
   // A freshly-uploaded photo attaches to the directory profile once its id lands.
   useEffect(() => {
@@ -360,18 +359,9 @@ export function ProfileScreen(): React.JSX.Element {
                     style={{ width: AVATAR, height: AVATAR }}
                     resizeMode="cover"
                   />
-                ) : initial ? (
-                  <Text
-                    variant="display"
-                    style={{
-                      fontSize: 46,
-                      lineHeight: 54,
-                      color: t.colors.textSecondary,
-                    }}
-                  >
-                    {initial}
-                  </Text>
                 ) : (
+                  // No photo → the default person avatar (NOT the name's initial), so a
+                  // removed photo falls back to a clean placeholder on your own profile.
                   <UserIcon
                     size={56}
                     color={t.colors.textTertiary}

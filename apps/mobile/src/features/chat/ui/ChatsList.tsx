@@ -37,12 +37,15 @@ function timeLabel(ts?: number): string {
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
-function Row({
+// Memoised so a message arriving in ANY conversation (which re-emits the whole list)
+// only re-renders rows whose own fields changed — not every visible row. `onOpen` is a
+// stable handler from the parent, so prop identity holds across list re-emits.
+const Row = React.memo(function Row({
   item,
-  onPress,
+  onOpen,
 }: {
   item: ConversationItem;
-  onPress: () => void;
+  onOpen: (id: string, name?: string) => void;
 }): React.JSX.Element {
   const t = useTheme();
   const initial = (item.name ?? '?').trim().charAt(0).toUpperCase();
@@ -51,7 +54,7 @@ function Row({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={item.name ?? 'Chat'}
-      onPress={onPress}
+      onPress={() => onOpen(item.id, item.name)}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
@@ -144,7 +147,7 @@ function Row({
       </View>
     </Pressable>
   );
-}
+});
 
 export function ChatsList(): React.JSX.Element {
   const t = useTheme();
@@ -152,19 +155,17 @@ export function ChatsList(): React.JSX.Element {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const rows = useConversations();
+  const onOpen = useCallback(
+    (id: string, name?: string) => {
+      navigation.navigate('Chat', { conversationId: id, name });
+    },
+    [navigation],
+  );
   const renderItem = useCallback(
     ({ item }: { item: ConversationItem }) => (
-      <Row
-        item={item}
-        onPress={() =>
-          navigation.navigate('Chat', {
-            conversationId: item.id,
-            name: item.name,
-          })
-        }
-      />
+      <Row item={item} onOpen={onOpen} />
     ),
-    [navigation],
+    [onOpen],
   );
 
   if (rows.length === 0) {

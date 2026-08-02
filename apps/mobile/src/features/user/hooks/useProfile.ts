@@ -27,6 +27,11 @@ import {
 // import infra directly — layer boundaries §M3).
 export { hapticTick } from '../../../infra';
 
+// Bumped every time the avatar is removed. A profile reload started BEFORE a removal
+// (e.g. a slow cold-start fetch in flight) must not resurrect the just-deleted photo,
+// so reload snapshots this at the start and bails out of re-caching if it changed.
+let avatarRemovalEpoch = 0;
+
 type CropPicker = typeof import('react-native-image-crop-picker').default;
 
 /**
@@ -52,26 +57,29 @@ export function useProfileGate(): {
   useEffect(() => {
     const accountId = getAccountId();
     if (!accountId) return undefined;
-    if (kv.getBoolean(KVKeys.profileComplete) === true) return undefined;
-    // An email already captured → the profile is set up; never prompt again.
+    // Email is the completion signal — it's required and (until a backend email-attach
+    // endpoint exists) lives only in the local mirror, so a reinstall can lose it. If
+    // we still have it, the profile is set up; never prompt.
     if (kv.getString(KVKeys.email)) {
       kv.set(KVKeys.profileComplete, true);
       return undefined;
     }
 
+    // No email yet → we WILL prompt (even if a name already exists). Load the backend
+    // profile first so the sheet can pre-fill the existing name/about and the user only
+    // needs to add the missing email — coming up from the bottom, WhatsApp-style.
     let active = true;
     const check = async (): Promise<void> => {
       try {
         const profile = await getProfile(accountId);
         if (profile?.displayName && profile.displayName.trim() !== '') {
-          kv.set(KVKeys.profileComplete, true); // already has a name → never ask again
-        } else if (active) {
-          setNeedsSetup(true);
+          kv.set(KVKeys.displayName, profile.displayName);
         }
+        if (profile?.about) kv.set(KVKeys.about, profile.about);
       } catch {
-        // No profile yet (404) or a transient error → prompt to set it up.
-        if (active) setNeedsSetup(true);
+        // No profile yet (404) or a transient error → still prompt to set it up.
       }
+      if (active) setNeedsSetup(true);
     };
     void check();
     return () => {
@@ -98,15 +106,20 @@ export function useProfileSummary(): {
   phone: string | null;
   about: string | null;
   avatarUri: string | null;
+  /** Effective avatar to render: the locally-picked photo, else the cached server URL. */
+  avatar: string | null;
   loginAt: string | null;
   memberSince: string | null;
 } {
+  const avatarUri = useKVString(KVKeys.avatarUri) ?? null;
+  const avatarUrl = useKVString(KVKeys.avatarUrl) ?? null;
   return {
     displayName: useKVString(KVKeys.displayName) ?? null,
     email: useKVString(KVKeys.email) ?? null,
     phone: useKVString(KVKeys.phone) ?? null,
     about: useKVString(KVKeys.about) ?? null,
-    avatarUri: useKVString(KVKeys.avatarUri) ?? null,
+    avatarUri,
+    avatar: avatarUri ?? avatarUrl,
     loginAt: useKVString(KVKeys.loginAt) ?? null,
     memberSince: useKVString(KVKeys.memberSince) ?? null,
   };
@@ -136,18 +149,30 @@ export function useProfileDetails(): {
     }
     setLoading(true);
     setError(null);
+    // Snapshot the removal epoch: if the user removes their photo while this fetch is
+    // in flight, we must NOT write the (now stale) server URL back and bring it back.
+    const startEpoch = avatarRemovalEpoch;
     try {
       const profile = await getProfile(accountId);
       if (profile.displayName) kv.set(KVKeys.displayName, profile.displayName);
       if (profile.about !== undefined)
         kv.set(KVKeys.about, profile.about ?? '');
-      if (profile.avatarMediaId) {
+      if (profile.avatarMediaId && avatarRemovalEpoch === startEpoch) {
         try {
           const { url } = await getMediaUrl(profile.avatarMediaId);
+          // Re-check AFTER the media round-trip too (a removal may land meanwhile).
+          if (avatarRemovalEpoch !== startEpoch) return;
           setRemoteAvatarUrl(url);
+          // Cache it (reactive) → the header/Settings/Profile show the photo instantly,
+          // here and on the next launch, without waiting for this round-trip again.
+          kv.set(KVKeys.avatarUrl, url);
         } catch {
           // A missing signed URL just means we keep whatever local copy we have.
         }
+      } else {
+        // No server avatar (never set / removed) → drop any stale cached URL.
+        setRemoteAvatarUrl(null);
+        kv.delete(KVKeys.avatarUrl);
       }
     } catch (e) {
       setError(
@@ -177,7 +202,7 @@ export function useSaveProfile(): {
     async (patch: Partial<Profile>, email?: string): Promise<boolean> => {
       const accountId = getAccountId();
       if (!accountId) {
-        setError('You are not signed in.');
+        setError('Please sign in to continue.');
         return false;
       }
       setSaving(true);
@@ -216,7 +241,8 @@ export function useSaveProfile(): {
  * default placeholder simply stays).
  */
 export function useAvatarUpload(): {
-  pick: () => Promise<void>;
+  /** Resolves to the uploaded mediaId (to attach to the profile), or null on cancel/fail. */
+  pick: () => Promise<string | null>;
   localUri: string | null;
   mediaId: string | null;
   uploading: boolean;
@@ -227,16 +253,14 @@ export function useAvatarUpload(): {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const pick = useCallback(async (): Promise<void> => {
+  const pick = useCallback(async (): Promise<string | null> => {
     const accountId = getAccountId();
-    if (!accountId) return;
+    if (!accountId) return null;
     const cropper = loadCropPicker();
     if (!cropper) {
       // Native module absent → the app hasn't been rebuilt since adding the cropper.
-      setError(
-        'Photo cropping needs a fresh app build — please rebuild the app.',
-      );
-      return;
+      setError("Couldn't open the photo editor right now. Please try again.");
+      return null;
     }
     // Open the gallery straight into a circular crop UI (WhatsApp/Instagram-style),
     // square-forced to 512² JPEG so avatars are consistent and light to upload.
@@ -255,17 +279,18 @@ export function useAvatarUpload(): {
       });
     } catch (e) {
       // Backing out of the picker/cropper is a normal cancel, not an error.
-      if ((e as { code?: string })?.code === 'E_PICKER_CANCELLED') return;
-      setError('Could not open the gallery.');
-      return;
+      if ((e as { code?: string })?.code === 'E_PICKER_CANCELLED') return null;
+      setError("Couldn't open your photos. Please try again.");
+      return null;
     }
-    if (!image?.path) return;
+    if (!image?.path) return null;
     setLocalUri(image.path);
     // Persist the local uri so the header + Settings show the photo immediately and
     // across launches on this device (the server copy rides on avatarMediaId).
     kv.set(KVKeys.avatarUri, image.path);
     setError(null);
     setUploading(true);
+    let result: string | null = null;
     try {
       const mime = image.mime ?? 'image/jpeg';
       const { mediaId: id, uploadPath } = await initUpload(accountId, mime);
@@ -275,6 +300,7 @@ export function useAvatarUpload(): {
         type: mime,
       });
       setMediaId(id);
+      result = id;
     } catch (e) {
       setError(
         isAppError(e) ? e.message : 'Photo upload failed. You can try again.',
@@ -283,6 +309,7 @@ export function useAvatarUpload(): {
     } finally {
       setUploading(false);
     }
+    return result;
   }, []);
 
   return { pick, localUri, mediaId, uploading, error };
@@ -296,14 +323,42 @@ export function useAvatarUpload(): {
  */
 export function useAvatarPicker(): {
   pick: () => Promise<void>;
+  remove: () => Promise<void>;
   uploading: boolean;
   localUri: string | null;
   error: string | null;
 } {
-  const { pick, localUri, mediaId, uploading, error } = useAvatarUpload();
+  const { pick: uploadPick, localUri, uploading, error } = useAvatarUpload();
   const { save } = useSaveProfile();
-  useEffect(() => {
-    if (mediaId) void save({ avatarMediaId: mediaId });
-  }, [mediaId, save]);
-  return { pick, uploading, localUri, error };
+
+  // Attach INLINE in the async flow (not via a mediaId useEffect): the long-press peek
+  // calls onClose() and unmounts the instant it starts the pick, so a post-mount effect
+  // would never fire and the avatarMediaId would never reach the server. Both `uploadPick`
+  // and `save` are stable callbacks, so this keeps working past the component's unmount.
+  const pick = useCallback(async (): Promise<void> => {
+    const id = await uploadPick();
+    if (id) await save({ avatarMediaId: id });
+  }, [uploadPick, save]);
+
+  // Remove the profile photo. Clear the local mirror first (reactive → the photo
+  // disappears from the header/Settings/Profile at once), then clear it on the server
+  // by sending an empty mediaId — the user-service COALESCE stores '' and getProfile
+  // returns it falsy, so it stays cleared across launches and other devices.
+  const remove = useCallback(async (): Promise<void> => {
+    // Supersede any profile reload in flight so it can't write the old URL back.
+    avatarRemovalEpoch += 1;
+    // Snapshot before clearing so we can put it back if the server clear fails — the photo
+    // is still on the server then, so restoring keeps the UI truthful (no silent revert).
+    const prevUri = kv.getString(KVKeys.avatarUri);
+    const prevUrl = kv.getString(KVKeys.avatarUrl);
+    kv.delete(KVKeys.avatarUri);
+    kv.delete(KVKeys.avatarUrl);
+    const ok = await save({ avatarMediaId: '' });
+    if (!ok) {
+      if (prevUri) kv.set(KVKeys.avatarUri, prevUri);
+      if (prevUrl) kv.set(KVKeys.avatarUrl, prevUrl);
+    }
+  }, [save]);
+
+  return { pick, remove, uploading, localUri, error };
 }
