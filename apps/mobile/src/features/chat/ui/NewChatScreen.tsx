@@ -630,14 +630,6 @@ export function NewChatScreen(): React.JSX.Element {
             onAction={reload}
           />
         );
-      case 'error':
-        return (
-          <StateView
-            title={tr('newChat.contactsError')}
-            actionLabel={tr('newChat.retry')}
-            onAction={reload}
-          />
-        );
       case 'ready':
       default:
         if (rows.length === 0) {
@@ -786,23 +778,16 @@ export function NewChatScreen(): React.JSX.Element {
           >
             <UserIcon size={22} color={t.colors.actionFg} strokeWidth={2.2} />
           </View>
-          <View style={{ flex: 1, gap: 2 }}>
-            <Text variant="body" numberOfLines={1} style={{ fontSize: 16 }}>
-              {tr('newChat.messageYourself')}
-            </Text>
-            <Text variant="caption" color="tertiary" numberOfLines={1}>
-              {tr('newChat.noteToSelf')}
-            </Text>
-          </View>
+          <Text
+            variant="body"
+            numberOfLines={1}
+            style={{ flex: 1, fontSize: 16 }}
+          >
+            {tr('newChat.messageYourself')}
+          </Text>
           {busyId === self ? (
             <ActivityIndicator size="small" color={t.colors.brandFrom} />
-          ) : (
-            <ChevronRightIcon
-              size={20}
-              color={t.colors.textTertiary}
-              strokeWidth={2}
-            />
-          )}
+          ) : null}
         </Pressable>
       ) : null}
 

@@ -52,6 +52,9 @@ export const KVKeys = {
   // accountId this device last registered for contact discovery (opt-in OPRF token) — so we
   // register once per account, making it findable by contacts without opening New Chat
   discoverySelfRegistered: 'discovery.selfRegistered',
+  // cached New-Chat contacts snapshot (JSON, per account) — so reopening the app shows the
+  // list instantly instead of re-discovering every launch
+  contactsSnapshot: 'contacts.snapshot.v1',
 } as const;
 
 export const kv = {

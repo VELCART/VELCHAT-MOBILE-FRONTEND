@@ -24,6 +24,7 @@ import {
 import { RootNavigator } from '../navigation';
 import { startSync, stopSync } from '../domain/sync';
 import { registerSelfForDiscovery } from '../domain';
+import { prewarmContacts } from '../features/contacts';
 import { useAuthBootstrap } from '../features/auth';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Splash } from './Splash';
@@ -65,6 +66,9 @@ export default function App(): React.JSX.Element {
         .then(() => kv.set(KVKeys.discoverySelfRegistered, acc))
         .catch(() => undefined);
     }
+    // Warm the New-Chat contacts cache in the background so the list is instant when opened —
+    // no per-launch wait (best-effort; no-op without permission or a fresh cache).
+    if (acc) void prewarmContacts();
     // Mirror real network reachability into the connectivity store (offline banner + gating).
     const applyOnline = (connected: boolean): void =>
       useConnectivity.getState().setOnline(connected);
