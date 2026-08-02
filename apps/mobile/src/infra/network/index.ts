@@ -26,6 +26,15 @@ export type {
 export { AppError, isAppError, normalizeError } from './errors';
 export type { AppErrorKind } from './errors';
 export {
+  getOprfKey,
+  oprfEvaluate,
+  oprfRegister,
+  oprfMatch,
+  OPRF_EVALUATE_BATCH_CAP,
+  OPRF_MATCH_BATCH_CAP,
+} from './discovery';
+export type { OprfKeyResponse, OprfEvaluateResponse } from './discovery';
+export {
   getAccessToken,
   getRefreshToken,
   getDeviceId,

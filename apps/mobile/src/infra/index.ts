@@ -26,6 +26,12 @@ export {
   hasSession,
   setTokens,
   clearSession,
+  getOprfKey,
+  oprfEvaluate,
+  oprfRegister,
+  oprfMatch,
+  OPRF_EVALUATE_BATCH_CAP,
+  OPRF_MATCH_BATCH_CAP,
 } from './network';
 export type {
   AppErrorKind,
@@ -36,6 +42,8 @@ export type {
   CreateDmResult,
   ConversationDetails,
   ConversationType,
+  OprfKeyResponse,
+  OprfEvaluateResponse,
 } from './network';
 export { storage, kv, KVKeys, useKVString } from './kv';
 export {
@@ -84,7 +92,20 @@ export {
   clearDeviceKey,
   bytesToBase64,
   base64ToBytes,
+  hashToBigInt,
+  blind,
+  unblind,
+  mgf1,
+  parseOprfPublicKey,
+  modPow,
+  modInverse,
+  bytesToBigInt,
+  bigIntToBytes,
+  bigIntToBase64Url,
+  base64UrlToBigInt,
+  randomBigIntBelow,
 } from './crypto';
+export type { OprfPublicKey, BlindResult } from './crypto';
 export {
   getBatteryStatus,
   getNetworkStatus,
