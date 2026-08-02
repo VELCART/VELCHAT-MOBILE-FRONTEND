@@ -20,6 +20,8 @@ export function useMessages(conversationId: string): {
   const [messages, setMessages] = useState<Message[]>([]);
   useEffect(() => {
     seedDevMessages(conversationId, meId).catch(() => undefined);
+    // Opening the chat = read it: clear the unread badge locally + tell the server (§F2).
+    void syncEngine.markConversationRead(conversationId);
     let sub: { unsubscribe: () => void } | undefined;
     try {
       sub = observeMessages(conversationId).subscribe(setMessages);
@@ -29,6 +31,13 @@ export function useMessages(conversationId: string): {
     return () => sub?.unsubscribe();
   }, [conversationId, meId]);
   return { messages, meId };
+}
+
+/** Retry a permanently-failed send (tapped from the bubble) — re-queues the same message. */
+export function useRetrySend(): (clientMsgId: string) => void {
+  return useCallback((clientMsgId: string) => {
+    void syncEngine.retrySend(clientMsgId);
+  }, []);
 }
 
 export function useSendMessage(conversationId: string): (text: string) => void {

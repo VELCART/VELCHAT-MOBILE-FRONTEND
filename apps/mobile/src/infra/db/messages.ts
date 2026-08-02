@@ -284,6 +284,22 @@ export async function markMessageFailed(clientMsgId: string): Promise<void> {
   });
 }
 
+/** Flip a message back to `sending` — used on a manual retry of a failed send (§L6). */
+export async function markMessageSending(clientMsgId: string): Promise<void> {
+  const db = getDatabase();
+  const msgs = db.get<Message>('messages');
+  await db.write(async () => {
+    const mine = await msgs
+      .query(Q.where('client_msg_id', clientMsgId))
+      .fetch();
+    const row = mine[0];
+    if (!row) return;
+    await row.update(m => {
+      m.state = 'sending';
+    });
+  });
+}
+
 /** The reconnect cursor for a conversation: the highest server `seq` we hold (0 if none). */
 export async function maxSeqForConversation(
   conversationId: string,

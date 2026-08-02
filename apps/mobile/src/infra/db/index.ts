@@ -10,6 +10,7 @@ export {
   observeConversations,
   seedDevConversations,
   listConversationIds,
+  clearUnread,
 } from './queries';
 export {
   observeMessages,
@@ -19,6 +20,7 @@ export {
   applyServerMessages,
   markMessageSent,
   markMessageFailed,
+  markMessageSending,
   maxSeqForConversation,
   applyReceipt,
 } from './messages';
@@ -28,6 +30,7 @@ export {
   markAckd,
   markFailed,
   recoverStuckSends,
+  requeueFailed,
   outboxStats,
 } from './outbox';
 export type { OutboxItem, OutboxStats } from './outbox';

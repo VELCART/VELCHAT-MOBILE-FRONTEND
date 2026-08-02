@@ -28,6 +28,7 @@ import {
   applyServerMessages,
   markMessageSent,
   markMessageFailed,
+  markMessageSending,
   maxSeqForConversation,
   applyReceipt,
   enqueueSend,
@@ -35,11 +36,13 @@ import {
   markAckd,
   markFailed,
   recoverStuckSends,
+  requeueFailed,
   outboxStats,
   nextOutboxRetry,
   backoffMs,
   sendMessageLocal,
   listConversationIds,
+  clearUnread,
   type SendMessageInput,
 } from '../../infra';
 
@@ -353,6 +356,33 @@ class SyncEngine {
       content: text.trim(),
     };
     await enqueueSend(conversationId, clientMsgId, input);
+    this.kickOutbox();
+  }
+
+  /**
+   * The user opened a conversation → clear its unread badge locally and tell the server we
+   * read up to the latest seq we hold (§F2/§5). Best-effort: the read frame only goes out
+   * when the socket is up; the local badge clears regardless (offline-first).
+   */
+  async markConversationRead(conversationId: string): Promise<void> {
+    await clearUnread(conversationId);
+    if (!this.socket) return;
+    try {
+      const seq = await maxSeqForConversation(conversationId);
+      if (seq > 0) this.socket?.send('read', { conversationId, seq });
+    } catch {
+      // a missing cursor just means no read frame this time — the badge already cleared
+    }
+  }
+
+  /**
+   * Manual retry of a permanently-failed send (§L6): flip the bubble back to `sending`,
+   * re-arm the outbox row, and kick the worker. Re-send is idempotent (same clientMsgId).
+   */
+  async retrySend(clientMsgId: string): Promise<void> {
+    const requeued = await requeueFailed(clientMsgId);
+    if (!requeued) return;
+    await markMessageSending(clientMsgId);
     this.kickOutbox();
   }
 }

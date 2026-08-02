@@ -241,7 +241,8 @@ export function useSaveProfile(): {
  * default placeholder simply stays).
  */
 export function useAvatarUpload(): {
-  pick: () => Promise<void>;
+  /** Resolves to the uploaded mediaId (to attach to the profile), or null on cancel/fail. */
+  pick: () => Promise<string | null>;
   localUri: string | null;
   mediaId: string | null;
   uploading: boolean;
@@ -252,14 +253,14 @@ export function useAvatarUpload(): {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const pick = useCallback(async (): Promise<void> => {
+  const pick = useCallback(async (): Promise<string | null> => {
     const accountId = getAccountId();
-    if (!accountId) return;
+    if (!accountId) return null;
     const cropper = loadCropPicker();
     if (!cropper) {
       // Native module absent → the app hasn't been rebuilt since adding the cropper.
       setError("Couldn't open the photo editor right now. Please try again.");
-      return;
+      return null;
     }
     // Open the gallery straight into a circular crop UI (WhatsApp/Instagram-style),
     // square-forced to 512² JPEG so avatars are consistent and light to upload.
@@ -278,17 +279,18 @@ export function useAvatarUpload(): {
       });
     } catch (e) {
       // Backing out of the picker/cropper is a normal cancel, not an error.
-      if ((e as { code?: string })?.code === 'E_PICKER_CANCELLED') return;
+      if ((e as { code?: string })?.code === 'E_PICKER_CANCELLED') return null;
       setError("Couldn't open your photos. Please try again.");
-      return;
+      return null;
     }
-    if (!image?.path) return;
+    if (!image?.path) return null;
     setLocalUri(image.path);
     // Persist the local uri so the header + Settings show the photo immediately and
     // across launches on this device (the server copy rides on avatarMediaId).
     kv.set(KVKeys.avatarUri, image.path);
     setError(null);
     setUploading(true);
+    let result: string | null = null;
     try {
       const mime = image.mime ?? 'image/jpeg';
       const { mediaId: id, uploadPath } = await initUpload(accountId, mime);
@@ -298,6 +300,7 @@ export function useAvatarUpload(): {
         type: mime,
       });
       setMediaId(id);
+      result = id;
     } catch (e) {
       setError(
         isAppError(e) ? e.message : 'Photo upload failed. You can try again.',
@@ -306,6 +309,7 @@ export function useAvatarUpload(): {
     } finally {
       setUploading(false);
     }
+    return result;
   }, []);
 
   return { pick, localUri, mediaId, uploading, error };
@@ -324,11 +328,17 @@ export function useAvatarPicker(): {
   localUri: string | null;
   error: string | null;
 } {
-  const { pick, localUri, mediaId, uploading, error } = useAvatarUpload();
+  const { pick: uploadPick, localUri, uploading, error } = useAvatarUpload();
   const { save } = useSaveProfile();
-  useEffect(() => {
-    if (mediaId) void save({ avatarMediaId: mediaId });
-  }, [mediaId, save]);
+
+  // Attach INLINE in the async flow (not via a mediaId useEffect): the long-press peek
+  // calls onClose() and unmounts the instant it starts the pick, so a post-mount effect
+  // would never fire and the avatarMediaId would never reach the server. Both `uploadPick`
+  // and `save` are stable callbacks, so this keeps working past the component's unmount.
+  const pick = useCallback(async (): Promise<void> => {
+    const id = await uploadPick();
+    if (id) await save({ avatarMediaId: id });
+  }, [uploadPick, save]);
 
   // Remove the profile photo. Clear the local mirror first (reactive → the photo
   // disappears from the header/Settings/Profile at once), then clear it on the server
@@ -337,9 +347,17 @@ export function useAvatarPicker(): {
   const remove = useCallback(async (): Promise<void> => {
     // Supersede any profile reload in flight so it can't write the old URL back.
     avatarRemovalEpoch += 1;
+    // Snapshot before clearing so we can put it back if the server clear fails — the photo
+    // is still on the server then, so restoring keeps the UI truthful (no silent revert).
+    const prevUri = kv.getString(KVKeys.avatarUri);
+    const prevUrl = kv.getString(KVKeys.avatarUrl);
     kv.delete(KVKeys.avatarUri);
     kv.delete(KVKeys.avatarUrl);
-    await save({ avatarMediaId: '' });
+    const ok = await save({ avatarMediaId: '' });
+    if (!ok) {
+      if (prevUri) kv.set(KVKeys.avatarUri, prevUri);
+      if (prevUrl) kv.set(KVKeys.avatarUrl, prevUrl);
+    }
   }, [save]);
 
   return { pick, remove, uploading, localUri, error };

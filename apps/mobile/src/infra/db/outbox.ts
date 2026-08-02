@@ -233,6 +233,35 @@ export function recoverStuckSends(): Promise<number> {
   });
 }
 
+/**
+ * Manual retry (§L6 "surface retry"): re-arm a permanently-`failed` send so the worker
+ * picks it up again. Resets attempts to 0 and makes it due now. Returns false if no failed
+ * row matches (e.g. it already drained). Re-send is idempotent server-side by clientMsgId.
+ */
+export function requeueFailed(clientMsgId: string): Promise<boolean> {
+  return withOutboxLock(async () => {
+    const db = getDatabase();
+    const col = db.get<Outbox>('outbox');
+    const failed = await col
+      .query(Q.where('kind', KIND_SEND), Q.where('state', 'failed'))
+      .fetch();
+    const match = failed.find(
+      o => parseInput(o.payload)?.clientMsgId === clientMsgId,
+    );
+    if (!match) return false;
+    const now = Date.now();
+    await db.write(async () => {
+      await match.update(o => {
+        o.state = 'queued';
+        o.attempts = 0;
+        o.nextAttemptAt = now;
+        o.updatedAt = now;
+      });
+    });
+    return true;
+  });
+}
+
 /** Snapshot for the engine's self-adjusting timer (never poll a hot loop). */
 export function outboxStats(): Promise<OutboxStats> {
   return withOutboxLock(async () => {

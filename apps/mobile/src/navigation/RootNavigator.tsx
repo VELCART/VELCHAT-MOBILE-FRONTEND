@@ -3,9 +3,10 @@
  * registered (velchat://). Navigation theme is derived from the app theme so
  * container background matches light/dark with no flash.
  */
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
   NavigationContainer,
+  useNavigationContainerRef,
   DefaultTheme,
   DarkTheme,
   type LinkingOptions,
@@ -21,6 +22,7 @@ import {
   EnterPhoneScreen,
   ReverseOtpScreen,
   useAuthStore,
+  useSessionWatch,
 } from '../features/auth';
 import { AppTabs } from './AppTabs';
 import { SettingsScreen } from './SettingsScreen';
@@ -61,6 +63,17 @@ export function RootNavigator(): React.JSX.Element {
   // Cold-start gating: a persisted session (tokens in MMKV) lands straight on the
   // app — no re-running onboarding/OTP. In-session transitions use navigation.reset.
   const authed = useAuthStore(s => s.state === 'active');
+  // Detect a mid-session expiry (token revoked/refresh-failed → machine flips to
+  // signed_out) and reactively reset to sign-in, instead of stranding the user logged-in.
+  useSessionWatch();
+  const navRef = useNavigationContainerRef<RootStackParamList>();
+  const wasAuthed = useRef(authed);
+  useEffect(() => {
+    if (wasAuthed.current && !authed && navRef.isReady()) {
+      navRef.resetRoot({ index: 0, routes: [{ name: 'Welcome' }] });
+    }
+    wasAuthed.current = authed;
+  }, [authed, navRef]);
   const base = t.scheme === 'dark' ? DarkTheme : DefaultTheme;
   const navTheme: NavTheme = {
     ...base,
@@ -77,7 +90,7 @@ export function RootNavigator(): React.JSX.Element {
   return (
     <>
       <AppStatusBar />
-      <NavigationContainer theme={navTheme} linking={linking}>
+      <NavigationContainer ref={navRef} theme={navTheme} linking={linking}>
         <Stack.Navigator
           initialRouteName={authed ? 'AppTabs' : 'Welcome'}
           screenOptions={{ headerShown: false, animation: 'none' }}

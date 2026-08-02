@@ -21,9 +21,18 @@ import {
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../../theme';
 import { useTranslation } from '../../../i18n';
-import { Screen, Text, ChevronRightIcon } from '../../../design-system';
+import {
+  Screen,
+  Text,
+  ChevronRightIcon,
+  ClockIcon,
+} from '../../../design-system';
 import type { RootStackParamList } from '../../../navigation/types';
-import { useMessages, useSendMessage } from '../hooks/useMessages';
+import {
+  useMessages,
+  useSendMessage,
+  useRetrySend,
+} from '../hooks/useMessages';
 
 type Msg = ReturnType<typeof useMessages>['messages'][number];
 
@@ -36,12 +45,64 @@ function timeLabel(ts: number): string {
   });
 }
 
+/**
+ * Per-state send indicator for MY messages (§L6/§F2): a clock while sending, a single
+ * check when sent, double checks when delivered, blue double checks when read, and a
+ * tappable red retry when it permanently failed — so a failed send never masquerades as
+ * delivered (the WhatsApp contract).
+ */
+function SendStatus({
+  state,
+  onRetry,
+}: {
+  state: string;
+  onRetry: () => void;
+}): React.JSX.Element {
+  const t = useTheme();
+  if (state === 'sending') {
+    return <ClockIcon size={12} color={t.colors.actionFg} strokeWidth={2} />;
+  }
+  if (state === 'failed') {
+    return (
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Retry sending"
+        onPress={onRetry}
+        hitSlop={8}
+        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+      >
+        <Text
+          variant="caption"
+          style={{ fontSize: 11, color: t.colors.danger }}
+        >
+          ! Retry
+        </Text>
+      </Pressable>
+    );
+  }
+  const read = state === 'read';
+  return (
+    <Text
+      variant="caption"
+      style={{
+        fontSize: 11,
+        color: read ? t.colors.info : t.colors.actionFg,
+        opacity: read ? 1 : 0.75,
+      }}
+    >
+      {state === 'sent' ? '✓' : '✓✓'}
+    </Text>
+  );
+}
+
 function Bubble({
   item,
   mine,
+  onRetry,
 }: {
   item: Msg;
   mine: boolean;
+  onRetry: (clientMsgId: string) => void;
 }): React.JSX.Element {
   const t = useTheme();
   return (
@@ -69,19 +130,32 @@ function Bubble({
         >
           {item.contentPlain ?? ''}
         </Text>
-        <Text
-          variant="caption"
+        <View
           style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 4,
             alignSelf: 'flex-end',
             marginTop: 2,
-            fontSize: 11,
-            color: mine ? t.colors.actionFg : t.colors.textTertiary,
-            opacity: mine ? 0.75 : 1,
           }}
         >
-          {timeLabel(item.createdAt)}
-          {mine ? (item.state === 'read' ? ' ✓✓' : ' ✓') : ''}
-        </Text>
+          <Text
+            variant="caption"
+            style={{
+              fontSize: 11,
+              color: mine ? t.colors.actionFg : t.colors.textTertiary,
+              opacity: mine ? 0.75 : 1,
+            }}
+          >
+            {timeLabel(item.createdAt)}
+          </Text>
+          {mine ? (
+            <SendStatus
+              state={item.state}
+              onRetry={() => onRetry(item.clientMsgId)}
+            />
+          ) : null}
+        </View>
       </View>
     </View>
   );
@@ -96,6 +170,7 @@ export function ChatScreen(): React.JSX.Element {
   const { conversationId, name } = route.params;
   const { messages, meId } = useMessages(conversationId);
   const send = useSendMessage(conversationId);
+  const retry = useRetrySend();
   const [text, setText] = useState('');
 
   const onSend = useCallback(() => {
@@ -106,9 +181,9 @@ export function ChatScreen(): React.JSX.Element {
 
   const renderItem = useCallback(
     ({ item }: { item: Msg }) => (
-      <Bubble item={item} mine={item.senderId === meId} />
+      <Bubble item={item} mine={item.senderId === meId} onRetry={retry} />
     ),
-    [meId],
+    [meId, retry],
   );
 
   return (

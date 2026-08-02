@@ -41,6 +41,24 @@ export async function listConversationIds(): Promise<string[]> {
   return rows.map(c => c.id);
 }
 
+/**
+ * Clear a conversation's unread badge (§F2) — called when the user opens the chat. A
+ * no-op if it's already 0 so an open doesn't churn a needless write/re-emit.
+ */
+export async function clearUnread(conversationId: string): Promise<void> {
+  const db = getDatabase();
+  const conv = await db
+    .get<Conversation>('conversations')
+    .find(conversationId)
+    .catch(() => null);
+  if (!conv || conv.unreadCount === 0) return;
+  await db.write(async () => {
+    await conv.update(c => {
+      c.unreadCount = 0;
+    });
+  });
+}
+
 const SEED = [
   {
     name: 'Aarav Sharma',

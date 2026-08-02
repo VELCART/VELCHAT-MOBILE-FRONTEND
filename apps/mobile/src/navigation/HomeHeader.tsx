@@ -379,7 +379,11 @@ export function HomeHeader(): React.JSX.Element {
         items={menuItems}
       />
 
-      <ProfilePeek visible={peekOpen} onClose={() => setPeekOpen(false)} />
+      {/* Mounted only while open — otherwise its profile hooks (7 reactive MMKV reads +
+          the avatar picker) would run idle on every header render. */}
+      {peekOpen ? (
+        <ProfilePeek visible onClose={() => setPeekOpen(false)} />
+      ) : null}
     </View>
   );
 }

@@ -35,6 +35,7 @@ interface AuthStore {
   rememberPhone: (phone: string) => void;
   provision: (tokens: Tokens) => void;
   signOut: () => void;
+  sessionExpired: () => void;
 }
 
 export const useAuthStore = create<AuthStore>(set => ({
@@ -88,5 +89,13 @@ export const useAuthStore = create<AuthStore>(set => ({
     kv.delete(KVKeys.memberSince);
     kv.delete(KVKeys.profileComplete);
     set({ state: 'signed_out', accountId: null, sessionId: null, phone: null });
+  },
+
+  // Refresh failed / token revoked mid-session (the network client already cleared the
+  // tokens). Reflect it in the state machine so the navigator can reactively send the user
+  // back to sign-in instead of stranding them on a zombie "logged-in" screen. The device
+  // key is kept, so a later cold-launch can still silent-relogin if it's still valid.
+  sessionExpired: () => {
+    set({ state: 'signed_out', accountId: null, sessionId: null });
   },
 }));

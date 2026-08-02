@@ -10,4 +10,8 @@ export { SignInScreen } from './ui/SignInScreen';
 export { EnterPhoneScreen } from './ui/EnterPhoneScreen';
 export { ReverseOtpScreen } from './ui/ReverseOtpScreen';
 export { useAuthStore } from './model/authStore';
-export { useAuthBootstrap, useAccountInfo } from './hooks/useAuth';
+export {
+  useAuthBootstrap,
+  useAccountInfo,
+  useSessionWatch,
+} from './hooks/useAuth';
