@@ -9,7 +9,7 @@
  * Own busy/error state per start action. Theme-aware (light + dark via tokens), a11y-labelled
  * via i18n. feature-ui: no infra imports (§M3) — device access flows through the hook.
  */
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   TextInput,
@@ -34,6 +34,7 @@ import {
 import type { RootStackParamList } from '../../../navigation/types';
 import {
   useDeviceContacts,
+  useNumberSearch,
   type VelchatContact,
   type InviteContact,
 } from '../../contacts';
@@ -214,6 +215,117 @@ const InviteRow = React.memo(function InviteRow({
   );
 });
 
+/**
+ * "Message a number that isn't saved" (§G2) — shown when the search box holds a valid E.164
+ * that isn't already a matched contact. Tap → look the number up in the directory: found →
+ * open the DM; not found → offer an invite. Owns its own idle/searching/notfound state; resets
+ * whenever the number changes.
+ */
+const NumberSearchRow = React.memo(function NumberSearchRow({
+  e164,
+  disabled,
+  lookup,
+  onFound,
+  onInvite,
+}: {
+  e164: string;
+  disabled: boolean;
+  lookup: (e164: string) => Promise<string | null>;
+  onFound: (accountId: string, name: string) => void;
+  onInvite: (e164: string) => void;
+}): React.JSX.Element {
+  const t = useTheme();
+  const { t: tr } = useTranslation();
+  const [state, setState] = useState<'idle' | 'searching' | 'notfound'>('idle');
+  useEffect(() => setState('idle'), [e164]);
+
+  const onPress = useCallback(async (): Promise<void> => {
+    if (state === 'searching' || disabled) return;
+    setState('searching');
+    try {
+      const acc = await lookup(e164);
+      if (acc) onFound(acc, e164);
+      else setState('notfound');
+    } catch {
+      setState('notfound');
+    }
+  }, [state, disabled, lookup, e164, onFound]);
+
+  const subtitle =
+    state === 'notfound'
+      ? tr('newChat.numberNotFound')
+      : tr('newChat.numberSearchHint');
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${tr('newChat.numberSearchHint')}: ${e164}`}
+      disabled={state === 'notfound'}
+      onPress={() => void onPress()}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: t.spacing.md,
+        paddingHorizontal: t.spacing.lg,
+        paddingVertical: t.spacing.sm,
+        backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
+      })}
+    >
+      <View
+        style={{
+          width: AVATAR,
+          height: AVATAR,
+          borderRadius: AVATAR / 2,
+          backgroundColor: t.colors.brandFrom,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <SearchIcon size={22} color={t.colors.actionFg} strokeWidth={2.2} />
+      </View>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text variant="body" numberOfLines={1} style={{ fontSize: 16 }}>
+          {e164}
+        </Text>
+        <Text variant="caption" color="tertiary" numberOfLines={1}>
+          {subtitle}
+        </Text>
+      </View>
+      {state === 'searching' ? (
+        <ActivityIndicator size="small" color={t.colors.brandFrom} />
+      ) : state === 'notfound' ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${tr('newChat.invite')}: ${e164}`}
+          onPress={() => onInvite(e164)}
+          hitSlop={8}
+          style={({ pressed }) => ({
+            paddingHorizontal: t.spacing.md,
+            paddingVertical: 6,
+            borderRadius: t.radius.pill,
+            borderWidth: 1,
+            borderColor: t.colors.brandFrom,
+            opacity: pressed ? 0.6 : 1,
+          })}
+        >
+          <Text
+            variant="label"
+            style={{ color: t.colors.brandFrom, fontSize: 14 }}
+          >
+            {tr('newChat.invite')}
+          </Text>
+        </Pressable>
+      ) : (
+        <ChevronRightIcon
+          size={20}
+          color={t.colors.textTertiary}
+          strokeWidth={2}
+        />
+      )}
+    </Pressable>
+  );
+});
+
 /** Full-screen centered message with an optional action button. */
 function StateView({
   icon,
@@ -288,10 +400,10 @@ export function NewChatScreen(): React.JSX.Element {
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { status, onVelchat, invitable, request, reload } = useDeviceContacts();
   const startDm = useStartDm();
+  const { normalize, lookup } = useNumberSearch();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [devId, setDevId] = useState('');
 
   const openChat = useCallback(
     async (accountId: string, name: string): Promise<void> => {
@@ -310,14 +422,29 @@ export function NewChatScreen(): React.JSX.Element {
     [busyId, navigation, startDm, tr],
   );
 
-  const onInvite = useCallback(
-    (contact: InviteContact): void => {
+  const shareInvite = useCallback(
+    (phone: string): void => {
       void Share.share({
-        message: `${tr('newChat.inviteMessage')} ${contact.phoneE164}`.trim(),
+        message: `${tr('newChat.inviteMessage')} ${phone}`.trim(),
       }).catch(() => undefined);
     },
     [tr],
   );
+  const onInvite = useCallback(
+    (contact: InviteContact): void => shareInvite(contact.phoneE164),
+    [shareInvite],
+  );
+
+  // A valid number typed into search that ISN'T already a matched contact → offer to find it
+  // on VelChat (works even with no device contacts / permission — the laptop + "not saved" case).
+  const matchedNumbers = useMemo(
+    () => new Set(onVelchat.map(c => c.phoneE164)),
+    [onVelchat],
+  );
+  const candidate = useMemo(() => {
+    const c = normalize(query);
+    return c && !matchedNumbers.has(c) ? c : null;
+  }, [normalize, query, matchedNumbers]);
 
   // Filter + flatten the two sections into one recycled list.
   const rows = useMemo<Row[]>(() => {
@@ -434,6 +561,9 @@ export function NewChatScreen(): React.JSX.Element {
       case 'ready':
       default:
         if (rows.length === 0) {
+          // When a number is being searched, the number row above carries the screen — don't
+          // stack a full "no contacts" empty state under it.
+          if (candidate) return <View style={{ flex: 1 }} />;
           return (
             <StateView
               icon={
@@ -461,9 +591,6 @@ export function NewChatScreen(): React.JSX.Element {
         );
     }
   })();
-
-  const showSearch =
-    status === 'ready' && (onVelchat.length > 0 || invitable.length > 0);
 
   return (
     <View
@@ -516,97 +643,50 @@ export function NewChatScreen(): React.JSX.Element {
         </Text>
       </View>
 
-      {/* Search (only once there's a list to filter). */}
-      {showSearch ? (
-        <View
+      {/* Search by name or number — always available (number search needs no contacts). */}
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: t.spacing.sm,
+          marginHorizontal: t.spacing.lg,
+          marginTop: t.spacing.md,
+          marginBottom: t.spacing.xs,
+          paddingHorizontal: t.spacing.md,
+          height: 42,
+          borderRadius: t.radius.pill,
+          backgroundColor: t.colors.bgSubtle,
+        }}
+      >
+        <SearchIcon size={18} color={t.colors.textTertiary} strokeWidth={2} />
+        <TextInput
+          value={query}
+          onChangeText={setQuery}
+          placeholder={tr('newChat.searchPlaceholder')}
+          placeholderTextColor={t.colors.textTertiary}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="default"
+          accessibilityLabel={tr('newChat.searchPlaceholder')}
           style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: t.spacing.sm,
-            marginHorizontal: t.spacing.lg,
-            marginTop: t.spacing.md,
-            marginBottom: t.spacing.xs,
-            paddingHorizontal: t.spacing.md,
-            height: 42,
-            borderRadius: t.radius.pill,
-            backgroundColor: t.colors.bgSubtle,
+            flex: 1,
+            fontFamily: t.typography.body.fontFamily,
+            fontSize: 15,
+            color: t.colors.textPrimary,
+            padding: 0,
           }}
-        >
-          <SearchIcon size={18} color={t.colors.textTertiary} strokeWidth={2} />
-          <TextInput
-            value={query}
-            onChangeText={setQuery}
-            placeholder={tr('newChat.searchPlaceholder')}
-            placeholderTextColor={t.colors.textTertiary}
-            autoCapitalize="none"
-            autoCorrect={false}
-            accessibilityLabel={tr('newChat.searchPlaceholder')}
-            style={{
-              flex: 1,
-              fontFamily: t.typography.body.fontFamily,
-              fontSize: 15,
-              color: t.colors.textPrimary,
-              padding: 0,
-            }}
-          />
-        </View>
-      ) : null}
+        />
+      </View>
 
-      {/* DEV-only: start a DM by pasting a peer account id (testable before a real match). */}
-      {__DEV__ ? (
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: t.spacing.sm,
-            paddingHorizontal: t.spacing.lg,
-            paddingTop: t.spacing.sm,
-            paddingBottom: t.spacing.xs,
-          }}
-        >
-          <TextInput
-            value={devId}
-            onChangeText={setDevId}
-            placeholder={tr('newChat.devPlaceholder')}
-            placeholderTextColor={t.colors.textTertiary}
-            autoCapitalize="none"
-            autoCorrect={false}
-            accessibilityLabel={tr('newChat.devPlaceholder')}
-            style={{
-              flex: 1,
-              height: 40,
-              borderRadius: t.radius.lg,
-              backgroundColor: t.colors.bgSubtle,
-              paddingHorizontal: t.spacing.md,
-              fontFamily: t.typography.body.fontFamily,
-              fontSize: 14,
-              color: t.colors.textPrimary,
-            }}
-          />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={tr('newChat.start')}
-            disabled={!devId.trim() || busyId !== null}
-            onPress={() => void openChat(devId, devId.trim())}
-            style={({ pressed }) => ({
-              height: 40,
-              paddingHorizontal: t.spacing.lg,
-              borderRadius: t.radius.pill,
-              backgroundColor: t.colors.brandFrom,
-              alignItems: 'center',
-              justifyContent: 'center',
-              opacity:
-                !devId.trim() || busyId !== null ? 0.4 : pressed ? 0.7 : 1,
-            })}
-          >
-            <Text
-              variant="label"
-              style={{ color: t.colors.actionFg, fontSize: 14 }}
-            >
-              {tr('newChat.start')}
-            </Text>
-          </Pressable>
-        </View>
+      {/* "Message a number that isn't saved" — a valid E.164 that isn't already a match. */}
+      {candidate ? (
+        <NumberSearchRow
+          e164={candidate}
+          disabled={busyId !== null}
+          lookup={lookup}
+          onFound={openChat}
+          onInvite={shareInvite}
+        />
       ) : null}
 
       {startError ? (

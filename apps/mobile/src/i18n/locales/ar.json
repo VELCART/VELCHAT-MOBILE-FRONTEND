@@ -95,6 +95,8 @@
     "unavailableBody": "أعد تشغيل التطبيق لتفعيل جهات الاتصال. إذا استمرّ الأمر، أعد تثبيت أحدث إصدار.",
     "searching": "جارٍ البحث عن جهات اتصالك على VelChat…",
     "invite": "دعوة",
+    "numberSearchHint": "ابحث في VelChat",
+    "numberNotFound": "غير موجود على VelChat",
     "noVelchatTitle": "لا توجد جهات اتصال على VelChat بعد",
     "noVelchatSub": "ادعُ أصدقاءك أدناه لبدء المحادثة.",
     "inviteMessage": "لنتحدّث على VelChat — مرسال سريع وخاص.",

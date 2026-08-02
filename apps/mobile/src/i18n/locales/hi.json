@@ -95,6 +95,8 @@
     "unavailableBody": "संपर्क चालू करने के लिए ऐप दोबारा शुरू करें। अगर फिर भी हो, तो नई बिल्ड दोबारा इंस्टॉल करें।",
     "searching": "VelChat पर आपके संपर्क खोजे जा रहे हैं…",
     "invite": "आमंत्रित करें",
+    "numberSearchHint": "VelChat पर खोजें",
+    "numberNotFound": "VelChat पर नहीं है",
     "noVelchatTitle": "अभी VelChat पर कोई संपर्क नहीं",
     "noVelchatSub": "चैट शुरू करने के लिए नीचे दोस्तों को आमंत्रित करें।",
     "inviteMessage": "आओ VelChat पर बात करें — एक तेज़, निजी मैसेंजर।",

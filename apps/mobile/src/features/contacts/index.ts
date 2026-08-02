@@ -12,3 +12,4 @@ export type {
   InviteContact,
   DeviceContactsStatus,
 } from './hooks/useDeviceContacts';
+export { useNumberSearch } from './hooks/useNumberSearch';

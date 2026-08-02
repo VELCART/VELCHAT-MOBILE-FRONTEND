@@ -95,6 +95,8 @@
     "unavailableBody": "Restart the app to enable contacts. If it keeps happening, reinstall the latest build.",
     "searching": "Finding your contacts on VelChat…",
     "invite": "Invite",
+    "numberSearchHint": "Search on VelChat",
+    "numberNotFound": "Not on VelChat",
     "noVelchatTitle": "No contacts on VelChat yet",
     "noVelchatSub": "Invite friends below to start chatting.",
     "inviteMessage": "Let's chat on VelChat — a fast, private messenger.",
