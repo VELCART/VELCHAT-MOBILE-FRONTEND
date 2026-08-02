@@ -1,18 +1,19 @@
 /**
- * Chat screen (§F2) — a conversation: reversed FlashList of message bubbles (mine right /
- * theirs left) reading the local DB, and a composer that sends OPTIMISTICALLY (writes the
- * DB → the bubble appears instantly; the MP2 outbox transmits + reconciles later). Themed,
- * keyboard-aware. Opened from a Chats-list row.
+ * Chat screen (§F2) — a WhatsApp-style conversation: a header with the peer, a reversed
+ * FlashList of grouped message bubbles read straight from the local DB, a jump-to-latest FAB,
+ * and a composer that sends OPTIMISTICALLY (writes the DB → the bubble appears instantly; the
+ * MP2 outbox transmits + reconciles later). Themed with the monochrome tokens, keyboard-aware.
+ * Opened from a Chats-list row.
  */
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import {
   View,
-  TextInput,
-  Pressable,
   KeyboardAvoidingView,
   Platform,
+  type NativeSyntheticEvent,
+  type NativeScrollEvent,
 } from 'react-native';
-import { FlashList } from '@shopify/flash-list';
+import { FlashList, type FlashListRef } from '@shopify/flash-list';
 import {
   useNavigation,
   useRoute,
@@ -21,145 +22,23 @@ import {
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../../theme';
 import { useTranslation } from '../../../i18n';
-import {
-  Screen,
-  Text,
-  ChevronRightIcon,
-  ClockIcon,
-} from '../../../design-system';
+import { Screen } from '../../../design-system';
 import type { RootStackParamList } from '../../../navigation/types';
 import {
   useMessages,
   useSendMessage,
   useRetrySend,
 } from '../hooks/useMessages';
+import { ChatHeader } from './chat/ChatHeader';
+import { Composer } from './chat/Composer';
+import { JumpToLatest } from './chat/JumpToLatest';
+import { MessageBubble } from './chat/MessageBubble';
+import { dayCategory, startsNewDay, startsNewRun } from './chat/chatModel';
 
 type Msg = ReturnType<typeof useMessages>['messages'][number];
 
-function timeLabel(ts: number): string {
-  const d = new Date(ts);
-  if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString(undefined, {
-    hour: '2-digit',
-    minute: '2-digit',
-  });
-}
-
-/**
- * Per-state send indicator for MY messages (§L6/§F2): a clock while sending, a single
- * check when sent, double checks when delivered, blue double checks when read, and a
- * tappable red retry when it permanently failed — so a failed send never masquerades as
- * delivered (the WhatsApp contract).
- */
-function SendStatus({
-  state,
-  onRetry,
-}: {
-  state: string;
-  onRetry: () => void;
-}): React.JSX.Element {
-  const t = useTheme();
-  if (state === 'sending') {
-    return <ClockIcon size={12} color={t.colors.actionFg} strokeWidth={2} />;
-  }
-  if (state === 'failed') {
-    return (
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel="Retry sending"
-        onPress={onRetry}
-        hitSlop={8}
-        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-      >
-        <Text
-          variant="caption"
-          style={{ fontSize: 11, color: t.colors.danger }}
-        >
-          ! Retry
-        </Text>
-      </Pressable>
-    );
-  }
-  const read = state === 'read';
-  return (
-    <Text
-      variant="caption"
-      style={{
-        fontSize: 11,
-        color: read ? t.colors.info : t.colors.actionFg,
-        opacity: read ? 1 : 0.75,
-      }}
-    >
-      {state === 'sent' ? '✓' : '✓✓'}
-    </Text>
-  );
-}
-
-function Bubble({
-  item,
-  mine,
-  onRetry,
-}: {
-  item: Msg;
-  mine: boolean;
-  onRetry: (clientMsgId: string) => void;
-}): React.JSX.Element {
-  const t = useTheme();
-  return (
-    <View
-      style={{
-        paddingHorizontal: t.spacing.md,
-        paddingVertical: t.spacing.xxs,
-        alignItems: mine ? 'flex-end' : 'flex-start',
-      }}
-    >
-      <View
-        style={{
-          maxWidth: '82%',
-          paddingHorizontal: t.spacing.md,
-          paddingVertical: t.spacing.xs + 1,
-          borderRadius: t.radius.lg,
-          borderBottomRightRadius: mine ? 4 : t.radius.lg,
-          borderBottomLeftRadius: mine ? t.radius.lg : 4,
-          backgroundColor: mine ? t.colors.brandFrom : t.colors.bgSubtle,
-        }}
-      >
-        <Text
-          variant="body"
-          style={{ color: mine ? t.colors.actionFg : t.colors.textPrimary }}
-        >
-          {item.contentPlain ?? ''}
-        </Text>
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 4,
-            alignSelf: 'flex-end',
-            marginTop: 2,
-          }}
-        >
-          <Text
-            variant="caption"
-            style={{
-              fontSize: 11,
-              color: mine ? t.colors.actionFg : t.colors.textTertiary,
-              opacity: mine ? 0.75 : 1,
-            }}
-          >
-            {timeLabel(item.createdAt)}
-          </Text>
-          {mine ? (
-            <SendStatus
-              state={item.state}
-              onRetry={() => onRetry(item.clientMsgId)}
-            />
-          ) : null}
-        </View>
-      </View>
-    </View>
-  );
-}
+/** Show the FAB once scrolled this far from the newest message (inverted list: y≈0 = bottom). */
+const JUMP_THRESHOLD = 120;
 
 export function ChatScreen(): React.JSX.Element {
   const t = useTheme();
@@ -173,134 +52,89 @@ export function ChatScreen(): React.JSX.Element {
   const retry = useRetrySend();
   const [text, setText] = useState('');
 
+  // Stable "now" for date-separator classification — it must not shift each render (that
+  // would rebuild every chip label) and needn't track the midnight rollover mid-session.
+  const now = useMemo(() => Date.now(), []);
+
+  const listRef = useRef<FlashListRef<Msg>>(null);
+  const showJumpRef = useRef(false);
+  const [showJump, setShowJump] = useState(false);
+
+  const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const next = e.nativeEvent.contentOffset.y > JUMP_THRESHOLD;
+    if (next !== showJumpRef.current) {
+      showJumpRef.current = next;
+      setShowJump(next);
+    }
+  }, []);
+
+  const jumpToLatest = useCallback(() => {
+    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+  }, []);
+
+  const onBack = useCallback(() => navigation.goBack(), [navigation]);
+
   const onSend = useCallback(() => {
     if (!text.trim()) return;
     send(text);
     setText('');
   }, [text, send]);
 
+  const dateLabelFor = useCallback(
+    (ts: number): string => {
+      const cat = dayCategory(ts, now);
+      if (cat === 'today') return tr('chat.today');
+      if (cat === 'yesterday') return tr('chat.yesterday');
+      return new Date(ts).toLocaleDateString(undefined, {
+        day: 'numeric',
+        month: 'short',
+      });
+    },
+    [now, tr],
+  );
+
   const renderItem = useCallback(
-    ({ item }: { item: Msg }) => (
-      <Bubble item={item} mine={item.senderId === meId} onRetry={retry} />
+    ({ item, index }: { item: Msg; index: number }) => (
+      <MessageBubble
+        contentPlain={item.contentPlain ?? ''}
+        mine={item.senderId === meId}
+        state={item.state}
+        createdAt={item.createdAt}
+        clientMsgId={item.clientMsgId}
+        firstOfRun={startsNewRun(messages, index)}
+        dateLabel={
+          startsNewDay(messages, index) ? dateLabelFor(item.createdAt) : null
+        }
+        onRetry={retry}
+      />
     ),
-    [meId, retry],
+    [messages, meId, retry, dateLabelFor],
   );
 
   return (
     <Screen edges={['top']} padded={false}>
-      {/* Top bar */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: t.spacing.xs,
-          height: 56,
-          paddingLeft: t.spacing.xs,
-          paddingRight: t.spacing.md,
-          borderBottomWidth: 1,
-          borderBottomColor: t.colors.hairline,
-        }}
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={tr('profile.back')}
-          onPress={() => navigation.goBack()}
-          hitSlop={10}
-          style={({ pressed }) => ({
-            width: 40,
-            height: 40,
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: pressed ? 0.6 : 1,
-          })}
-        >
-          <View style={{ transform: [{ rotate: '180deg' }] }}>
-            <ChevronRightIcon
-              size={26}
-              color={t.colors.textPrimary}
-              strokeWidth={2.2}
-            />
-          </View>
-        </Pressable>
-        <Text
-          variant="title"
-          numberOfLines={1}
-          style={{ fontSize: 18, flex: 1 }}
-        >
-          {name ?? tr('tabs.chats')}
-        </Text>
-      </View>
+      <ChatHeader name={name} onBack={onBack} />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, backgroundColor: t.colors.bgBase }}>
           <FlashList
+            ref={listRef}
             data={messages}
             inverted
             keyExtractor={m => m.id}
             renderItem={renderItem}
-            contentContainerStyle={{ paddingVertical: t.spacing.sm }}
+            onScroll={onScroll}
+            scrollEventThrottle={16}
+            contentContainerStyle={{ paddingVertical: t.spacing.xs }}
             showsVerticalScrollIndicator={false}
           />
+          {showJump ? <JumpToLatest onPress={jumpToLatest} /> : null}
         </View>
 
-        {/* Composer */}
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'flex-end',
-            gap: t.spacing.sm,
-            paddingHorizontal: t.spacing.md,
-            paddingVertical: t.spacing.sm,
-            borderTopWidth: 1,
-            borderTopColor: t.colors.hairline,
-          }}
-        >
-          <TextInput
-            value={text}
-            onChangeText={setText}
-            placeholder={tr('chat.messagePlaceholder')}
-            placeholderTextColor={t.colors.textTertiary}
-            multiline
-            style={{
-              flex: 1,
-              maxHeight: 120,
-              minHeight: 42,
-              borderRadius: t.radius.lg,
-              backgroundColor: t.colors.bgSubtle,
-              paddingHorizontal: t.spacing.md,
-              paddingTop: 10,
-              paddingBottom: 10,
-              fontFamily: t.typography.body.fontFamily,
-              fontSize: 16,
-              color: t.colors.textPrimary,
-            }}
-          />
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={tr('chat.send')}
-            onPress={onSend}
-            disabled={!text.trim()}
-            style={({ pressed }) => ({
-              width: 44,
-              height: 44,
-              borderRadius: 22,
-              backgroundColor: t.colors.brandFrom,
-              alignItems: 'center',
-              justifyContent: 'center',
-              opacity: !text.trim() ? 0.4 : pressed ? 0.7 : 1,
-            })}
-          >
-            <Text
-              variant="label"
-              style={{ color: t.colors.actionFg, fontSize: 18 }}
-            >
-              ↑
-            </Text>
-          </Pressable>
-        </View>
+        <Composer value={text} onChangeText={setText} onSend={onSend} />
       </KeyboardAvoidingView>
     </Screen>
   );

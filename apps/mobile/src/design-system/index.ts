@@ -58,5 +58,10 @@ export {
   HeadphonesIcon,
   ImageIcon,
   PlayIcon,
+  SmileyIcon,
+  PaperclipIcon,
+  MicIcon,
+  SendIcon,
+  ChevronDownIcon,
 } from './icons';
 export type { IconProps } from './icons';

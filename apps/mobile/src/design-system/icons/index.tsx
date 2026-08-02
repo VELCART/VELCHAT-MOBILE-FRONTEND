@@ -628,3 +628,79 @@ export function PlayIcon({
     </Svg>
   );
 }
+
+/** Smiley face — emoji picker (composer). */
+export function SmileyIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={12} cy={12} r={10} {...stroke(color, strokeWidth)} />
+      <Path d="M8 14s1.5 2 4 2 4-2 4-2" {...stroke(color, strokeWidth)} />
+      <Path d="M9 9h.01M15 9h.01" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Paperclip — attach a file (composer). */
+export function PaperclipIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"
+        {...stroke(color, strokeWidth)}
+      />
+    </Svg>
+  );
+}
+
+/** Microphone — record a voice message (composer). */
+export function MicIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M12 2a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3z"
+        {...stroke(color, strokeWidth)}
+      />
+      <Path d="M19 10v1a7 7 0 0 1-14 0v-1" {...stroke(color, strokeWidth)} />
+      <Path d="M12 18v4M8 22h8" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Up arrow — send a message (composer). */
+export function SendIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M12 20V5" {...stroke(color, strokeWidth)} />
+      <Path d="M6 11l6-6 6 6" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Chevron down — jump to latest / scroll to bottom. */
+export function ChevronDownIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M6 9l6 6 6-6" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
