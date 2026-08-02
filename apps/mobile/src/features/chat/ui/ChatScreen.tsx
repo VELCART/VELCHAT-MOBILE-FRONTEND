@@ -5,11 +5,18 @@
  * MP2 outbox transmits + reconciles later). Themed with the monochrome tokens, keyboard-aware.
  * Opened from a Chats-list row.
  */
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   View,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
+  type EmitterSubscription,
   type NativeSyntheticEvent,
   type NativeScrollEvent,
 } from 'react-native';
@@ -85,6 +92,25 @@ export function ChatScreen(): React.JSX.Element {
 
   const onBack = useCallback(() => navigation.goBack(), [navigation]);
 
+  // Keep the composer above the keyboard. KeyboardAvoidingView is unreliable under RN 0.86's
+  // Android edge-to-edge (the input hid behind the keyboard); the app's proven pattern is a
+  // manual keyboard-height listener (see BottomSheet) — lift the pane by the keyboard height.
+  const [kbHeight, setKbHeight] = useState(0);
+  useEffect(() => {
+    const show: EmitterSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+      e => setKbHeight(e.endCoordinates?.height ?? 0),
+    );
+    const hide: EmitterSubscription = Keyboard.addListener(
+      Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+      () => setKbHeight(0),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
   const onSend = useCallback(() => {
     if (!text.trim()) return;
     send(text);
@@ -127,10 +153,7 @@ export function ChatScreen(): React.JSX.Element {
     <Screen edges={['top']} padded={false}>
       <ChatHeader conversationId={conversationId} name={name} onBack={onBack} />
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
+      <View style={{ flex: 1, paddingBottom: kbHeight }}>
         <View style={{ flex: 1, backgroundColor: t.colors.bgBase }}>
           <FlashList
             ref={listRef}
@@ -146,8 +169,13 @@ export function ChatScreen(): React.JSX.Element {
           {showJump ? <JumpToLatest onPress={jumpToLatest} /> : null}
         </View>
 
-        <Composer value={text} onChangeText={onChangeText} onSend={onSend} />
-      </KeyboardAvoidingView>
+        <Composer
+          value={text}
+          onChangeText={onChangeText}
+          onSend={onSend}
+          keyboardUp={kbHeight > 0}
+        />
+      </View>
     </Screen>
   );
 }
