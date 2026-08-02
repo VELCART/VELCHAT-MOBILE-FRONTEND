@@ -39,7 +39,9 @@ import {
 import type { Profile } from '../api/userApi';
 
 const STEP_COUNT = 3;
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// Only @gmail.com is accepted for now (product decision). Case-insensitive; the local part
+// must be a normal address (no spaces/@). Broaden the allowed domains here when that changes.
+const EMAIL_RE = /^[^\s@]+@gmail\.com$/i;
 
 export function ProfileSetupSheet({
   visible,

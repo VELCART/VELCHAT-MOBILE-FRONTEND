@@ -140,7 +140,7 @@
     "emailTitle": "What's your email?",
     "emailSubtitle": "For account recovery and important updates.",
     "emailPlaceholder": "you@example.com",
-    "emailInvalid": "Enter a valid email address.",
+    "emailInvalid": "Enter a valid @gmail.com address.",
     "aboutTitle": "Add a bio",
     "aboutSubtitle": "Optional — tell people a little about you.",
     "aboutPlaceholder": "Hey there! I'm using VelChat.",

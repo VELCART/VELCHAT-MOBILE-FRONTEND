@@ -140,7 +140,7 @@
     "emailTitle": "आपका ईमेल क्या है?",
     "emailSubtitle": "अकाउंट रिकवरी और ज़रूरी अपडेट के लिए।",
     "emailPlaceholder": "you@example.com",
-    "emailInvalid": "सही ईमेल पता डालें।",
+    "emailInvalid": "सही @gmail.com पता डालें।",
     "aboutTitle": "बायो जोड़ें",
     "aboutSubtitle": "वैकल्पिक — अपने बारे में थोड़ा बताएं।",
     "aboutPlaceholder": "नमस्ते! मैं VelChat इस्तेमाल कर रहा हूँ।",

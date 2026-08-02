@@ -117,7 +117,7 @@
     "emailTitle": "ما بريدك الإلكتروني؟",
     "emailSubtitle": "لاستعادة الحساب والتحديثات المهمة.",
     "emailPlaceholder": "you@example.com",
-    "emailInvalid": "أدخل بريدًا إلكترونيًا صحيحًا.",
+    "emailInvalid": "أدخل عنوان @gmail.com صحيحًا.",
     "aboutTitle": "أضِف نبذة",
     "aboutSubtitle": "اختياري — أخبر الناس قليلاً عنك.",
     "aboutPlaceholder": "مرحبًا! أنا أستخدم VelChat.",
