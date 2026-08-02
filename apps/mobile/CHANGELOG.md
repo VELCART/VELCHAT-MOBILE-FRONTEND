@@ -1,5 +1,48 @@
 # @velchat/mobile
 
+## 0.5.0
+
+### Minor Changes
+
+- 2c0693f: MP2 foundation — offline-first chat:
+
+  - **WatermelonDB** as the local DB / UI source of truth (ADR-0005). Schema v1 with the
+    core tables (§L5): conversations, messages, receipts, conversation_members, users,
+    outbox, drafts, upload_jobs, download_jobs — each indexed for its queries. JSI adapter
+    (off-thread reads), legacy decorators, jest-stubbed.
+  - **Chats list** — WhatsApp-style rows on **FlashList** (ADR-0006) that OBSERVE the DB
+    (pinned → most-recent, unread pills, instant open). Replaces the Chats placeholder; a
+    dev seed fills it until the MP2 sync engine feeds real conversations.
+
+  - **Chat screen** — tap a row → the conversation: a reversed FlashList of message bubbles
+    (mine right / theirs left, ✓/✓✓ ticks) reading the DB, and a keyboard-aware composer
+    that sends OPTIMISTICALLY (writes the DB → the bubble appears instantly; the MP2 outbox
+    transmits + reconciles later). Dev-seeded messages until sync lands.
+
+  Needs a native rebuild (WatermelonDB + FlashList are native modules).
+
+- 1910659: Profile & connectivity pass:
+
+  - WhatsApp-style **Profile page** (new screen): large avatar with camera badge + circular
+    crop, inline-editable name/about, read-only phone/email/last-login rows.
+  - **Settings**: flat profile header that opens the Profile page + long-press **peek**
+    popup (frosted-glass "water bubble" actions via a new `FrostedCircle`/`GlassBubble`),
+    refined top-bar spacing, top-bar actions (search/scan/edit).
+  - **Welcome**: language selector pill → bottom-sheet dropdown (en/hi/ar).
+  - **Reactive profile mirror** — avatar/name update everywhere (header, Settings, Profile)
+    the instant a photo is picked or a field saved (`useKVString`), offline-first.
+  - **Correctness**: normalize the user-service profile read (snake_case → camelCase) so
+    name + avatar actually resolve; persist the phone on OTP verify and stamp `loginAt`;
+    clear the mirrored profile on sign-out.
+  - **Media**: circular avatar crop via `react-native-image-crop-picker` (ADR-0003),
+    real frosted-glass blur via `@react-native-community/blur` (ADR-0004).
+  - **Account snapshot**: Profile page now shows SERVER-truth phone/email + **member since**
+    (account created) and **last login** (last active), via a new read-only backend
+    `GET /auth/account`, mirrored offline-first. Graceful if the endpoint isn't deployed yet.
+  - **Ops / connectivity**: point stage `WS_URL` at the realtime-gateway host; **warm the
+    backend on app launch** so a hibernating free-tier service doesn't cause a cold-start
+    timeout on first request.
+
 ## 0.4.0
 
 ### Minor Changes
