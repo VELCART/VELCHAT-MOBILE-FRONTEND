@@ -18,6 +18,7 @@ import {
   getNetworkStatus,
   subscribeNetwork,
   warmBackend,
+  purgeAllLocalChat,
 } from '../infra';
 import { RootNavigator } from '../navigation';
 import { startSync, stopSync } from '../domain/sync';
@@ -66,8 +67,22 @@ export default function App(): React.JSX.Element {
   // its socket/timers/subscriptions and disposes them on unmount (§M7). Offline-first —
   // the UI observes the DB; the engine only converges it over the network.
   useEffect(() => {
-    startSync();
-    return () => stopSync();
+    let disposed = false;
+    // One-time cleanup: drop any legacy dev-seed rows (fake chats/messages that used to be
+    // written on launch) so the inbox shows ONLY real data — and do it BEFORE the sync
+    // engine walks local conversations, so a seeded inbox can't churn 404 backfills.
+    const boot = async (): Promise<void> => {
+      if (!kv.getBoolean(KVKeys.chatPurged)) {
+        await purgeAllLocalChat().catch(() => undefined);
+        kv.set(KVKeys.chatPurged, true);
+      }
+      if (!disposed) startSync();
+    };
+    void boot();
+    return () => {
+      disposed = true;
+      stopSync();
+    };
   }, []);
 
   return (

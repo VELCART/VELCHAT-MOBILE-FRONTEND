@@ -47,6 +47,8 @@ export const KVKeys = {
   // last-resolved signed URL of the server avatar — cached so it shows INSTANTLY (no
   // wait for the media round-trip) across launches, then refreshed in the background
   avatarUrl: 'user.avatarUrl',
+  // one-time flag: legacy dev-seed rows have been purged from the local DB (set once)
+  chatPurged: 'db.chatPurged.v1',
 } as const;
 
 export const kv = {

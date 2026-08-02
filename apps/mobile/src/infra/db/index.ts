@@ -8,16 +8,15 @@
 export { schema } from './schema';
 export {
   observeConversations,
-  seedDevConversations,
   listConversationIds,
   clearUnread,
   upsertConversation,
+  purgeAllLocalChat,
 } from './queries';
 export type { ConversationPatch } from './queries';
 export {
   observeMessages,
   sendMessageLocal,
-  seedDevMessages,
   applyServerMessage,
   applyServerMessages,
   markMessageSent,

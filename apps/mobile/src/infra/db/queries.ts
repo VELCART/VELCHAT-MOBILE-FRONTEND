@@ -1,11 +1,27 @@
 /**
- * Chat-list queries + a dev seed (§L5/§F2). The list observes the conversations table so
- * the UI reacts to DB writes (the sync engine will feed it in MP2). Until sync lands, a
- * one-shot dev seed makes the list non-empty on a fresh install.
+ * Chat-list queries (§L5/§F2). The list observes the conversations table so the UI reacts
+ * to DB writes — real conversations arrive from `startDm`, inbound messages, and the inbox
+ * backfill. No dev seed: the list is always real data (empty until the first real chat).
  */
 import { Q } from '@nozbe/watermelondb';
 import { getDatabase } from './database';
 import { Conversation } from './models';
+
+/**
+ * One-time local-chat wipe: removes any previously-seeded fake conversations + messages from
+ * the local DB so the list shows ONLY real data (the dev seed used to run on every launch;
+ * its rows persist in the DB after we stop seeding). Safe — real conversations are
+ * re-discoverable (inbox endpoint) + re-creatable (startDm), and the outbox is a bounded
+ * work queue. Guarded by a KV flag at the call site so it runs at most once per install.
+ */
+export async function purgeAllLocalChat(): Promise<void> {
+  const db = getDatabase();
+  await db.write(async () => {
+    await db.get('messages').query().destroyAllPermanently();
+    await db.get('conversations').query().destroyAllPermanently();
+    await db.get('outbox').query().destroyAllPermanently();
+  });
+}
 
 /**
  * Observe the chat list: non-archived, pinned first, then most-recent (§F2).
@@ -131,67 +147,4 @@ export async function clearUnread(conversationId: string): Promise<void> {
       c.unreadCount = 0;
     });
   });
-}
-
-const SEED = [
-  {
-    name: 'Aarav Sharma',
-    preview: 'See you at 6? 🎉',
-    unread: 2,
-    pinned: true,
-  },
-  {
-    name: 'Design Team',
-    preview: 'Riya: pushed the new mockups',
-    unread: 5,
-    pinned: true,
-  },
-  { name: 'Meera', preview: 'Thank you so much! 🙏', unread: 0, pinned: false },
-  { name: 'Kabir', preview: 'Voice message', unread: 0, pinned: false },
-  {
-    name: 'Family ❤️',
-    preview: 'Mom: Dinner is ready',
-    unread: 1,
-    pinned: false,
-  },
-  { name: 'Ishaan', preview: 'Sent a photo', unread: 0, pinned: false },
-];
-
-let seedOnce: Promise<void> | null = null;
-
-async function doSeed(): Promise<void> {
-  const db = getDatabase();
-  const col = db.get<Conversation>('conversations');
-  if ((await col.query().fetchCount()) > 0) return;
-  const now = Date.now();
-  await db.write(async () => {
-    await db.batch(
-      SEED.map((s, i) =>
-        col.prepareCreate(c => {
-          c.type = 'dm';
-          c.name = s.name;
-          c.isAnnouncement = false;
-          c.isPinned = s.pinned;
-          c.isArchived = false;
-          c.isLocked = false;
-          c.lastMessagePreview = s.preview;
-          c.lastMessageAt = now - i * 3_600_000;
-          c.unreadCount = s.unread;
-          c.mentionCount = 0;
-          c.notifLevel = 'all';
-          c.createdAt = now;
-          c.updatedAt = now;
-        }),
-      ),
-    );
-  });
-}
-
-/** Insert a few sample conversations once (DEV ONLY). Serialised so concurrent effect
- * calls (React StrictMode double-invoke) can't both read count 0 and double-insert.
- * Hard `__DEV__` gate so a release build never writes fake chats into the real DB. */
-export function seedDevConversations(): Promise<void> {
-  if (!__DEV__) return Promise.resolve();
-  if (!seedOnce) seedOnce = doSeed();
-  return seedOnce;
 }
