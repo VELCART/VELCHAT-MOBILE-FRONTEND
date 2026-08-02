@@ -6,13 +6,18 @@
  * directory — the raw address book NEVER leaves the device in plaintext.
  *
  * Graceful degradation: the JS package can be installed before the native module is linked
- * into the running binary (i.e. before the next `pnpm android`). We DON'T import the native
- * module at load time — {@link readDeviceContacts} calls it lazily and surfaces a typed
+ * into the running binary (i.e. before the next `pnpm android`). Importing the JS is safe even
+ * then — the library resolves its native handle via `TurboModuleRegistry.get` (returns null,
+ * doesn't throw), so a method call is what fails; we catch that and surface a typed
  * "unavailable" so the UI can ask the user to update, instead of crashing the screen.
  *
  * PRIVACY: never log a name, number, or thumbnail — only counts.
  */
 import { Platform, PermissionsAndroid } from 'react-native';
+// Default import (the library exports `export default { getAll, ... }`) — the interop unwraps
+// it correctly. A namespace import would land on `.default` and every method would be undefined.
+import Contacts from 'react-native-contacts';
+import type { Contact as RNContact } from 'react-native-contacts';
 
 /** A minimal, UI-facing contact: only what the picker + discovery need. */
 export interface DeviceContact {
@@ -28,15 +33,6 @@ export interface DeviceContact {
 
 /** Outcome of asking for contacts access. `unavailable` = native module not in this build. */
 export type ContactsAccess = 'granted' | 'denied' | 'blocked' | 'unavailable';
-
-/** Lazily require the native module so an un-linked build fails at CALL time, not import. */
-function loadContactsModule(): typeof import('react-native-contacts') | null {
-  try {
-    return require('react-native-contacts');
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Ask for contacts permission (contextually — never on launch). Android uses the runtime
@@ -56,10 +52,8 @@ export async function ensureContactsPermission(): Promise<ContactsAccess> {
       return 'unavailable';
     }
   }
-  const mod = loadContactsModule();
-  if (!mod) return 'unavailable';
   try {
-    const res = await mod.requestPermission();
+    const res = await Contacts.requestPermission();
     return res === 'authorized' || res === 'limited' ? 'granted' : 'denied';
   } catch {
     return 'unavailable';
@@ -83,10 +77,8 @@ export async function checkContactsPermission(): Promise<ContactsAccess> {
       return 'unavailable';
     }
   }
-  const mod = loadContactsModule();
-  if (!mod) return 'unavailable';
   try {
-    const res = await mod.checkPermission();
+    const res = await Contacts.checkPermission();
     return res === 'authorized' || res === 'limited' ? 'granted' : 'denied';
   } catch {
     return 'unavailable';
@@ -94,7 +86,7 @@ export async function checkContactsPermission(): Promise<ContactsAccess> {
 }
 
 /** Prefer a real display name; fall back through the name parts, then company, then number. */
-function pickName(c: import('react-native-contacts').Contact): string {
+function pickName(c: RNContact): string {
   if (c.displayName && c.displayName.trim()) return c.displayName.trim();
   const full = [c.givenName, c.middleName, c.familyName]
     .filter((p): p is string => Boolean(p && p.trim()))
@@ -111,9 +103,7 @@ function pickName(c: import('react-native-contacts').Contact): string {
  * build (caught by the caller → `unavailable`). Requires permission to have been granted.
  */
 export async function readDeviceContacts(): Promise<DeviceContact[]> {
-  const mod = loadContactsModule();
-  if (!mod) throw new Error('contacts-native-unavailable');
-  const all = await mod.getAll();
+  const all = await Contacts.getAll();
   const out: DeviceContact[] = [];
   for (const c of all) {
     const phones = c.phoneNumbers
