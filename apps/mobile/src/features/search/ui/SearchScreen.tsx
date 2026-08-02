@@ -20,7 +20,6 @@ import {
   Text,
   SearchIcon,
   SparkleIcon,
-  SlidersIcon,
   ChevronRightIcon,
   ChatIcon,
   ImageIcon,
@@ -209,8 +208,11 @@ function Highlight({
             key={i}
             variant={variant}
             style={{
+              // Monochrome theme: brandFrom == textPrimary, so the emphasis MUST come
+              // from weight — the Bold face reads clearly heavier than a SemiBold title
+              // or a Medium subtitle (colour alone would be invisible on titles).
               color: t.colors.brandFrom,
-              fontFamily: t.typography.label.fontFamily,
+              fontFamily: t.typography.title.fontFamily,
             }}
           >
             {p}
@@ -472,7 +474,8 @@ export function SearchScreen(): React.JSX.Element {
     });
   }, [query, filterIdx]);
 
-  const showRecent = query.trim() === '' && filterIdx === 0;
+  const browsing = query.trim() === '';
+  const showRecent = browsing && filterIdx === 0;
 
   return (
     <View
@@ -515,7 +518,7 @@ export function SearchScreen(): React.JSX.Element {
         </Pressable>
         <View style={{ flexDirection: 'row', alignItems: 'baseline', flex: 1 }}>
           <Text variant="title" style={{ fontSize: 20 }}>
-            Search{' '}
+            {tr('search.title')}{' '}
           </Text>
           <Text variant="title" style={{ fontSize: 20 }}>
             Vel
@@ -527,20 +530,9 @@ export function SearchScreen(): React.JSX.Element {
             Chat
           </Text>
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={tr('search.filters.all')}
-          hitSlop={10}
-          style={({ pressed }) => ({
-            width: 40,
-            height: 40,
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: pressed ? 0.6 : 1,
-          })}
-        >
-          <SlidersIcon size={22} color={t.colors.textPrimary} strokeWidth={2} />
-        </Pressable>
+        {/* A right-side spacer so the wordmark stays optically centred against the
+            back button (no dead "filters" control — the chip row IS the filter UI). */}
+        <View style={{ width: 40 }} />
       </View>
 
       {/* Search field */}
@@ -611,6 +603,9 @@ export function SearchScreen(): React.JSX.Element {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        // The input auto-focuses (keyboard up on entry) → without this the first tap on
+        // a chip is eaten to dismiss the keyboard and the filter wouldn't change.
+        keyboardShouldPersistTaps="handled"
         contentContainerStyle={{
           paddingHorizontal: t.spacing.lg,
           gap: t.spacing.xs,
@@ -639,25 +634,29 @@ export function SearchScreen(): React.JSX.Element {
           paddingBottom: insets.bottom + t.spacing.xl,
         }}
       >
-        {/* Frequent people */}
-        <View style={{ marginTop: t.spacing.xs, marginBottom: t.spacing.sm }}>
-          <Text
-            variant="caption"
-            color="tertiary"
-            style={{ marginBottom: t.spacing.xs }}
-          >
-            {tr('search.frequent')}
-          </Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: t.spacing.sm }}
-          >
-            {FREQUENT.map(name => (
-              <FrequentAvatar key={name} name={name} />
-            ))}
-          </ScrollView>
-        </View>
+        {/* Frequent people — only in the browse state; hidden once you start typing so
+            an active search shows results alone (standard search behaviour). */}
+        {browsing ? (
+          <View style={{ marginTop: t.spacing.xs, marginBottom: t.spacing.sm }}>
+            <Text
+              variant="caption"
+              color="tertiary"
+              style={{ marginBottom: t.spacing.xs }}
+            >
+              {tr('search.frequent')}
+            </Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={{ gap: t.spacing.sm }}
+            >
+              {FREQUENT.map(name => (
+                <FrequentAvatar key={name} name={name} />
+              ))}
+            </ScrollView>
+          </View>
+        ) : null}
 
         {/* Results / empty */}
         {showRecent ? (
