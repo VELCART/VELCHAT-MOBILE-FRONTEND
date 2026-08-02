@@ -42,6 +42,80 @@ export async function listConversationIds(): Promise<string[]> {
 }
 
 /**
+ * A partial conversation row to create-or-update (§M0 — the local DB IS the inbox, since the
+ * backend has no list-all-conversations endpoint). Only defined fields are written.
+ */
+export interface ConversationPatch {
+  type?: string;
+  name?: string;
+  avatarMediaId?: string;
+  lastMessagePreview?: string;
+  lastMessageAt?: number;
+}
+
+/**
+ * Create-or-update a conversation row keyed by the SERVER conversationId (§M0). Used by
+ * `startDm` (user starts a DM) and, indirectly, wherever a conversation must appear in the
+ * local inbox. Idempotent: a second call with the same id updates in place. Serialised via
+ * the WatermelonDB writer (one writer at a time), so concurrent upserts for the same id can't
+ * both create — the second sees the first's row. The row `id` is set to `conversationId` so
+ * `find(conversationId)` (preview bumps, unread clear, receipts) resolves it.
+ */
+export async function upsertConversation(
+  conversationId: string,
+  patch: ConversationPatch,
+): Promise<void> {
+  const db = getDatabase();
+  const col = db.get<Conversation>('conversations');
+  const now = Date.now();
+  await db.write(async () => {
+    const existing = await col.find(conversationId).catch(() => null);
+    if (existing) {
+      await existing.update(c => {
+        if (patch.type !== undefined) c.type = patch.type;
+        if (patch.name !== undefined) c.name = patch.name;
+        if (patch.avatarMediaId !== undefined) {
+          c.avatarMediaId = patch.avatarMediaId;
+        }
+        if (patch.lastMessagePreview !== undefined) {
+          c.lastMessagePreview = patch.lastMessagePreview;
+        }
+        // Never move the sort key backwards (a stale patch mustn't reorder the list).
+        if (
+          patch.lastMessageAt !== undefined &&
+          patch.lastMessageAt >= (c.lastMessageAt ?? 0)
+        ) {
+          c.lastMessageAt = patch.lastMessageAt;
+        }
+        c.updatedAt = now;
+      });
+      return;
+    }
+    await col.create(c => {
+      c._raw.id = conversationId;
+      c.type = patch.type ?? 'dm';
+      if (patch.name !== undefined) c.name = patch.name;
+      if (patch.avatarMediaId !== undefined)
+        c.avatarMediaId = patch.avatarMediaId;
+      c.isAnnouncement = false;
+      c.isPinned = false;
+      c.isArchived = false;
+      c.isLocked = false;
+      if (patch.lastMessagePreview !== undefined) {
+        c.lastMessagePreview = patch.lastMessagePreview;
+      }
+      // A freshly-started DM (no messages yet) sorts to the top: default to `now`.
+      c.lastMessageAt = patch.lastMessageAt ?? now;
+      c.unreadCount = 0;
+      c.mentionCount = 0;
+      c.notifLevel = 'all';
+      c.createdAt = now;
+      c.updatedAt = now;
+    });
+  });
+}
+
+/**
  * Clear a conversation's unread badge (§F2) — called when the user opens the chat. A
  * no-op if it's already 0 so an open doesn't churn a needless write/re-emit.
  */

@@ -19,7 +19,6 @@ import { useTranslation } from '../../../i18n';
 import {
   Text,
   SearchIcon,
-  SparkleIcon,
   ChevronRightIcon,
   ChatIcon,
   ImageIcon,
@@ -503,7 +502,7 @@ export function SearchScreen(): React.JSX.Element {
           icon); no separate header row, so the whole control sits in one clean place. */}
       <View
         style={{
-          paddingHorizontal: t.spacing.lg,
+          paddingHorizontal: t.spacing.sm,
           paddingTop: t.spacing.xs,
           paddingBottom: t.spacing.sm,
         }}
@@ -576,7 +575,7 @@ export function SearchScreen(): React.JSX.Element {
               </View>
             </Pressable>
           ) : (
-            <SparkleIcon
+            <SearchIcon
               size={20}
               color={t.colors.brandFrom}
               strokeWidth={1.8}

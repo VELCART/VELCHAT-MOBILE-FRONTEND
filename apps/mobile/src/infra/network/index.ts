@@ -13,6 +13,16 @@ export {
   normalizeServerMessage,
 } from './chat';
 export type { SendMessageInput, SendAck, ServerMessage } from './chat';
+export {
+  createDm,
+  getConversationDetails,
+  getConversationMembers,
+} from './conversations';
+export type {
+  CreateDmResult,
+  ConversationDetails,
+  ConversationType,
+} from './conversationShape';
 export { AppError, isAppError, normalizeError } from './errors';
 export type { AppErrorKind } from './errors';
 export {

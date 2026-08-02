@@ -11,7 +11,9 @@ export {
   seedDevConversations,
   listConversationIds,
   clearUnread,
+  upsertConversation,
 } from './queries';
+export type { ConversationPatch } from './queries';
 export {
   observeMessages,
   sendMessageLocal,

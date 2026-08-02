@@ -27,7 +27,7 @@ import {
 import { AppTabs } from './AppTabs';
 import { SettingsScreen } from './SettingsScreen';
 import { ProfileScreen } from './ProfileScreen';
-import { ChatScreen } from '../features/chat';
+import { ChatScreen, NewChatScreen } from '../features/chat';
 import { SearchScreen } from '../features/search';
 import type { RootStackParamList } from './types';
 
@@ -53,6 +53,7 @@ const linking: LinkingOptions<RootStackParamList> = {
       Settings: 'settings',
       Profile: 'profile',
       Search: 'search',
+      NewChat: 'new-chat',
       Chat: 'chat/:conversationId',
     },
   },
@@ -117,6 +118,11 @@ export function RootNavigator(): React.JSX.Element {
             name="Search"
             component={SearchScreen}
             options={{ animation: 'none' }}
+          />
+          <Stack.Screen
+            name="NewChat"
+            component={NewChatScreen}
+            options={{ animation: 'slide_from_right' }}
           />
           <Stack.Screen
             name="Chat"

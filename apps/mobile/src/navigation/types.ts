@@ -11,6 +11,7 @@ export type RootStackParamList = {
   Settings: undefined;
   Profile: undefined;
   Search: undefined;
+  NewChat: undefined;
   Chat: { conversationId: string; name?: string | undefined };
 };
 

@@ -6,4 +6,6 @@
  */
 export { ChatsList } from './ui/ChatsList';
 export { ChatScreen } from './ui/ChatScreen';
+export { NewChatScreen } from './ui/NewChatScreen';
 export { useConversations } from './hooks/useConversations';
+export { useStartDm } from './hooks/useStartDm';

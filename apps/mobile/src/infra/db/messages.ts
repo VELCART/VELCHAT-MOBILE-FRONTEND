@@ -94,6 +94,8 @@ interface ConvBump {
   at: number;
   seq: number;
   unread: number;
+  /** The other party (first non-own sender) — used to name a stub for an unknown DM. */
+  peerId?: string;
 }
 
 function accumulateBump(
@@ -101,12 +103,15 @@ function accumulateBump(
   s: ServerMessage,
   unread: number,
   now: number,
+  own: boolean,
 ): void {
   const at = s.serverTs ?? now;
   const preview = s.content ?? '';
   const prev = map.get(s.conversationId);
   if (!prev) {
-    map.set(s.conversationId, { preview, at, seq: s.seq, unread });
+    const b: ConvBump = { preview, at, seq: s.seq, unread };
+    if (!own) b.peerId = s.senderId;
+    map.set(s.conversationId, b);
     return;
   }
   if (s.seq >= prev.seq) {
@@ -115,6 +120,7 @@ function accumulateBump(
     prev.seq = s.seq;
   }
   prev.unread += unread;
+  if (!own && prev.peerId === undefined) prev.peerId = s.senderId;
 }
 
 /**
@@ -171,7 +177,7 @@ export async function applyServerMessages(
               m.state = nextState;
           }),
         );
-        accumulateBump(bumps, s, 0, now);
+        accumulateBump(bumps, s, 0, now, true);
       } else {
         ops.push(
           msgs.prepareCreate(m => {
@@ -192,20 +198,44 @@ export async function applyServerMessages(
             if (s.serverTs !== undefined) m.serverTs = s.serverTs;
           }),
         );
-        accumulateBump(bumps, s, own ? 0 : 1, now);
+        accumulateBump(bumps, s, own ? 0 : 1, now, own);
       }
     }
     for (const [convId, b] of bumps) {
       const conv = await convs.find(convId).catch(() => null);
-      if (!conv) continue;
+      if (conv) {
+        ops.push(
+          conv.prepareUpdate(c => {
+            if (b.at >= (c.lastMessageAt ?? 0)) {
+              c.lastMessagePreview = b.preview;
+              c.lastMessageAt = b.at;
+              c.lastMessageSeq = b.seq;
+            }
+            if (b.unread > 0) c.unreadCount = (c.unreadCount ?? 0) + b.unread;
+            c.updatedAt = now;
+          }),
+        );
+        continue;
+      }
+      // §M0: the backend has no inbox endpoint, so an inbound message for a conversation we
+      // don't hold locally is how a NEW DM appears. Create a minimal stub (type 'dm', named
+      // by the peer/sender until a profile resolves) so it shows in the chat list at once.
       ops.push(
-        conv.prepareUpdate(c => {
-          if (b.at >= (c.lastMessageAt ?? 0)) {
-            c.lastMessagePreview = b.preview;
-            c.lastMessageAt = b.at;
-            c.lastMessageSeq = b.seq;
-          }
-          if (b.unread > 0) c.unreadCount = (c.unreadCount ?? 0) + b.unread;
+        convs.prepareCreate(c => {
+          c._raw.id = convId;
+          c.type = 'dm';
+          if (b.peerId !== undefined) c.name = b.peerId;
+          c.isAnnouncement = false;
+          c.isPinned = false;
+          c.isArchived = false;
+          c.isLocked = false;
+          c.lastMessagePreview = b.preview;
+          c.lastMessageAt = b.at;
+          c.lastMessageSeq = b.seq;
+          c.unreadCount = b.unread;
+          c.mentionCount = 0;
+          c.notifLevel = 'all';
+          c.createdAt = now;
           c.updatedAt = now;
         }),
       );

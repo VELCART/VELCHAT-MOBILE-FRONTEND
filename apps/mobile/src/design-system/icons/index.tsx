@@ -39,6 +39,23 @@ export function ChatIcon({
   );
 }
 
+/** Speech bubble with a plus — start a NEW chat (compose FAB). */
+export function ChatPlusIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"
+        {...stroke(color, strokeWidth)}
+      />
+      <Path d="M12 8.4v5M9.5 10.9h5" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
 /** Phone handset — Calls. */
 export function CallIcon({
   size = 24,

@@ -13,6 +13,9 @@ export {
   fetchMessagesAfter,
   normalizeSendAck,
   normalizeServerMessage,
+  createDm,
+  getConversationDetails,
+  getConversationMembers,
   AppError,
   isAppError,
   normalizeError,
@@ -30,6 +33,9 @@ export type {
   SendMessageInput,
   SendAck,
   ServerMessage,
+  CreateDmResult,
+  ConversationDetails,
+  ConversationType,
 } from './network';
 export { storage, kv, KVKeys, useKVString } from './kv';
 export {
@@ -39,6 +45,7 @@ export {
   seedDevConversations,
   listConversationIds,
   clearUnread,
+  upsertConversation,
   observeMessages,
   sendMessageLocal,
   seedDevMessages,
@@ -66,6 +73,7 @@ export type {
   OutboxStats,
   ReconcileAction,
   BackoffOptions,
+  ConversationPatch,
 } from './db';
 export { RealtimeSocket, WS_CODE_DEAD, WS_CODE_UNAUTHORIZED } from './realtime';
 export type { RealtimeSocketCallbacks } from './realtime';

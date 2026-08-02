@@ -13,4 +13,6 @@ export {
   useAvatarUpload,
   useAvatarPicker,
 } from './hooks/useProfile';
+// Directory reads reused cross-slice (e.g. startDm resolves a peer's display name).
+export { getProfile } from './api/userApi';
 export type { Profile } from './api/userApi';
