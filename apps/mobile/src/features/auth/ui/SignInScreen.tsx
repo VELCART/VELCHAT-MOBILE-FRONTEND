@@ -57,7 +57,7 @@ export function SignInScreen(): React.JSX.Element {
         {canGoBack ? (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Go back"
+            accessibilityLabel={tr('profile.back')}
             onPress={() => navigation.goBack()}
             hitSlop={12}
             style={({ pressed }) => ({

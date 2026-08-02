@@ -173,7 +173,7 @@ export function SettingsScreen(): React.JSX.Element {
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Back"
+          accessibilityLabel={tr('profile.back')}
           onPress={() => navigation.goBack()}
           hitSlop={10}
           style={({ pressed }) => ({

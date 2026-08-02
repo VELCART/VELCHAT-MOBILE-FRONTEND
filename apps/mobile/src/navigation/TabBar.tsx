@@ -16,7 +16,7 @@ import {
 import type { MaterialTopTabBarProps } from '@react-navigation/material-top-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
-import { useActiveTab } from '../core';
+import { useActiveTab, type TabName } from '../core';
 import {
   Text,
   ChatIcon,
@@ -140,7 +140,8 @@ export function TabBar({
   const [reduceMotion, setReduceMotion] = useState(false);
 
   // Publish the focused tab so the shared HomeHeader can swap its title + actions.
-  const activeName = state.routes[state.index]?.name ?? 'Chats';
+  // The pager's routes ARE the four home tabs, so the name narrows safely to TabName.
+  const activeName = (state.routes[state.index]?.name ?? 'Chats') as TabName;
   useEffect(() => {
     useActiveTab.getState().setName(activeName);
   }, [activeName]);

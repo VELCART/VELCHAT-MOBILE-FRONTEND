@@ -17,3 +17,4 @@ export {
 export type { FeatureFlags, FeatureFlagKey } from './feature-flags';
 export { useConnectivity, isOffline, isFlightMode } from './connectivity';
 export { useActiveTab } from './activeTab';
+export type { TabName } from './activeTab';
