@@ -28,6 +28,19 @@ export function observeConversations() {
     ]);
 }
 
+/**
+ * All known conversation ids (§L6 reconnect) — the sync engine walks these to send a
+ * per-conversation `sync {cursor}` and pull the `afterSeq` backfill. Non-archived only is
+ * not required here; sync should catch up every conversation we hold locally.
+ */
+export async function listConversationIds(): Promise<string[]> {
+  const rows = await getDatabase()
+    .get<Conversation>('conversations')
+    .query()
+    .fetch();
+  return rows.map(c => c.id);
+}
+
 const SEED = [
   {
     name: 'Aarav Sharma',

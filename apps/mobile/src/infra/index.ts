@@ -9,6 +9,10 @@ export {
   api,
   refreshAccessToken,
   warmBackend,
+  sendChatMessage,
+  fetchMessagesAfter,
+  normalizeSendAck,
+  normalizeServerMessage,
   AppError,
   isAppError,
   normalizeError,
@@ -20,17 +24,47 @@ export {
   setTokens,
   clearSession,
 } from './network';
-export type { AppErrorKind, SessionTokens } from './network';
+export type {
+  AppErrorKind,
+  SessionTokens,
+  SendMessageInput,
+  SendAck,
+  ServerMessage,
+} from './network';
 export { storage, kv, KVKeys, useKVString } from './kv';
 export {
   Conversation,
   Message,
   observeConversations,
   seedDevConversations,
+  listConversationIds,
   observeMessages,
   sendMessageLocal,
   seedDevMessages,
+  applyServerMessage,
+  applyServerMessages,
+  markMessageSent,
+  markMessageFailed,
+  maxSeqForConversation,
+  applyReceipt,
+  enqueueSend,
+  claimNextDue,
+  markAckd,
+  markFailed,
+  outboxStats,
+  reconcileDecision,
+  backoffMs,
+  nextOutboxRetry,
+  MAX_SEND_ATTEMPTS,
 } from './db';
+export type {
+  OutboxItem,
+  OutboxStats,
+  ReconcileAction,
+  BackoffOptions,
+} from './db';
+export { RealtimeSocket, WS_CODE_DEAD, WS_CODE_UNAUTHORIZED } from './realtime';
+export type { RealtimeSocketCallbacks } from './realtime';
 export {
   ensureDeviceKey,
   signChallenge,

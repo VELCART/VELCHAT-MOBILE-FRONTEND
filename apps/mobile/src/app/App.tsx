@@ -20,6 +20,7 @@ import {
   warmBackend,
 } from '../infra';
 import { RootNavigator } from '../navigation';
+import { startSync, stopSync } from '../domain/sync';
 import { useAuthBootstrap } from '../features/auth';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Splash } from './Splash';
@@ -59,6 +60,14 @@ export default function App(): React.JSX.Element {
       .then(s => applyOnline(s.connected))
       .catch(() => undefined);
     return subscribeNetwork(s => applyOnline(s.connected));
+  }, []);
+
+  // MP2 messaging runtime (§L6): the outbox-backed send/receive + reconnect engine. Owns
+  // its socket/timers/subscriptions and disposes them on unmount (§M7). Offline-first —
+  // the UI observes the DB; the engine only converges it over the network.
+  useEffect(() => {
+    startSync();
+    return () => stopSync();
   }, []);
 
   return (

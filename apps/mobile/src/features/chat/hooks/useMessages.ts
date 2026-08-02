@@ -6,11 +6,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   observeMessages,
-  sendMessageLocal,
   seedDevMessages,
   getAccountId,
   Message,
 } from '../../../infra';
+import { syncEngine } from '../../../domain/sync';
 
 export function useMessages(conversationId: string): {
   messages: Message[];
@@ -35,7 +35,9 @@ export function useSendMessage(conversationId: string): (text: string) => void {
   const meId = useMemo(() => getAccountId() ?? 'me', []);
   return useCallback(
     (text: string) => {
-      sendMessageLocal(conversationId, text, meId).catch(() => undefined);
+      // Fire-and-forget: the engine writes the optimistic bubble to the DB (instant UI),
+      // enqueues the durable outbox item, and transmits off the render path (§L6/§L7).
+      void syncEngine.sendText(conversationId, meId, text);
     },
     [conversationId, meId],
   );
