@@ -1,47 +1,133 @@
 /**
- * New-chat screen (§F2, §M0) — start a DM. Lists the user's CONTACTS (user-service); tapping
- * one starts (or resumes) the DM and replaces into the Chat screen. Because the backend has no
- * inbox endpoint, this + inbound messages are the only ways a conversation enters the local
- * list. A DEV-only "start by account id" field makes it testable before contact discovery
- * lands. Own state machine per action: idle → starting → (chat | error). Theme-aware
- * (light + dark via tokens), a11y-labelled via i18n. feature-ui: no infra imports (§M3).
+ * New-chat screen (§F2, §G2) — the WhatsApp model. Reads the phone's own address book,
+ * privately matches it against the VelChat directory (OPRF, off the render path), and splits
+ * contacts into "on VelChat" (tap → start/resume the DM) and "invite". Contextual permission:
+ * an explainer with an Allow button precedes the OS prompt — never a wall of prompts on launch.
+ *
+ * Because the backend has no inbox endpoint, this + inbound messages are the only ways a
+ * conversation enters the local list. A DEV-only "start by account id" field keeps it testable.
+ * Own busy/error state per start action. Theme-aware (light + dark via tokens), a11y-labelled
+ * via i18n. feature-ui: no infra imports (§M3) — device access flows through the hook.
  */
-import React, { useCallback, useState } from 'react';
-import { View, TextInput, Pressable, ActivityIndicator } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import {
+  View,
+  TextInput,
+  Pressable,
+  ActivityIndicator,
+  Image,
+  Share,
+  Linking,
+} from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../../theme';
 import { useTranslation } from '../../../i18n';
-import { Text, ChevronRightIcon, UserIcon } from '../../../design-system';
+import {
+  Text,
+  ChevronRightIcon,
+  SearchIcon,
+  UserIcon,
+} from '../../../design-system';
 import type { RootStackParamList } from '../../../navigation/types';
-import { useContacts, type Contact } from '../../contacts';
+import {
+  useDeviceContacts,
+  type VelchatContact,
+  type InviteContact,
+} from '../../contacts';
 import { useStartDm } from '../hooks/useStartDm';
 
-const AVATAR = 46;
+const AVATAR = 48;
 
-const ContactRow = React.memo(function ContactRow({
-  item,
+// ── row model (one FlashList over section headers + two contact kinds) ──────────
+type Row =
+  | { kind: 'header'; id: string; label: string }
+  | { kind: 'velchat'; id: string; contact: VelchatContact }
+  | { kind: 'invite'; id: string; contact: InviteContact };
+
+/** Circular avatar: photo → initial → glyph. */
+function Avatar({
+  name,
+  thumbnailPath,
+}: {
+  name: string;
+  thumbnailPath?: string | undefined;
+}): React.JSX.Element {
+  const t = useTheme();
+  const initial = name.trim().charAt(0).toUpperCase();
+  return (
+    <View
+      style={{
+        width: AVATAR,
+        height: AVATAR,
+        borderRadius: AVATAR / 2,
+        backgroundColor: t.colors.bgSubtle,
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+      }}
+    >
+      {thumbnailPath ? (
+        <Image
+          source={{ uri: thumbnailPath }}
+          style={{ width: AVATAR, height: AVATAR }}
+          resizeMode="cover"
+        />
+      ) : initial ? (
+        <Text variant="title" style={{ color: t.colors.textSecondary }}>
+          {initial}
+        </Text>
+      ) : (
+        <UserIcon size={22} color={t.colors.textTertiary} strokeWidth={2} />
+      )}
+    </View>
+  );
+}
+
+const SectionHeader = React.memo(function SectionHeader({
+  label,
+}: {
+  label: string;
+}): React.JSX.Element {
+  const t = useTheme();
+  return (
+    <Text
+      variant="caption"
+      style={{
+        paddingHorizontal: t.spacing.lg,
+        paddingTop: t.spacing.md,
+        paddingBottom: t.spacing.xs,
+        color: t.colors.brandFrom,
+        fontSize: 13,
+        letterSpacing: 0.3,
+      }}
+    >
+      {label}
+    </Text>
+  );
+});
+
+const VelchatRow = React.memo(function VelchatRow({
+  contact,
   busy,
   disabled,
   onPress,
 }: {
-  item: Contact;
+  contact: VelchatContact;
   busy: boolean;
   disabled: boolean;
-  onPress: (peerId: string, displayName: string | null) => void;
+  onPress: (accountId: string, name: string) => void;
 }): React.JSX.Element {
   const t = useTheme();
-  const label = item.displayName ?? item.contactUserId;
-  const initial = label.trim().charAt(0).toUpperCase();
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={label}
+      accessibilityLabel={contact.name}
       accessibilityState={{ disabled }}
       disabled={disabled}
-      onPress={() => onPress(item.contactUserId, item.displayName)}
+      onPress={() => onPress(contact.accountId, contact.name)}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
@@ -52,34 +138,14 @@ const ContactRow = React.memo(function ContactRow({
         backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
       })}
     >
-      <View
-        style={{
-          width: AVATAR,
-          height: AVATAR,
-          borderRadius: AVATAR / 2,
-          backgroundColor: t.colors.bgSubtle,
-          alignItems: 'center',
-          justifyContent: 'center',
-          overflow: 'hidden',
-        }}
-      >
-        {initial ? (
-          <Text variant="title" style={{ color: t.colors.textSecondary }}>
-            {initial}
-          </Text>
-        ) : (
-          <UserIcon size={22} color={t.colors.textTertiary} strokeWidth={2} />
-        )}
-      </View>
+      <Avatar name={contact.name} thumbnailPath={contact.thumbnailPath} />
       <View style={{ flex: 1, gap: 2 }}>
         <Text variant="body" numberOfLines={1} style={{ fontSize: 16 }}>
-          {label}
+          {contact.name}
         </Text>
-        {item.displayName ? (
-          <Text variant="caption" color="tertiary" numberOfLines={1}>
-            {item.contactUserId}
-          </Text>
-        ) : null}
+        <Text variant="caption" color="tertiary" numberOfLines={1}>
+          {contact.phoneE164}
+        </Text>
       </View>
       {busy ? (
         <ActivityIndicator size="small" color={t.colors.brandFrom} />
@@ -94,32 +160,149 @@ const ContactRow = React.memo(function ContactRow({
   );
 });
 
+const InviteRow = React.memo(function InviteRow({
+  contact,
+  label,
+  onInvite,
+}: {
+  contact: InviteContact;
+  label: string;
+  onInvite: (contact: InviteContact) => void;
+}): React.JSX.Element {
+  const t = useTheme();
+  return (
+    <View
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: t.spacing.md,
+        paddingHorizontal: t.spacing.lg,
+        paddingVertical: t.spacing.sm,
+      }}
+    >
+      <Avatar name={contact.name} thumbnailPath={contact.thumbnailPath} />
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text variant="body" numberOfLines={1} style={{ fontSize: 16 }}>
+          {contact.name}
+        </Text>
+        <Text variant="caption" color="tertiary" numberOfLines={1}>
+          {contact.phoneE164}
+        </Text>
+      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`${label}: ${contact.name}`}
+        onPress={() => onInvite(contact)}
+        hitSlop={8}
+        style={({ pressed }) => ({
+          paddingHorizontal: t.spacing.md,
+          paddingVertical: 6,
+          borderRadius: t.radius.pill,
+          borderWidth: 1,
+          borderColor: t.colors.brandFrom,
+          opacity: pressed ? 0.6 : 1,
+        })}
+      >
+        <Text
+          variant="label"
+          style={{ color: t.colors.brandFrom, fontSize: 14 }}
+        >
+          {label}
+        </Text>
+      </Pressable>
+    </View>
+  );
+});
+
+/** Full-screen centered message with an optional action button. */
+function StateView({
+  icon,
+  title,
+  body,
+  actionLabel,
+  onAction,
+}: {
+  icon?: React.ReactNode;
+  title: string;
+  body?: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}): React.JSX.Element {
+  const t = useTheme();
+  return (
+    <View
+      style={{
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: t.spacing.xl,
+        gap: t.spacing.sm,
+      }}
+    >
+      {icon}
+      <Text
+        variant="title"
+        align="center"
+        style={{ marginTop: t.spacing.sm, fontSize: 19 }}
+      >
+        {title}
+      </Text>
+      {body ? (
+        <Text variant="body" color="secondary" align="center">
+          {body}
+        </Text>
+      ) : null}
+      {actionLabel && onAction ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={actionLabel}
+          onPress={onAction}
+          style={({ pressed }) => ({
+            marginTop: t.spacing.md,
+            paddingHorizontal: t.spacing.xl,
+            height: 46,
+            borderRadius: t.radius.pill,
+            backgroundColor: t.colors.brandFrom,
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: pressed ? 0.8 : 1,
+          })}
+        >
+          <Text
+            variant="label"
+            style={{ color: t.colors.actionFg, fontSize: 15 }}
+          >
+            {actionLabel}
+          </Text>
+        </Pressable>
+      ) : null}
+    </View>
+  );
+}
+
 export function NewChatScreen(): React.JSX.Element {
   const t = useTheme();
   const { t: tr } = useTranslation();
   const insets = useSafeAreaInsets();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const { contacts, loading, error, reload } = useContacts();
+  const { status, onVelchat, invitable, request, reload } = useDeviceContacts();
   const startDm = useStartDm();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
   const [devId, setDevId] = useState('');
 
   const openChat = useCallback(
-    async (peerId: string, displayName: string | null): Promise<void> => {
-      const peer = peerId.trim();
+    async (accountId: string, name: string): Promise<void> => {
+      const peer = accountId.trim();
       if (!peer || busyId) return;
       setBusyId(peer);
       setStartError(null);
       try {
-        const conversationId = await startDm(peer);
-        navigation.replace('Chat', {
-          conversationId,
-          name: displayName ?? peer,
-        });
+        const conversationId = await startDm(peer, name);
+        navigation.replace('Chat', { conversationId, name });
       } catch {
-        // startDm surfaces network/validation failures — show a friendly, non-technical line.
         setStartError(tr('newChat.error'));
         setBusyId(null);
       }
@@ -127,17 +310,160 @@ export function NewChatScreen(): React.JSX.Element {
     [busyId, navigation, startDm, tr],
   );
 
-  const renderItem = useCallback(
-    ({ item }: { item: Contact }): React.JSX.Element => (
-      <ContactRow
-        item={item}
-        busy={busyId === item.contactUserId}
-        disabled={busyId !== null}
-        onPress={openChat}
-      />
-    ),
-    [busyId, openChat],
+  const onInvite = useCallback(
+    (contact: InviteContact): void => {
+      void Share.share({
+        message: `${tr('newChat.inviteMessage')} ${contact.phoneE164}`.trim(),
+      }).catch(() => undefined);
+    },
+    [tr],
   );
+
+  // Filter + flatten the two sections into one recycled list.
+  const rows = useMemo<Row[]>(() => {
+    const q = query.trim().toLowerCase();
+    const match = (name: string, phone: string): boolean =>
+      q === '' || name.toLowerCase().includes(q) || phone.includes(q);
+    const vel = onVelchat.filter(c => match(c.name, c.phoneE164));
+    const inv = invitable.filter(c => match(c.name, c.phoneE164));
+    const out: Row[] = [];
+    if (vel.length > 0) {
+      out.push({
+        kind: 'header',
+        id: 'h-vel',
+        label: tr('newChat.onVelchatSection'),
+      });
+      for (const c of vel) out.push({ kind: 'velchat', id: c.key, contact: c });
+    }
+    if (inv.length > 0) {
+      out.push({
+        kind: 'header',
+        id: 'h-inv',
+        label: tr('newChat.inviteSection'),
+      });
+      for (const c of inv)
+        out.push({ kind: 'invite', id: `i-${c.key}`, contact: c });
+    }
+    return out;
+  }, [onVelchat, invitable, query, tr]);
+
+  const renderItem = useCallback(
+    ({ item }: { item: Row }): React.JSX.Element | null => {
+      if (item.kind === 'header') return <SectionHeader label={item.label} />;
+      if (item.kind === 'velchat') {
+        return (
+          <VelchatRow
+            contact={item.contact}
+            busy={busyId === item.contact.accountId}
+            disabled={busyId !== null}
+            onPress={openChat}
+          />
+        );
+      }
+      return (
+        <InviteRow
+          contact={item.contact}
+          label={tr('newChat.invite')}
+          onInvite={onInvite}
+        />
+      );
+    },
+    [busyId, openChat, onInvite, tr],
+  );
+
+  const body = ((): React.JSX.Element => {
+    switch (status) {
+      case 'checking':
+      case 'loading':
+        return (
+          <View
+            style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+          >
+            <ActivityIndicator size="small" color={t.colors.brandFrom} />
+            <Text
+              variant="caption"
+              color="tertiary"
+              style={{ marginTop: t.spacing.sm }}
+            >
+              {tr('newChat.searching')}
+            </Text>
+          </View>
+        );
+      case 'needsPermission':
+        return (
+          <StateView
+            icon={
+              <UserIcon
+                size={44}
+                color={t.colors.textTertiary}
+                strokeWidth={1.6}
+              />
+            }
+            title={tr('newChat.allowTitle')}
+            body={tr('newChat.allowBody')}
+            actionLabel={tr('newChat.allowButton')}
+            onAction={request}
+          />
+        );
+      case 'blocked':
+        return (
+          <StateView
+            title={tr('newChat.blockedTitle')}
+            body={tr('newChat.blockedBody')}
+            actionLabel={tr('newChat.openSettings')}
+            onAction={() => void Linking.openSettings().catch(() => undefined)}
+          />
+        );
+      case 'unavailable':
+        return (
+          <StateView
+            title={tr('newChat.unavailableTitle')}
+            body={tr('newChat.unavailableBody')}
+            actionLabel={tr('newChat.retry')}
+            onAction={reload}
+          />
+        );
+      case 'error':
+        return (
+          <StateView
+            title={tr('newChat.contactsError')}
+            actionLabel={tr('newChat.retry')}
+            onAction={reload}
+          />
+        );
+      case 'ready':
+      default:
+        if (rows.length === 0) {
+          return (
+            <StateView
+              icon={
+                <UserIcon
+                  size={44}
+                  color={t.colors.textTertiary}
+                  strokeWidth={1.6}
+                />
+              }
+              title={tr('newChat.noVelchatTitle')}
+              body={tr('newChat.noVelchatSub')}
+            />
+          );
+        }
+        return (
+          <FlashList
+            data={rows}
+            keyExtractor={r => r.id}
+            renderItem={renderItem}
+            getItemType={r => r.kind}
+            contentContainerStyle={{ paddingBottom: t.spacing.xl }}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          />
+        );
+    }
+  })();
+
+  const showSearch =
+    status === 'ready' && (onVelchat.length > 0 || invitable.length > 0);
 
   return (
     <View
@@ -186,73 +512,100 @@ export function NewChatScreen(): React.JSX.Element {
           numberOfLines={1}
           style={{ fontSize: 18, flex: 1 }}
         >
-          {tr('newChat.title')}
+          {tr('newChat.selectContact')}
         </Text>
       </View>
 
-      {/* DEV-only: start a DM by pasting a peer account id (testable before discovery lands). */}
+      {/* Search (only once there's a list to filter). */}
+      {showSearch ? (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: t.spacing.sm,
+            marginHorizontal: t.spacing.lg,
+            marginTop: t.spacing.md,
+            marginBottom: t.spacing.xs,
+            paddingHorizontal: t.spacing.md,
+            height: 42,
+            borderRadius: t.radius.pill,
+            backgroundColor: t.colors.bgSubtle,
+          }}
+        >
+          <SearchIcon size={18} color={t.colors.textTertiary} strokeWidth={2} />
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder={tr('newChat.searchPlaceholder')}
+            placeholderTextColor={t.colors.textTertiary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            accessibilityLabel={tr('newChat.searchPlaceholder')}
+            style={{
+              flex: 1,
+              fontFamily: t.typography.body.fontFamily,
+              fontSize: 15,
+              color: t.colors.textPrimary,
+              padding: 0,
+            }}
+          />
+        </View>
+      ) : null}
+
+      {/* DEV-only: start a DM by pasting a peer account id (testable before a real match). */}
       {__DEV__ ? (
         <View
           style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: t.spacing.sm,
             paddingHorizontal: t.spacing.lg,
-            paddingTop: t.spacing.md,
-            paddingBottom: t.spacing.sm,
-            gap: t.spacing.xs,
+            paddingTop: t.spacing.sm,
+            paddingBottom: t.spacing.xs,
           }}
         >
-          <Text variant="caption" color="tertiary">
-            {tr('newChat.devTitle')}
-          </Text>
-          <View
+          <TextInput
+            value={devId}
+            onChangeText={setDevId}
+            placeholder={tr('newChat.devPlaceholder')}
+            placeholderTextColor={t.colors.textTertiary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            accessibilityLabel={tr('newChat.devPlaceholder')}
             style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: t.spacing.sm,
+              flex: 1,
+              height: 40,
+              borderRadius: t.radius.lg,
+              backgroundColor: t.colors.bgSubtle,
+              paddingHorizontal: t.spacing.md,
+              fontFamily: t.typography.body.fontFamily,
+              fontSize: 14,
+              color: t.colors.textPrimary,
             }}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={tr('newChat.start')}
+            disabled={!devId.trim() || busyId !== null}
+            onPress={() => void openChat(devId, devId.trim())}
+            style={({ pressed }) => ({
+              height: 40,
+              paddingHorizontal: t.spacing.lg,
+              borderRadius: t.radius.pill,
+              backgroundColor: t.colors.brandFrom,
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity:
+                !devId.trim() || busyId !== null ? 0.4 : pressed ? 0.7 : 1,
+            })}
           >
-            <TextInput
-              value={devId}
-              onChangeText={setDevId}
-              placeholder={tr('newChat.devPlaceholder')}
-              placeholderTextColor={t.colors.textTertiary}
-              autoCapitalize="none"
-              autoCorrect={false}
-              accessibilityLabel={tr('newChat.devPlaceholder')}
-              style={{
-                flex: 1,
-                height: 44,
-                borderRadius: t.radius.lg,
-                backgroundColor: t.colors.bgSubtle,
-                paddingHorizontal: t.spacing.md,
-                fontFamily: t.typography.body.fontFamily,
-                fontSize: 15,
-                color: t.colors.textPrimary,
-              }}
-            />
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={tr('newChat.start')}
-              disabled={!devId.trim() || busyId !== null}
-              onPress={() => void openChat(devId, null)}
-              style={({ pressed }) => ({
-                height: 44,
-                paddingHorizontal: t.spacing.lg,
-                borderRadius: t.radius.pill,
-                backgroundColor: t.colors.brandFrom,
-                alignItems: 'center',
-                justifyContent: 'center',
-                opacity:
-                  !devId.trim() || busyId !== null ? 0.4 : pressed ? 0.7 : 1,
-              })}
+            <Text
+              variant="label"
+              style={{ color: t.colors.actionFg, fontSize: 14 }}
             >
-              <Text
-                variant="label"
-                style={{ color: t.colors.actionFg, fontSize: 15 }}
-              >
-                {tr('newChat.start')}
-              </Text>
-            </Pressable>
-          </View>
+              {tr('newChat.start')}
+            </Text>
+          </Pressable>
         </View>
       ) : null}
 
@@ -269,82 +622,7 @@ export function NewChatScreen(): React.JSX.Element {
         </View>
       ) : null}
 
-      {/* Contacts */}
-      <View style={{ flex: 1 }}>
-        {loading ? (
-          <View
-            style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
-          >
-            <ActivityIndicator size="small" color={t.colors.brandFrom} />
-            <Text
-              variant="caption"
-              color="tertiary"
-              style={{ marginTop: t.spacing.sm }}
-            >
-              {tr('newChat.loading')}
-            </Text>
-          </View>
-        ) : error ? (
-          <View
-            style={{
-              flex: 1,
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: t.spacing.xl,
-              gap: t.spacing.sm,
-            }}
-          >
-            <Text variant="body" color="secondary" align="center">
-              {tr('newChat.contactsError')}
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={tr('newChat.retry')}
-              onPress={reload}
-              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-            >
-              <Text variant="label" style={{ color: t.colors.brandFrom }}>
-                {tr('newChat.retry')}
-              </Text>
-            </Pressable>
-          </View>
-        ) : contacts.length === 0 ? (
-          <View
-            style={{
-              flex: 1,
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: t.spacing.xl,
-              gap: t.spacing.xs,
-            }}
-          >
-            <UserIcon
-              size={40}
-              color={t.colors.textTertiary}
-              strokeWidth={1.6}
-            />
-            <Text
-              variant="label"
-              align="center"
-              style={{ marginTop: t.spacing.sm }}
-            >
-              {tr('newChat.empty')}
-            </Text>
-            <Text variant="caption" color="secondary" align="center">
-              {tr('newChat.emptySub')}
-            </Text>
-          </View>
-        ) : (
-          <FlashList
-            data={contacts}
-            keyExtractor={c => c.contactUserId}
-            renderItem={renderItem}
-            contentContainerStyle={{ paddingVertical: t.spacing.xs }}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          />
-        )}
-      </View>
+      <View style={{ flex: 1 }}>{body}</View>
     </View>
   );
 }

@@ -26,6 +26,7 @@ export {
   getRefreshToken,
   getDeviceId,
   getAccountId,
+  getPhone,
   hasSession,
   setTokens,
   clearSession,
@@ -126,9 +127,15 @@ export {
   requestMicrophonePermission,
   requestContactsPermission,
   requestBluetoothPermission,
+  ensureContactsPermission,
+  checkContactsPermission,
+  readDeviceContacts,
 } from './native';
 export type {
   BatteryStatus,
   NetworkStatus,
   NotificationPermission,
+  DeviceContact,
+  ContactsAccess,
 } from './native';
+export { toE164, regionFromE164 } from './util';

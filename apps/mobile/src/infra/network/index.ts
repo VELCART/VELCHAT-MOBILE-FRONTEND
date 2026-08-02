@@ -45,6 +45,7 @@ export {
   getRefreshToken,
   getDeviceId,
   getAccountId,
+  getPhone,
   hasSession,
   setTokens,
   clearSession,

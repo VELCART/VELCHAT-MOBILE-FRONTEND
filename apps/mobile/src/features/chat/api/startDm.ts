@@ -12,11 +12,16 @@ import { getProfile } from '../../user';
 
 /**
  * Create-or-resolve a DM with `peerAccountId` and return the (deterministic) conversationId.
- * The peer-name resolution is best-effort and non-fatal: a slow/failed profile read just
- * leaves the row named by the peer id (a later resolution can refine it). Throws if there is
- * no signed-in account or the peer id is blank (the UI surfaces a friendly message).
+ * When `preferredName` is given (the user's own saved contact name, the WhatsApp way) it names
+ * the chat directly — no directory round-trip. Otherwise the peer-name resolution is
+ * best-effort and non-fatal: a slow/failed profile read just leaves the row named by the peer
+ * id (a later resolution can refine it). Throws if there is no signed-in account or the peer id
+ * is blank (the UI surfaces a friendly message).
  */
-export async function startDm(peerAccountId: string): Promise<string> {
+export async function startDm(
+  peerAccountId: string,
+  preferredName?: string,
+): Promise<string> {
   const me = getAccountId();
   if (!me) throw new Error('Not signed in.');
   const peer = peerAccountId.trim();
@@ -24,14 +29,16 @@ export async function startDm(peerAccountId: string): Promise<string> {
 
   const { conversationId } = await createDm(me, peer);
 
-  let name = peer;
-  try {
-    const profile = await getProfile(peer);
-    if (profile.displayName && profile.displayName.trim() !== '') {
-      name = profile.displayName;
+  let name = preferredName?.trim() || peer;
+  if (!preferredName?.trim()) {
+    try {
+      const profile = await getProfile(peer);
+      if (profile.displayName && profile.displayName.trim() !== '') {
+        name = profile.displayName;
+      }
+    } catch {
+      // Best-effort: fall back to the peer id as the conversation name.
     }
-  } catch {
-    // Best-effort: fall back to the peer id as the conversation name.
   }
 
   await upsertConversation(conversationId, { type: 'dm', name });

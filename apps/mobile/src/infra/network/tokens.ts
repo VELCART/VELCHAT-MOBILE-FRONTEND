@@ -38,6 +38,12 @@ export function getTenantId(): string | undefined {
   return kv.getString(KVKeys.tenantId);
 }
 
+/** The signed-in user's own phone number (E.164), captured at sign-in. Used to seed the
+ * region for normalizing local-format contacts and as the caller's discovery input. */
+export function getPhone(): string | undefined {
+  return kv.getString(KVKeys.phone);
+}
+
 export function hasSession(): boolean {
   return Boolean(getAccessToken());
 }
