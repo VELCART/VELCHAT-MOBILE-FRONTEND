@@ -25,6 +25,7 @@ import { RootNavigator } from '../navigation';
 import { startSync, stopSync } from '../domain/sync';
 import { registerSelfForDiscovery } from '../domain';
 import { prewarmContacts } from '../features/contacts';
+import { backfillInbox } from '../features/chat';
 import { useAuthBootstrap } from '../features/auth';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Splash } from './Splash';
@@ -69,6 +70,9 @@ export default function App(): React.JSX.Element {
     // Warm the New-Chat contacts cache in the background so the list is instant when opened —
     // no per-launch wait (best-effort; no-op without permission or a fresh cache).
     if (acc) void prewarmContacts();
+    // Restore the chat list from the server (re-login / reinstall / post-logout wipe) so the
+    // inbox isn't empty — re-discovers conversations + pulls their recent messages (best-effort).
+    if (acc) void backfillInbox();
     // Mirror real network reachability into the connectivity store (offline banner + gating).
     const applyOnline = (connected: boolean): void =>
       useConnectivity.getState().setOnline(connected);

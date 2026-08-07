@@ -38,6 +38,7 @@ import {
   type VelchatContact,
   type InviteContact,
 } from '../../contacts';
+import { useContactAvatar } from '../../user';
 import { useStartDm } from '../hooks/useStartDm';
 
 const AVATAR = 48;
@@ -154,6 +155,7 @@ const VelchatRow = React.memo(function VelchatRow({
   onPress: (accountId: string, name: string) => void;
 }): React.JSX.Element {
   const t = useTheme();
+  const dp = useContactAvatar(contact.accountId);
   return (
     <Pressable
       accessibilityRole="button"
@@ -171,7 +173,7 @@ const VelchatRow = React.memo(function VelchatRow({
         backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
       })}
     >
-      <Avatar name={contact.name} thumbnailPath={contact.thumbnailPath} />
+      <Avatar name={contact.name} thumbnailPath={dp ?? contact.thumbnailPath} />
       <View style={{ flex: 1, gap: 2 }}>
         <Text variant="body" numberOfLines={1} style={{ fontSize: 16 }}>
           {contact.name}
@@ -452,6 +454,7 @@ export function NewChatScreen(): React.JSX.Element {
     request,
     reload,
   } = useDeviceContacts();
+  const selfDp = useContactAvatar(self);
   const startDm = useStartDm();
   const { normalize, lookup } = useNumberSearch();
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -774,9 +777,18 @@ export function NewChatScreen(): React.JSX.Element {
               backgroundColor: t.colors.brandFrom,
               alignItems: 'center',
               justifyContent: 'center',
+              overflow: 'hidden',
             }}
           >
-            <UserIcon size={22} color={t.colors.actionFg} strokeWidth={2.2} />
+            {selfDp ? (
+              <Image
+                source={{ uri: selfDp }}
+                style={{ width: AVATAR, height: AVATAR }}
+                resizeMode="cover"
+              />
+            ) : (
+              <UserIcon size={22} color={t.colors.actionFg} strokeWidth={2.2} />
+            )}
           </View>
           <Text
             variant="body"

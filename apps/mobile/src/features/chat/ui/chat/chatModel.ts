@@ -85,8 +85,9 @@ export function presenceTimeLabel(
   const cat = dayCategory(ts, now);
   if (cat === 'today') {
     return d.toLocaleTimeString(undefined, {
-      hour: '2-digit',
+      hour: 'numeric',
       minute: '2-digit',
+      hour12: true,
     });
   }
   if (cat === 'yesterday') return yesterdayLabel;

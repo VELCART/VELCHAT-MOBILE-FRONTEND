@@ -5,7 +5,7 @@
  * top safe-area inset is owned by the parent Screen. Call/overflow are no-op stubs for now.
  */
 import React from 'react';
-import { View, Pressable } from 'react-native';
+import { View, Pressable, Image } from 'react-native';
 import { useTheme } from '../../../../theme';
 import { useTranslation } from '../../../../i18n';
 import {
@@ -17,21 +17,24 @@ import {
   UserIcon,
   type IconProps,
 } from '../../../../design-system';
-import { useChatHeaderPresence } from '../../hooks/useChatHeaderPresence';
+import { useContactAvatar } from '../../../user';
+import {
+  useChatHeaderPresence,
+  type PresenceEntry,
+} from '../../hooks/useChatHeaderPresence';
 import { presenceTimeLabel } from './chatModel';
 
 const AVATAR = 40;
 
 /**
  * Resolve the reserved presence-line text + colour: typing WINS (brand), else online / last-seen
- * from presence, else `null` (a blank spacer keeps the header height stable).
+ * from presence, else `null` (a blank spacer keeps the header height stable). Pure.
  */
-function usePresenceLine(conversationId: string): {
-  text: string | null;
-  brand: boolean;
-} {
-  const { t: tr } = useTranslation();
-  const { typing, presence } = useChatHeaderPresence(conversationId);
+function derivePresenceLine(
+  typing: boolean,
+  presence: PresenceEntry | undefined,
+  tr: ReturnType<typeof useTranslation>['t'],
+): { text: string | null; brand: boolean } {
   if (typing) return { text: tr('chat.typing'), brand: true };
   if (presence) {
     if (presence.status !== 'offline')
@@ -92,7 +95,9 @@ export function ChatHeader({
   const { t: tr } = useTranslation();
   const title = name ?? tr('tabs.chats');
   const initial = (name ?? '').trim().charAt(0).toUpperCase();
-  const presenceLine = usePresenceLine(conversationId);
+  const { typing, presence, peerId } = useChatHeaderPresence(conversationId);
+  const dp = useContactAvatar(peerId ?? undefined);
+  const presenceLine = derivePresenceLine(typing, presence, tr);
   return (
     <View
       style={{
@@ -140,7 +145,13 @@ export function ChatHeader({
           overflow: 'hidden',
         }}
       >
-        {initial ? (
+        {dp ? (
+          <Image
+            source={{ uri: dp }}
+            style={{ width: AVATAR, height: AVATAR }}
+            resizeMode="cover"
+          />
+        ) : initial ? (
           <Text variant="label" style={{ color: t.colors.textSecondary }}>
             {initial}
           </Text>

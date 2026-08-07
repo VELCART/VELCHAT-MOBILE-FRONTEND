@@ -33,6 +33,11 @@ export function observeConversations() {
     .get<Conversation>('conversations')
     .query(
       Q.where('is_archived', false),
+      // Only chats that actually have a message (WhatsApp): opening a contact creates the
+      // conversation row but leaves last_message_at = 0, so it stays OUT of the list until the
+      // first message is sent or received (which bumps it). No empty "opened but never
+      // messaged" chats cluttering the inbox.
+      Q.where('last_message_at', Q.gt(0)),
       Q.sortBy('is_pinned', Q.desc),
       Q.sortBy('last_message_at', Q.desc),
     )
@@ -120,8 +125,9 @@ export async function upsertConversation(
       if (patch.lastMessagePreview !== undefined) {
         c.lastMessagePreview = patch.lastMessagePreview;
       }
-      // A freshly-started DM (no messages yet) sorts to the top: default to `now`.
-      c.lastMessageAt = patch.lastMessageAt ?? now;
+      // A conversation with no message yet stays OUT of the inbox list (last_message_at = 0);
+      // the first sent/received message bumps it in. `observeConversations` filters on this.
+      c.lastMessageAt = patch.lastMessageAt ?? 0;
       c.unreadCount = 0;
       c.mentionCount = 0;
       c.notifLevel = 'all';
