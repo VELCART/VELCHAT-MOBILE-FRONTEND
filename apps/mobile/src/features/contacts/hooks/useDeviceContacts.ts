@@ -29,6 +29,7 @@ import {
   type DeviceContact,
 } from '../../../infra';
 import { discoverContacts } from '../../../domain';
+import { bookHash, type ContactInput } from '../model/fingerprint';
 
 /** A contact confirmed on VelChat — tapping it starts (or resumes) the DM. */
 export interface VelchatContact {
@@ -83,7 +84,14 @@ interface Snapshot {
   invitable: InviteContact[];
   discoveryFailed: boolean;
   at: number;
+  /** Hash of the address book at the last discovery — unchanged ⇒ reuse matches (no OPRF). */
+  bookHash?: string;
 }
+
+// Re-run OPRF even when the book is unchanged at most this often, to catch contacts who JOINED
+// VelChat since the last discovery (the live path for that is the server fan-out; this is the
+// slow fallback). A changed book always re-discovers immediately.
+const FORCE_REDISCOVER_MS = 6 * 60 * 60_000;
 
 // In-memory (session) + MMKV (across restarts) cache, keyed by account so switching users never
 // shows the previous account's contacts.
@@ -142,6 +150,27 @@ async function computeContacts(): Promise<Snapshot | null> {
       ],
     }))
     .filter(x => x.e164s.length > 0);
+
+  // Skip the rate-limited OPRF entirely when the address book is byte-identical to the last
+  // discovery AND that was recent — the previous matches are still valid. Only a changed book
+  // (or the 6-h joiner-catch) pays for discovery.
+  const currentHash = bookHash(
+    perContact.map(({ c, e164s }): ContactInput => ({
+      recordId: c.recordId,
+      name: c.name,
+      e164s,
+      thumbnailPath: c.thumbnailPath,
+    })),
+  );
+  const prior = readCache(myAccount);
+  if (
+    prior &&
+    prior.bookHash === currentHash &&
+    !prior.discoveryFailed &&
+    Date.now() - prior.at < FORCE_REDISCOVER_MS
+  ) {
+    return { ...prior, at: Date.now() };
+  }
 
   let matches = new Map<string, string>();
   let failed = false;
@@ -220,6 +249,7 @@ async function computeContacts(): Promise<Snapshot | null> {
     invitable: inv,
     discoveryFailed: failed,
     at: Date.now(),
+    bookHash: currentHash,
   };
 }
 
