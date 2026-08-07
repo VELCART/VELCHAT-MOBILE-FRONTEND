@@ -94,13 +94,10 @@ export function RootNavigator(): React.JSX.Element {
       <NavigationContainer ref={navRef} theme={navTheme} linking={linking}>
         <Stack.Navigator
           initialRouteName={authed ? 'AppTabs' : 'Welcome'}
-          // Snappy everywhere: no-animation is instant; the few slide screens use a short
-          // 200ms duration (vs the ~350ms default) so navigation feels fast + smooth.
-          screenOptions={{
-            headerShown: false,
-            animation: 'none',
-            animationDuration: 200,
-          }}
+          // Instant navigation everywhere (§R4 "fast"): no transition animation — a tap swaps
+          // screens immediately (WhatsApp-fast). Screens render from the local DB/cache, so
+          // there's no blank flash. Auth flow keeps its own feel; the rest is snap-instant.
+          screenOptions={{ headerShown: false, animation: 'none' }}
         >
           <Stack.Screen name="Welcome" component={WelcomeScreen} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} />
@@ -118,7 +115,7 @@ export function RootNavigator(): React.JSX.Element {
           <Stack.Screen
             name="Profile"
             component={ProfileScreen}
-            options={{ animation: 'slide_from_right' }}
+            options={{ animation: 'none' }}
           />
           <Stack.Screen
             name="Search"
@@ -128,12 +125,12 @@ export function RootNavigator(): React.JSX.Element {
           <Stack.Screen
             name="NewChat"
             component={NewChatScreen}
-            options={{ animation: 'slide_from_right' }}
+            options={{ animation: 'none' }}
           />
           <Stack.Screen
             name="Chat"
             component={ChatScreen}
-            options={{ animation: 'slide_from_right' }}
+            options={{ animation: 'none' }}
           />
         </Stack.Navigator>
       </NavigationContainer>

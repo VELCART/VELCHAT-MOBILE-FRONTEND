@@ -12,13 +12,33 @@ import { useTheme } from '../../../theme';
 import { useTranslation } from '../../../i18n';
 import { Text, UserIcon, ChatIcon, ChatPlusIcon } from '../../../design-system';
 import { useTypingUser } from '../../../core';
+import { useContactAvatar } from '../../user';
 import type { RootStackParamList } from '../../../navigation/types';
 import { useConversations } from '../hooks/useConversations';
+import { useConversationPeer } from '../hooks/useConversationPeer';
 
 // The row type flows from the hook — the UI layer never reaches into infra directly.
 type ConversationItem = ReturnType<typeof useConversations>[number];
 
 const AVATAR = 54;
+
+// Cheerful, stable per-name colour so a no-photo avatar is a coloured initial (WhatsApp-style).
+const AVATAR_COLORS = [
+  '#7C3AED',
+  '#DB2777',
+  '#2563EB',
+  '#059669',
+  '#D97706',
+  '#DC2626',
+  '#0891B2',
+  '#9333EA',
+];
+function avatarColor(name: string): string {
+  let h = 0;
+  for (let i = 0; i < name.length; i += 1)
+    h = (h * 31 + name.charCodeAt(i)) >>> 0;
+  return AVATAR_COLORS[h % AVATAR_COLORS.length] ?? '#7C3AED';
+}
 
 /** Compact WhatsApp-style timestamp: HH:MM today, else a short date. */
 function timeLabel(ts?: number): string {
@@ -55,6 +75,9 @@ const Row = React.memo(function Row({
   const unread = item.unreadCount > 0;
   // Typing wins over the last-message preview for this conversation (§C4, ephemeral store).
   const typing = useTypingUser(item.id) !== null;
+  // The other user's VelChat profile photo (DMs only), cached — else a colourful initial.
+  const peer = useConversationPeer(item.type === 'dm' ? item.id : undefined);
+  const dp = useContactAvatar(peer);
   return (
     <Pressable
       accessibilityRole="button"
@@ -74,20 +97,23 @@ const Row = React.memo(function Row({
           width: AVATAR,
           height: AVATAR,
           borderRadius: AVATAR / 2,
-          backgroundColor: t.colors.bgSubtle,
+          backgroundColor:
+            initial && initial !== '?'
+              ? avatarColor(item.name ?? '')
+              : t.colors.bgSubtle,
           alignItems: 'center',
           justifyContent: 'center',
           overflow: 'hidden',
         }}
       >
-        {item.avatarMediaId ? (
+        {dp ? (
           <Image
-            source={{ uri: item.avatarMediaId }}
+            source={{ uri: dp }}
             style={{ width: AVATAR, height: AVATAR }}
             resizeMode="cover"
           />
         ) : initial && initial !== '?' ? (
-          <Text variant="title" style={{ color: t.colors.textSecondary }}>
+          <Text variant="title" style={{ color: '#fff' }}>
             {initial}
           </Text>
         ) : (

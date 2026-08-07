@@ -73,7 +73,9 @@ export interface UseDeviceContacts {
 // Bound the OPRF cost: the blinding math is on the JS thread (worker offload is a documented
 // follow-up in domain/discovery). A few thousand numbers is already generous for a phone book.
 const MAX_DISCOVERY = 2000;
-const CACHE_TTL_MS = 5 * 60_000;
+// Contacts rarely change mid-session, so keep the cache warm for a while — re-opening New Chat
+// serves the cached list and the rate-limited OPRF discovery re-runs at most once per window.
+const CACHE_TTL_MS = 30 * 60_000;
 
 interface Snapshot {
   accountId: string | undefined;
