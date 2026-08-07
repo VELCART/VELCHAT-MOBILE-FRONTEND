@@ -82,6 +82,16 @@
   "newChat": {
     "title": "New chat",
     "selectContact": "Select contact",
+    "contactsCount": "{{count}} contacts",
+    "newGroup": "New group",
+    "newContact": "New contact",
+    "newCommunity": "New community",
+    "menuContactSettings": "Contact settings",
+    "menuInviteFriend": "Invite a friend",
+    "menuContacts": "Contacts",
+    "menuRefresh": "Refresh",
+    "menuHelp": "Help",
+    "searchPlaceholderHeader": "Name, number, @username",
     "messageYourself": "Message yourself",
     "noteToSelf": "Notes, reminders",
     "searchPlaceholder": "Search name or number",
@@ -209,5 +219,26 @@
     "theme": "Theme: {{mode}} · tap to toggle",
     "offline": "You're offline — waiting for network",
     "flightMode": "Flight mode on — you're offline"
+  },
+  "status": {
+    "title": "Status",
+    "addStatus": "Add status",
+    "disappearsHint": "Disappears after 24 hours",
+    "recentUpdates": "Recent updates",
+    "viewedUpdates": "Viewed updates",
+    "hiddenUpdates": "Hidden updates",
+    "channels": "Channels",
+    "channelsSubtitle": "Stay updated on topics that matter to you. Find channels to follow below.",
+    "findChannels": "Find channels to follow",
+    "hideConfirmTitle": "Hide {{name}}'s statuses?",
+    "hideConfirmBody": "New statuses from {{name}} won't appear under recent updates anymore.",
+    "unhideConfirmTitle": "Unhide {{name}}'s statuses?",
+    "unhideConfirmBody": "New statuses from {{name}} will appear under recent updates.",
+    "hide": "Hide",
+    "unhide": "Unhide",
+    "createChannel": "Create channel",
+    "statusPrivacy": "Status privacy",
+    "adPreferences": "Ad preferences",
+    "switchAccount": "Switch account"
   }
 }

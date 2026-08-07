@@ -40,6 +40,7 @@ import {
   useProfileDetails,
   useSaveProfile,
   useAvatarUpload,
+  ProfilePhotoViewerModal,
 } from '../features/user';
 import { useAccountInfo } from '../features/auth';
 import type { RootStackParamList } from './types';
@@ -267,6 +268,7 @@ export function ProfileScreen(): React.JSX.Element {
   // Pull server-truth phone/email/member-since/last-active into the reactive mirror.
   useAccountInfo();
 
+  const [viewerOpen, setViewerOpen] = useState(false);
   const name = summary.displayName ?? '';
   const about = summary.about ?? '';
   const avatarUri = avatar.localUri ?? summary.avatar ?? remoteAvatarUrl;
@@ -336,8 +338,8 @@ export function ProfileScreen(): React.JSX.Element {
           >
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={tr('profile.addPhoto')}
-              onPress={avatar.pick}
+              accessibilityLabel={tr('profile.viewProfile')}
+              onPress={() => setViewerOpen(true)}
               hitSlop={8}
               style={({ pressed }) => ({
                 transform: [{ scale: pressed ? 0.97 : 1 }],
@@ -386,8 +388,12 @@ export function ProfileScreen(): React.JSX.Element {
                   </View>
                 ) : null}
               </View>
-              <View
-                style={{
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={tr('profile.changePhoto')}
+                onPress={avatar.pick}
+                hitSlop={6}
+                style={({ pressed }) => ({
                   position: 'absolute',
                   right: 2,
                   bottom: 2,
@@ -399,14 +405,15 @@ export function ProfileScreen(): React.JSX.Element {
                   justifyContent: 'center',
                   borderWidth: 3,
                   borderColor: t.colors.bgBase,
-                }}
+                  opacity: pressed ? 0.7 : 1,
+                })}
               >
                 <CameraIcon
                   size={18}
                   color={t.colors.actionFg}
                   strokeWidth={2}
                 />
-              </View>
+              </Pressable>
             </Pressable>
 
             <Text
@@ -485,6 +492,15 @@ export function ProfileScreen(): React.JSX.Element {
           <Divider style={{ marginHorizontal: t.spacing.xl }} />
         </FadeInUp>
       </ScrollView>
+
+      <ProfilePhotoViewerModal
+        visible={viewerOpen}
+        onClose={() => setViewerOpen(false)}
+        imageUri={avatarUri ?? undefined}
+        name={name ?? undefined}
+        isSelf
+        onChangePhoto={avatar.pick}
+      />
     </Screen>
   );
 }

@@ -63,5 +63,9 @@ export {
   MicIcon,
   SendIcon,
   ChevronDownIcon,
+  UserPlusIcon,
+  UsersPlusIcon,
+  QrCodeIcon,
+  DialpadIcon,
 } from './icons';
 export type { IconProps } from './icons';

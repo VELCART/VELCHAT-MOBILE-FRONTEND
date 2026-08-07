@@ -1,15 +1,18 @@
 /**
- * New-chat screen (§F2, §G2) — the WhatsApp model. Reads the phone's own address book,
- * privately matches it against the VelChat directory (OPRF, off the render path), and splits
- * contacts into "on VelChat" (tap → start/resume the DM) and "invite". Contextual permission:
- * an explainer with an Allow button precedes the OS prompt — never a wall of prompts on launch.
- *
- * Because the backend has no inbox endpoint, this + inbound messages are the only ways a
- * conversation enters the local list. A DEV-only "start by account id" field keeps it testable.
- * Own busy/error state per start action. Theme-aware (light + dark via tokens), a11y-labelled
- * via i18n. feature-ui: no infra imports (§M3) — device access flows through the hook.
+ * New-chat screen (§F2, §G2) — WhatsApp-parity layout with VelChat brand design.
+ * Reads device contacts, privately matches via OPRF, and displays:
+ * - Header with Contact Count, Animated Search mode toggle, and HeaderMenu dropdown.
+ * - Action rows: New group, New contact (with QR icon), New community.
+ * - Self-chat row ("Message yourself").
+ * - "Contacts on VelChat" and "Invite to VelChat" sections with theme-styled avatars & actions.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   View,
   TextInput,
@@ -18,6 +21,7 @@ import {
   Image,
   Share,
   Linking,
+  Animated,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation } from '@react-navigation/native';
@@ -30,7 +34,17 @@ import {
   ChevronRightIcon,
   SearchIcon,
   UserIcon,
+  MoreIcon,
+  UserPlusIcon,
+  UsersPlusIcon,
+  CommunitiesIcon,
+  QrCodeIcon,
+  DialpadIcon,
 } from '../../../design-system';
+import {
+  HeaderMenu,
+  type HeaderMenuItem,
+} from '../../../navigation/HeaderMenu';
 import type { RootStackParamList } from '../../../navigation/types';
 import {
   useDeviceContacts,
@@ -41,11 +55,17 @@ import {
 import { useContactAvatar } from '../../user';
 import { useStartDm } from '../hooks/useStartDm';
 
-const AVATAR = 48;
+const AVATAR = 44;
 
-// ── row model (one FlashList over section headers + contact kinds) ──────────────
+// ── row model (FlashList over actions, section headers + contact kinds) ──────────
 type Row =
+  | {
+      kind: 'action';
+      id: string;
+      actionKind: 'new_group' | 'new_contact' | 'new_community';
+    }
   | { kind: 'header'; id: string; label: string }
+  | { kind: 'self'; id: string }
   | { kind: 'velchat'; id: string; contact: VelchatContact }
   | { kind: 'invite'; id: string; contact: InviteContact }
   | { kind: 'lookup'; id: string; contact: InviteContact };
@@ -65,13 +85,14 @@ const AVATAR_COLORS = [
 function avatarColor(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i += 1)
+    // eslint-disable-next-line no-bitwise
     h = (h * 31 + name.charCodeAt(i)) >>> 0;
   return AVATAR_COLORS[h % AVATAR_COLORS.length] ?? '#7C3AED';
 }
 
 /**
  * Circular avatar. `plain` (an invite / not-on-VelChat contact) is just a simple person glyph.
- * Otherwise: saved photo → coloured initial → person glyph — a real, colourful avatar.
+ * Otherwise: saved photo → coloured initial → person glyph.
  */
 function Avatar({
   name,
@@ -113,14 +134,163 @@ function Avatar({
   }
   return (
     <View style={{ ...base, backgroundColor: avatarColor(name) }}>
-      <Text variant="title" style={{ color: '#fff' }}>
+      <Text variant="title" style={{ color: '#fff', fontSize: 18 }}>
         {initial}
       </Text>
     </View>
   );
 }
 
-const SectionHeader = React.memo(function SectionHeader({
+const ActionRow = React.memo(function ActionRowView({
+  actionKind,
+  onPress,
+}: {
+  actionKind: 'new_group' | 'new_contact' | 'new_community';
+  onPress?: () => void;
+}): React.JSX.Element {
+  const t = useTheme();
+  const { t: tr } = useTranslation();
+
+  const config = {
+    new_group: {
+      label: tr('newChat.newGroup'),
+      icon: (
+        <UsersPlusIcon size={22} color={t.colors.actionFg} strokeWidth={2} />
+      ),
+      showQr: false,
+    },
+    new_contact: {
+      label: tr('newChat.newContact'),
+      icon: (
+        <UserPlusIcon size={22} color={t.colors.actionFg} strokeWidth={2} />
+      ),
+      showQr: true,
+    },
+    new_community: {
+      label: tr('newChat.newCommunity'),
+      icon: (
+        <CommunitiesIcon size={22} color={t.colors.actionFg} strokeWidth={2} />
+      ),
+      showQr: false,
+    },
+  }[actionKind];
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={config.label}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: t.spacing.md,
+        paddingHorizontal: t.spacing.lg,
+        paddingVertical: t.spacing.sm,
+        backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
+      })}
+    >
+      <View
+        style={{
+          width: AVATAR,
+          height: AVATAR,
+          borderRadius: AVATAR / 2,
+          backgroundColor: t.colors.brandFrom,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        {config.icon}
+      </View>
+      <Text
+        variant="body"
+        numberOfLines={1}
+        style={{
+          flex: 1,
+          fontSize: 16,
+          fontFamily: t.typography.label.fontFamily,
+          color: t.colors.textPrimary,
+        }}
+      >
+        {config.label}
+      </Text>
+      {config.showQr ? (
+        <QrCodeIcon
+          size={22}
+          color={t.colors.textSecondary}
+          strokeWidth={1.8}
+        />
+      ) : null}
+    </Pressable>
+  );
+});
+
+const SelfRow = React.memo(function SelfRowView({
+  selfId,
+  busy,
+  disabled,
+  onPress,
+}: {
+  selfId: string;
+  busy: boolean;
+  disabled: boolean;
+  onPress: (accountId: string, name: string) => void;
+}): React.JSX.Element {
+  const t = useTheme();
+  const { t: tr } = useTranslation();
+  const selfDp = useContactAvatar(selfId);
+
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={tr('newChat.messageYourself')}
+      disabled={disabled}
+      onPress={() => onPress(selfId, tr('newChat.messageYourself'))}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: t.spacing.md,
+        paddingHorizontal: t.spacing.lg,
+        paddingVertical: t.spacing.sm,
+        backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
+      })}
+    >
+      <View
+        style={{
+          width: AVATAR,
+          height: AVATAR,
+          borderRadius: AVATAR / 2,
+          backgroundColor: t.colors.brandFrom,
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden',
+        }}
+      >
+        {selfDp ? (
+          <Image
+            source={{ uri: selfDp }}
+            style={{ width: AVATAR, height: AVATAR }}
+            resizeMode="cover"
+          />
+        ) : (
+          <UserIcon size={22} color={t.colors.actionFg} strokeWidth={2.2} />
+        )}
+      </View>
+      <View style={{ flex: 1, gap: 2 }}>
+        <Text variant="body" numberOfLines={1} style={{ fontSize: 16 }}>
+          {tr('newChat.messageYourself')}
+        </Text>
+        <Text variant="caption" color="tertiary" numberOfLines={1}>
+          {tr('newChat.noteToSelf')}
+        </Text>
+      </View>
+      {busy ? (
+        <ActivityIndicator size="small" color={t.colors.brandFrom} />
+      ) : null}
+    </Pressable>
+  );
+});
+
+const SectionHeader = React.memo(function SectionHeaderView({
   label,
 }: {
   label: string;
@@ -133,8 +303,9 @@ const SectionHeader = React.memo(function SectionHeader({
         paddingHorizontal: t.spacing.lg,
         paddingTop: t.spacing.md,
         paddingBottom: t.spacing.xs,
-        color: t.colors.brandFrom,
+        color: t.colors.textSecondary,
         fontSize: 13,
+        fontFamily: t.typography.label.fontFamily,
         letterSpacing: 0.3,
       }}
     >
@@ -143,7 +314,7 @@ const SectionHeader = React.memo(function SectionHeader({
   );
 });
 
-const VelchatRow = React.memo(function VelchatRow({
+const VelchatRow = React.memo(function VelchatRowView({
   contact,
   busy,
   disabled,
@@ -195,7 +366,7 @@ const VelchatRow = React.memo(function VelchatRow({
   );
 });
 
-const InviteRow = React.memo(function InviteRow({
+const InviteRow = React.memo(function InviteRowView({
   contact,
   label,
   onInvite,
@@ -230,17 +401,18 @@ const InviteRow = React.memo(function InviteRow({
         onPress={() => onInvite(contact)}
         hitSlop={8}
         style={({ pressed }) => ({
-          paddingHorizontal: t.spacing.md,
-          paddingVertical: 6,
-          borderRadius: t.radius.pill,
-          borderWidth: 1,
-          borderColor: t.colors.brandFrom,
+          paddingHorizontal: t.spacing.sm,
+          paddingVertical: 4,
           opacity: pressed ? 0.6 : 1,
         })}
       >
         <Text
           variant="label"
-          style={{ color: t.colors.brandFrom, fontSize: 14 }}
+          style={{
+            color: t.colors.success,
+            fontSize: 14,
+            fontFamily: t.typography.label.fontFamily,
+          }}
         >
           {label}
         </Text>
@@ -249,13 +421,7 @@ const InviteRow = React.memo(function InviteRow({
   );
 });
 
-/**
- * Resolve-on-tap row (§G2). Used two ways: for a bare number typed into search ("message a
- * number that isn't saved"), and for a saved contact when membership couldn't be checked up
- * front (backend degraded). Tap → look the number up in the directory: found → open the DM;
- * not found → offer an invite. Owns its own idle/searching/notfound state; resets on change.
- */
-const LookupRow = React.memo(function LookupRow({
+const LookupRow = React.memo(function LookupRowView({
   e164,
   name,
   thumbnailPath,
@@ -289,8 +455,6 @@ const LookupRow = React.memo(function LookupRow({
     }
   }, [state, disabled, lookup, e164, name, onFound]);
 
-  // Title = the contact name if we have one, else the number itself. Subtitle carries the
-  // number (named row) or the search hint (bare number); "Not on VelChat" once a tap misses.
   const title = name ?? e164;
   const subtitle =
     state === 'notfound'
@@ -304,7 +468,9 @@ const LookupRow = React.memo(function LookupRow({
       accessibilityRole="button"
       accessibilityLabel={`${tr('newChat.numberSearchHint')}: ${title}`}
       disabled={state === 'notfound'}
-      onPress={() => void onPress()}
+      onPress={() => {
+        void onPress();
+      }}
       style={({ pressed }) => ({
         flexDirection: 'row',
         alignItems: 'center',
@@ -454,12 +620,42 @@ export function NewChatScreen(): React.JSX.Element {
     request,
     reload,
   } = useDeviceContacts();
-  const selfDp = useContactAvatar(self);
   const startDm = useStartDm();
   const { normalize, lookup } = useNumberSearch();
+
   const [busyId, setBusyId] = useState<string | null>(null);
   const [startError, setStartError] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
+
+  // Smooth, fast animation when opening / closing header search
+  const searchAnim = useRef(new Animated.Value(0)).current;
+
+  const toggleSearch = useCallback(
+    (open: boolean): void => {
+      if (open) {
+        setIsSearching(true);
+        Animated.timing(searchAnim, {
+          toValue: 1,
+          duration: 180,
+          useNativeDriver: true,
+        }).start();
+      } else {
+        Animated.timing(searchAnim, {
+          toValue: 0,
+          duration: 140,
+          useNativeDriver: true,
+        }).start(({ finished }) => {
+          if (finished) {
+            setIsSearching(false);
+            setQuery('');
+          }
+        });
+      }
+    },
+    [searchAnim],
+  );
 
   const openChat = useCallback(
     async (accountId: string, name: string): Promise<void> => {
@@ -486,29 +682,80 @@ export function NewChatScreen(): React.JSX.Element {
     },
     [tr],
   );
+
   const onInvite = useCallback(
     (contact: InviteContact): void => shareInvite(contact.phoneE164),
     [shareInvite],
   );
 
-  // A valid number typed into search that ISN'T already a matched contact → offer to find it
-  // on VelChat (works even with no device contacts / permission — the laptop + "not saved" case).
+  const menuItems: HeaderMenuItem[] = useMemo(
+    () => [
+      {
+        label: tr('newChat.menuContactSettings'),
+        onPress: () => navigation.navigate('Settings'),
+      },
+      {
+        label: tr('newChat.menuInviteFriend'),
+        onPress: () => shareInvite(''),
+      },
+      {
+        label: tr('newChat.menuContacts'),
+        onPress: () => {},
+      },
+      {
+        label: tr('newChat.menuRefresh'),
+        onPress: () => reload(),
+      },
+      {
+        label: tr('newChat.menuHelp'),
+        onPress: () => {},
+      },
+    ],
+    [navigation, reload, shareInvite, tr],
+  );
+
+  const totalContactsCount = useMemo(
+    () => onVelchat.length + invitable.length,
+    [onVelchat.length, invitable.length],
+  );
+
   const matchedNumbers = useMemo(
     () => new Set(onVelchat.map(c => c.phoneE164)),
     [onVelchat],
   );
+
   const candidate = useMemo(() => {
     const c = normalize(query);
     return c && !matchedNumbers.has(c) ? c : null;
   }, [normalize, query, matchedNumbers]);
 
-  // Filter + flatten the sections into one recycled list. When membership couldn't be checked
-  // (discoveryFailed), every contact becomes a "lookup" row that resolves on tap.
   const rows = useMemo<Row[]>(() => {
     const q = query.trim().toLowerCase();
     const match = (name: string, phone: string): boolean =>
       q === '' || name.toLowerCase().includes(q) || phone.includes(q);
+
     const out: Row[] = [];
+
+    // Always add WhatsApp action rows at top when not searching or matching query
+    if (
+      !q ||
+      'new group'.includes(q) ||
+      'new contact'.includes(q) ||
+      'new community'.includes(q)
+    ) {
+      out.push({ kind: 'action', id: 'act-group', actionKind: 'new_group' });
+      out.push({
+        kind: 'action',
+        id: 'act-contact',
+        actionKind: 'new_contact',
+      });
+      out.push({
+        kind: 'action',
+        id: 'act-community',
+        actionKind: 'new_community',
+      });
+    }
+
     if (discoveryFailed) {
       const all = invitable.filter(c => match(c.name, c.phoneE164));
       if (all.length > 0) {
@@ -522,16 +769,24 @@ export function NewChatScreen(): React.JSX.Element {
       }
       return out;
     }
+
     const vel = onVelchat.filter(c => match(c.name, c.phoneE164));
     const inv = invitable.filter(c => match(c.name, c.phoneE164));
-    if (vel.length > 0) {
+
+    if (vel.length > 0 || (self && !q)) {
       out.push({
         kind: 'header',
         id: 'h-vel',
         label: tr('newChat.onVelchatSection'),
       });
-      for (const c of vel) out.push({ kind: 'velchat', id: c.key, contact: c });
+      if (self && !q) {
+        out.push({ kind: 'self', id: `self-${self}` });
+      }
+      for (const c of vel) {
+        out.push({ kind: 'velchat', id: c.key, contact: c });
+      }
     }
+
     if (inv.length > 0) {
       out.push({
         kind: 'header',
@@ -542,18 +797,44 @@ export function NewChatScreen(): React.JSX.Element {
         out.push({ kind: 'invite', id: `i-${c.key}`, contact: c });
     }
     return out;
-  }, [onVelchat, invitable, discoveryFailed, query, tr]);
+  }, [onVelchat, invitable, discoveryFailed, query, self, tr]);
 
   const renderItem = useCallback(
     ({ item }: { item: Row }): React.JSX.Element | null => {
+      if (item.kind === 'action') {
+        return (
+          <ActionRow
+            actionKind={item.actionKind}
+            onPress={() => {
+              if (item.actionKind === 'new_community') {
+                navigation.navigate('AppTabs');
+              }
+            }}
+          />
+        );
+      }
       if (item.kind === 'header') return <SectionHeader label={item.label} />;
+      if (item.kind === 'self') {
+        return (
+          <SelfRow
+            selfId={item.id.replace('self-', '')}
+            busy={busyId === self}
+            disabled={busyId !== null}
+            onPress={(acc, name) => {
+              void openChat(acc, name);
+            }}
+          />
+        );
+      }
       if (item.kind === 'velchat') {
         return (
           <VelchatRow
             contact={item.contact}
             busy={busyId === item.contact.accountId}
             disabled={busyId !== null}
-            onPress={openChat}
+            onPress={(acc, name) => {
+              void openChat(acc, name);
+            }}
           />
         );
       }
@@ -565,7 +846,9 @@ export function NewChatScreen(): React.JSX.Element {
             thumbnailPath={item.contact.thumbnailPath}
             disabled={busyId !== null}
             lookup={lookup}
-            onFound={openChat}
+            onFound={(acc, name) => {
+              void openChat(acc, name);
+            }}
             onInvite={shareInvite}
           />
         );
@@ -578,7 +861,7 @@ export function NewChatScreen(): React.JSX.Element {
         />
       );
     },
-    [busyId, openChat, onInvite, shareInvite, lookup, tr],
+    [busyId, self, openChat, onInvite, shareInvite, lookup, navigation, tr],
   );
 
   const body = ((): React.JSX.Element => {
@@ -636,8 +919,6 @@ export function NewChatScreen(): React.JSX.Element {
       case 'ready':
       default:
         if (rows.length === 0) {
-          // When a number is being searched, the number row above carries the screen — don't
-          // stack a full "no contacts" empty state under it.
           if (candidate) return <View style={{ flex: 1 }} />;
           return (
             <StateView
@@ -675,146 +956,191 @@ export function NewChatScreen(): React.JSX.Element {
         paddingTop: insets.top,
       }}
     >
-      {/* Top bar */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: t.spacing.xs,
-          height: 56,
-          paddingLeft: t.spacing.xs,
-          paddingRight: t.spacing.md,
-          borderBottomWidth: 1,
-          borderBottomColor: t.colors.hairline,
-        }}
-      >
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={tr('profile.back')}
-          onPress={() => navigation.goBack()}
-          hitSlop={10}
-          style={({ pressed }) => ({
-            width: 40,
-            height: 40,
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: pressed ? 0.6 : 1,
-          })}
-        >
-          <View style={{ transform: [{ rotate: '180deg' }] }}>
-            <ChevronRightIcon
-              size={26}
-              color={t.colors.textPrimary}
-              strokeWidth={2.2}
-            />
-          </View>
-        </Pressable>
-        <Text
-          variant="title"
-          numberOfLines={1}
-          style={{ fontSize: 18, flex: 1 }}
-        >
-          {tr('newChat.selectContact')}
-        </Text>
-      </View>
+      {/* Official WhatsApp-Style Header Menu Dropdown */}
+      <HeaderMenu
+        visible={menuVisible}
+        onClose={() => setMenuVisible(false)}
+        items={menuItems}
+      />
 
-      {/* Search by name or number — always available (number search needs no contacts). */}
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: t.spacing.sm,
-          marginHorizontal: t.spacing.lg,
-          marginTop: t.spacing.md,
-          marginBottom: t.spacing.xs,
-          paddingHorizontal: t.spacing.md,
-          height: 42,
-          borderRadius: t.radius.pill,
-          backgroundColor: t.colors.bgSubtle,
-        }}
-      >
-        <SearchIcon size={18} color={t.colors.textTertiary} strokeWidth={2} />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder={tr('newChat.searchPlaceholder')}
-          placeholderTextColor={t.colors.textTertiary}
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="default"
-          accessibilityLabel={tr('newChat.searchPlaceholder')}
+      {/* Top Header / Animated Search Bar */}
+      {isSearching ? (
+        <Animated.View
           style={{
-            flex: 1,
-            fontFamily: t.typography.body.fontFamily,
-            fontSize: 15,
-            color: t.colors.textPrimary,
-            padding: 0,
-          }}
-        />
-      </View>
-
-      {/* Message yourself (WhatsApp-style self-chat) — pinned at the top when not searching. */}
-      {self && query.trim() === '' ? (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={tr('newChat.messageYourself')}
-          disabled={busyId !== null}
-          onPress={() => void openChat(self, tr('newChat.messageYourself'))}
-          style={({ pressed }) => ({
             flexDirection: 'row',
             alignItems: 'center',
-            gap: t.spacing.md,
-            paddingHorizontal: t.spacing.lg,
-            paddingVertical: t.spacing.sm,
-            backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
-          })}
+            gap: t.spacing.xs,
+            height: 56,
+            paddingHorizontal: t.spacing.xs,
+            borderBottomWidth: 1,
+            borderBottomColor: t.colors.hairline,
+            opacity: searchAnim,
+            transform: [
+              {
+                translateX: searchAnim.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [16, 0],
+                }),
+              },
+            ],
+          }}
         >
-          <View
-            style={{
-              width: AVATAR,
-              height: AVATAR,
-              borderRadius: AVATAR / 2,
-              backgroundColor: t.colors.brandFrom,
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={tr('profile.back')}
+            onPress={() => toggleSearch(false)}
+            hitSlop={10}
+            style={({ pressed }) => ({
+              width: 40,
+              height: 40,
               alignItems: 'center',
               justifyContent: 'center',
-              overflow: 'hidden',
-            }}
+              opacity: pressed ? 0.6 : 1,
+            })}
           >
-            {selfDp ? (
-              <Image
-                source={{ uri: selfDp }}
-                style={{ width: AVATAR, height: AVATAR }}
-                resizeMode="cover"
+            <View style={{ transform: [{ rotate: '180deg' }] }}>
+              <ChevronRightIcon
+                size={26}
+                color={t.colors.textPrimary}
+                strokeWidth={2.2}
               />
-            ) : (
-              <UserIcon size={22} color={t.colors.actionFg} strokeWidth={2.2} />
-            )}
-          </View>
-          <Text
-            variant="body"
-            numberOfLines={1}
-            style={{ flex: 1, fontSize: 16 }}
+            </View>
+          </Pressable>
+          <TextInput
+            value={query}
+            onChangeText={setQuery}
+            placeholder={tr('newChat.searchPlaceholderHeader')}
+            placeholderTextColor={t.colors.textTertiary}
+            autoFocus
+            autoCapitalize="none"
+            autoCorrect={false}
+            accessibilityLabel={tr('newChat.searchPlaceholderHeader')}
+            style={{
+              flex: 1,
+              fontFamily: t.typography.body.fontFamily,
+              fontSize: 16,
+              color: t.colors.textPrimary,
+              padding: 0,
+            }}
+          />
+          <Pressable
+            hitSlop={10}
+            style={({ pressed }) => ({
+              width: 40,
+              height: 40,
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: pressed ? 0.6 : 1,
+            })}
           >
-            {tr('newChat.messageYourself')}
-          </Text>
-          {busyId === self ? (
-            <ActivityIndicator size="small" color={t.colors.brandFrom} />
-          ) : null}
-        </Pressable>
-      ) : null}
+            <DialpadIcon size={20} color={t.colors.textSecondary} />
+          </Pressable>
+        </Animated.View>
+      ) : (
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: t.spacing.xs,
+            height: 56,
+            paddingLeft: t.spacing.xs,
+            paddingRight: t.spacing.xs,
+            borderBottomWidth: 1,
+            borderBottomColor: t.colors.hairline,
+          }}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={tr('profile.back')}
+            onPress={() => navigation.goBack()}
+            hitSlop={10}
+            style={({ pressed }) => ({
+              width: 40,
+              height: 40,
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: pressed ? 0.6 : 1,
+            })}
+          >
+            <View style={{ transform: [{ rotate: '180deg' }] }}>
+              <ChevronRightIcon
+                size={26}
+                color={t.colors.textPrimary}
+                strokeWidth={2.2}
+              />
+            </View>
+          </Pressable>
 
-      {/* "Message a number that isn't saved" — a valid E.164 that isn't already a match. */}
+          <View style={{ flex: 1, justifyContent: 'center' }}>
+            <Text
+              variant="title"
+              numberOfLines={1}
+              style={{ fontSize: 18, lineHeight: 22 }}
+            >
+              {tr('newChat.selectContact')}
+            </Text>
+            <Text
+              variant="caption"
+              color="tertiary"
+              numberOfLines={1}
+              style={{ fontSize: 12 }}
+            >
+              {tr('newChat.contactsCount', { count: totalContactsCount })}
+            </Text>
+          </View>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={tr('newChat.searchPlaceholder')}
+            onPress={() => toggleSearch(true)}
+            hitSlop={10}
+            style={({ pressed }) => ({
+              width: 40,
+              height: 40,
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: pressed ? 0.6 : 1,
+            })}
+          >
+            <SearchIcon
+              size={22}
+              color={t.colors.textPrimary}
+              strokeWidth={2}
+            />
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Menu"
+            onPress={() => setMenuVisible(true)}
+            hitSlop={10}
+            style={({ pressed }) => ({
+              width: 40,
+              height: 40,
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: pressed ? 0.6 : 1,
+            })}
+          >
+            <MoreIcon size={22} color={t.colors.textPrimary} />
+          </Pressable>
+        </View>
+      )}
+
+      {/* Lookup non-contact search hit */}
       {candidate ? (
         <LookupRow
           e164={candidate}
           disabled={busyId !== null}
           lookup={lookup}
-          onFound={openChat}
+          onFound={(acc, name) => {
+            void openChat(acc, name);
+          }}
           onInvite={shareInvite}
         />
       ) : null}
 
-      {/* Degraded: address book read, but membership couldn't be checked — tap resolves it. */}
+      {/* Discovery offline banner */}
       {status === 'ready' && discoveryFailed && rows.length > 0 ? (
         <Text
           variant="caption"

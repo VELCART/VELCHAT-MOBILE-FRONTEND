@@ -373,10 +373,10 @@ export function HomeHeader(): React.JSX.Element {
               flexDirection: 'row',
               alignItems: 'center',
               gap: t.spacing.sm,
-              height: 42,
+              height: 45,
               borderRadius: t.radius.pill,
               backgroundColor: t.colors.bgSubtle,
-              paddingHorizontal: t.spacing.md,
+              paddingHorizontal: t.spacing.sm,
               opacity: pressed ? 0.7 : 1,
             })}
           >

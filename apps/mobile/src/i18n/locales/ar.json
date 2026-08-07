@@ -82,6 +82,16 @@
   "newChat": {
     "title": "محادثة جديدة",
     "selectContact": "اختر جهة اتصال",
+    "contactsCount": "{{count}} جهة اتصال",
+    "newGroup": "مجموعة جديدة",
+    "newContact": "جهة اتصال جديدة",
+    "newCommunity": "مجتمع جديد",
+    "menuContactSettings": "إعدادات جهات الاتصال",
+    "menuInviteFriend": "دعوة صديق",
+    "menuContacts": "جهات الاتصال",
+    "menuRefresh": "تحديث",
+    "menuHelp": "المساعدة",
+    "searchPlaceholderHeader": "الاسم أو الرقم أو @اسم_المستخدم",
     "messageYourself": "راسل نفسك",
     "noteToSelf": "ملاحظات وتذكيرات",
     "searchPlaceholder": "ابحث بالاسم أو الرقم",
@@ -209,5 +219,26 @@
     "theme": "المظهر: {{mode}} · اضغط للتبديل",
     "offline": "أنت غير متصل — بانتظار الشبكة",
     "flightMode": "وضع الطيران مفعّل — أنت غير متصل"
+  },
+  "status": {
+    "title": "الحالة",
+    "addStatus": "إضافة حالة",
+    "disappearsHint": "تختفي بعد 24 ساعة",
+    "recentUpdates": "التحديثات الحديثة",
+    "viewedUpdates": "التحديثات المعروضة",
+    "hiddenUpdates": "التحديثات المخفية",
+    "channels": "القنوات",
+    "channelsSubtitle": "ابقَ على اطلاع بالمواضيع التي تهمك. اعثر على القنوات للمتابعة أدناه.",
+    "findChannels": "البحث عن قنوات لمتابعتها",
+    "hideConfirmTitle": "إخفاء حالات {{name}}؟",
+    "hideConfirmBody": "لن تظهر حالات {{name}} الجديدة تحت التحديثات الحديثة بعد الآن.",
+    "unhideConfirmTitle": "إظهار حالات {{name}}؟",
+    "unhideConfirmBody": "ستظهر حالات {{name}} الجديدة تحت التحديثات الحديثة.",
+    "hide": "إخفاء",
+    "unhide": "إظهار",
+    "createChannel": "إنشاء قناة",
+    "statusPrivacy": "خصوصية الحالة",
+    "adPreferences": "تفضيلات الإعلانات",
+    "switchAccount": "تبديل الحساب"
   }
 }

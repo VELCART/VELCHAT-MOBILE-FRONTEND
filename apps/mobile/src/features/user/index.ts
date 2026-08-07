@@ -5,6 +5,8 @@
  * Dependency rule (§M3): UI → Feature → Domain → Infra. Never the reverse.
  */
 export { ProfileSetupSheet } from './ui/ProfileSetupSheet';
+export { ProfilePhotoViewerModal } from './ui/ProfilePhotoViewerModal';
+export type { ProfilePhotoViewerModalProps } from './ui/ProfilePhotoViewerModal';
 export {
   useProfileGate,
   useProfileSummary,
