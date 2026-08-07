@@ -170,6 +170,7 @@ async function computeContacts(): Promise<Snapshot | null> {
   const vel: VelchatContact[] = [];
   const inv: InviteContact[] = [];
   const usedAccounts = new Set<string>();
+  const usedInvitePhones = new Set<string>();
   for (const { c, e164s } of perContact) {
     let acc: string | undefined;
     let phone: string | undefined;
@@ -198,6 +199,8 @@ async function computeContacts(): Promise<Snapshot | null> {
     } else {
       const first = e164s[0];
       if (!first || first === myPhoneE164) continue;
+      if (usedInvitePhones.has(first)) continue; // same number saved under two names
+      usedInvitePhones.add(first);
       const row: InviteContact = {
         key: c.recordId,
         name: c.name,
