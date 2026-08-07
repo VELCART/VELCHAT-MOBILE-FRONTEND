@@ -47,6 +47,14 @@ export const KVKeys = {
   // last-resolved signed URL of the server avatar — cached so it shows INSTANTLY (no
   // wait for the media round-trip) across launches, then refreshed in the background
   avatarUrl: 'user.avatarUrl',
+  // one-time flag: legacy dev-seed rows have been purged from the local DB (set once)
+  chatPurged: 'db.chatPurged.v1',
+  // accountId this device last registered for contact discovery (opt-in OPRF token) — so we
+  // register once per account, making it findable by contacts without opening New Chat
+  discoverySelfRegistered: 'discovery.selfRegistered',
+  // cached New-Chat contacts snapshot (JSON, per account) — so reopening the app shows the
+  // list instantly instead of re-discovering every launch
+  contactsSnapshot: 'contacts.snapshot.v1',
 } as const;
 
 export const kv = {

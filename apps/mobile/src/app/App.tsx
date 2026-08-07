@@ -18,9 +18,14 @@ import {
   getNetworkStatus,
   subscribeNetwork,
   warmBackend,
+  purgeAllLocalChat,
+  getAccountId,
 } from '../infra';
 import { RootNavigator } from '../navigation';
 import { startSync, stopSync } from '../domain/sync';
+import { registerSelfForDiscovery } from '../domain';
+import { prewarmContacts } from '../features/contacts';
+import { backfillInbox } from '../features/chat';
 import { useAuthBootstrap } from '../features/auth';
 import { ErrorBoundary } from './ErrorBoundary';
 import { Splash } from './Splash';
@@ -53,6 +58,21 @@ export default function App(): React.JSX.Element {
     // Wake the (free-tier, hibernating) backend up front so the login path is warm by
     // the time the user reaches it — no 30-50s cold-start timeout on the first request.
     warmBackend();
+    // Make this account findable by contacts (opt-in OPRF token) — once per account, off the
+    // render path. Discovery is opt-in server-side, so without this an account that never
+    // opens New Chat stays invisible to its contacts. No-op when signed out.
+    const acc = getAccountId();
+    if (acc && kv.getString(KVKeys.discoverySelfRegistered) !== acc) {
+      void registerSelfForDiscovery()
+        .then(() => kv.set(KVKeys.discoverySelfRegistered, acc))
+        .catch(() => undefined);
+    }
+    // Warm the New-Chat contacts cache in the background so the list is instant when opened —
+    // no per-launch wait (best-effort; no-op without permission or a fresh cache).
+    if (acc) void prewarmContacts();
+    // Restore the chat list from the server (re-login / reinstall / post-logout wipe) so the
+    // inbox isn't empty — re-discovers conversations + pulls their recent messages (best-effort).
+    if (acc) void backfillInbox();
     // Mirror real network reachability into the connectivity store (offline banner + gating).
     const applyOnline = (connected: boolean): void =>
       useConnectivity.getState().setOnline(connected);
@@ -66,8 +86,22 @@ export default function App(): React.JSX.Element {
   // its socket/timers/subscriptions and disposes them on unmount (§M7). Offline-first —
   // the UI observes the DB; the engine only converges it over the network.
   useEffect(() => {
-    startSync();
-    return () => stopSync();
+    let disposed = false;
+    // One-time cleanup: drop any legacy dev-seed rows (fake chats/messages that used to be
+    // written on launch) so the inbox shows ONLY real data — and do it BEFORE the sync
+    // engine walks local conversations, so a seeded inbox can't churn 404 backfills.
+    const boot = async (): Promise<void> => {
+      if (!kv.getBoolean(KVKeys.chatPurged)) {
+        await purgeAllLocalChat().catch(() => undefined);
+        kv.set(KVKeys.chatPurged, true);
+      }
+      if (!disposed) startSync();
+    };
+    void boot();
+    return () => {
+      disposed = true;
+      stopSync();
+    };
   }, []);
 
   return (

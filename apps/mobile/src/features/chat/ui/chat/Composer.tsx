@@ -52,10 +52,14 @@ export function Composer({
   value,
   onChangeText,
   onSend,
+  keyboardUp = false,
 }: {
   value: string;
   onChangeText: (text: string) => void;
   onSend: () => void;
+  /** When the keyboard is up, the parent already lifted us by its height — drop the
+   * safe-area bottom pad so the bar sits flush above the keyboard (no gap). */
+  keyboardUp?: boolean;
 }): React.JSX.Element {
   const t = useTheme();
   const { t: tr } = useTranslation();
@@ -74,7 +78,9 @@ export function Composer({
         gap: t.spacing.xs,
         paddingHorizontal: t.spacing.sm,
         paddingTop: t.spacing.xs,
-        paddingBottom: Math.max(insets.bottom, t.spacing.xs),
+        paddingBottom: keyboardUp
+          ? t.spacing.huge
+          : Math.max(insets.bottom, t.spacing.xs),
         backgroundColor: t.colors.surface,
         borderTopWidth: 1,
         borderTopColor: t.colors.hairline,

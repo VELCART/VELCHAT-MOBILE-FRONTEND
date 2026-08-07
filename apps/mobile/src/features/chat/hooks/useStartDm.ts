@@ -7,6 +7,13 @@
 import { useCallback } from 'react';
 import { startDm } from '../api/startDm';
 
-export function useStartDm(): (peerAccountId: string) => Promise<string> {
-  return useCallback((peerAccountId: string) => startDm(peerAccountId), []);
+export function useStartDm(): (
+  peerAccountId: string,
+  preferredName?: string,
+) => Promise<string> {
+  return useCallback(
+    (peerAccountId: string, preferredName?: string) =>
+      startDm(peerAccountId, preferredName),
+    [],
+  );
 }

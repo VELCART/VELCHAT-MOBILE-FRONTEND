@@ -4,12 +4,7 @@
  * once; the MP2 outbox transmits + reconciles later.
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import {
-  observeMessages,
-  seedDevMessages,
-  getAccountId,
-  Message,
-} from '../../../infra';
+import { observeMessages, getAccountId, Message } from '../../../infra';
 import { syncEngine } from '../../../domain/sync';
 
 export function useMessages(conversationId: string): {
@@ -19,7 +14,6 @@ export function useMessages(conversationId: string): {
   const meId = useMemo(() => getAccountId() ?? 'me', []);
   const [messages, setMessages] = useState<Message[]>([]);
   useEffect(() => {
-    seedDevMessages(conversationId, meId).catch(() => undefined);
     // Opening the chat = read it: clear the unread badge locally + tell the server (§F2).
     void syncEngine.markConversationRead(conversationId);
     let sub: { unsubscribe: () => void } | undefined;

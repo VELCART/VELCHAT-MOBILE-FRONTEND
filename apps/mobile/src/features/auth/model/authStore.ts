@@ -10,6 +10,7 @@ import {
   clearSession,
   clearDeviceKey,
   getRefreshToken,
+  purgeAllLocalChat,
   kv,
   KVKeys,
 } from '../../../infra';
@@ -88,6 +89,13 @@ export const useAuthStore = create<AuthStore>(set => ({
     kv.delete(KVKeys.avatarUrl);
     kv.delete(KVKeys.memberSince);
     kv.delete(KVKeys.profileComplete);
+    // Wipe every other-account-specific cache so the NEXT sign-in starts clean and never sees
+    // this account's data: the New-Chat contacts snapshot, the discovery-registered marker, and
+    // — critically — the local chat DB (conversations/messages/outbox), which is NOT keyed by
+    // account and would otherwise carry over verbatim.
+    kv.delete(KVKeys.contactsSnapshot);
+    kv.delete(KVKeys.discoverySelfRegistered);
+    void purgeAllLocalChat().catch(() => undefined);
     set({ state: 'signed_out', accountId: null, sessionId: null, phone: null });
   },
 

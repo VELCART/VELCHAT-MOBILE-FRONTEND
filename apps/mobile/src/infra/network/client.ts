@@ -244,19 +244,34 @@ api.interceptors.response.use(
       return Promise.reject(normalizeError(error));
     }
 
-    // 429 → honor Retry-After once
-    if (status === 429 && config && !config.__retryCount) {
+    // Only replay IDEMPOTENT requests. A non-idempotent POST (OTP send/verify, createDm, OPRF
+    // evaluate/match) must NEVER be auto-retried: the first attempt may have already taken
+    // effect server-side even though the response was slow/lost on a cold start — replaying it
+    // re-triggers the OTP mutex/cooldown or burns a rate-limit quota, surfacing as a spurious
+    // 409/429. This (not the backend) was the "429 because the backend was waking up" cause.
+    const method = (config?.method ?? 'get').toLowerCase();
+    const idempotent =
+      method === 'get' ||
+      method === 'head' ||
+      method === 'options' ||
+      method === 'put' ||
+      method === 'delete';
+
+    // 429 → honor Retry-After once, idempotent requests only (retrying a rate-limited POST
+    // just burns the quota again — surface it so the UI can show the wait/cooldown).
+    if (status === 429 && config && !config.__retryCount && idempotent) {
       config.__retryCount = 1;
       const retryAfter = Number(error.response?.headers['retry-after']);
       await wait(Number.isFinite(retryAfter) ? retryAfter * 1000 : 1000);
       return api.request(config);
     }
 
-    // network / timeout / 5xx → backoff retry
+    // network / timeout / 5xx → backoff retry, idempotent requests only.
     const retryable =
-      !error.response ||
-      error.code === 'ECONNABORTED' ||
-      (status !== undefined && status >= 500);
+      idempotent &&
+      (!error.response ||
+        error.code === 'ECONNABORTED' ||
+        (status !== undefined && status >= 500));
     if (config && retryable) {
       const attempt = (config.__retryCount ?? 0) + 1;
       if (attempt <= MAX_RETRIES) {

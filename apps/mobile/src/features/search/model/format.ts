@@ -10,8 +10,9 @@ export function timeLabel(ts?: number): string {
   const now = new Date();
   if (d.toDateString() === now.toDateString()) {
     return d.toLocaleTimeString(undefined, {
-      hour: '2-digit',
+      hour: 'numeric',
       minute: '2-digit',
+      hour12: true,
     });
   }
   const yesterday = new Date(now);

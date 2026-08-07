@@ -24,8 +24,9 @@ function compactTime(ts: number): string {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
   return d.toLocaleTimeString(undefined, {
-    hour: '2-digit',
+    hour: 'numeric',
     minute: '2-digit',
+    hour12: true,
   });
 }
 

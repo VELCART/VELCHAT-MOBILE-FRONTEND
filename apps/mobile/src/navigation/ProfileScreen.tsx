@@ -54,6 +54,7 @@ function formatLoginTime(iso: string | null, todayLabel: string): string {
   const time = d.toLocaleTimeString(undefined, {
     hour: 'numeric',
     minute: '2-digit',
+    hour12: true,
   });
   if (d.toDateString() === new Date().toDateString()) {
     return `${todayLabel}, ${time}`;

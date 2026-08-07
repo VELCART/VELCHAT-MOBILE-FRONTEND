@@ -94,7 +94,13 @@ export function RootNavigator(): React.JSX.Element {
       <NavigationContainer ref={navRef} theme={navTheme} linking={linking}>
         <Stack.Navigator
           initialRouteName={authed ? 'AppTabs' : 'Welcome'}
-          screenOptions={{ headerShown: false, animation: 'none' }}
+          // Snappy everywhere: no-animation is instant; the few slide screens use a short
+          // 200ms duration (vs the ~350ms default) so navigation feels fast + smooth.
+          screenOptions={{
+            headerShown: false,
+            animation: 'none',
+            animationDuration: 200,
+          }}
         >
           <Stack.Screen name="Welcome" component={WelcomeScreen} />
           <Stack.Screen name="Notifications" component={NotificationsScreen} />

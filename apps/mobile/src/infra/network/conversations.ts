@@ -42,3 +42,42 @@ export async function getConversationMembers(id: string): Promise<string[]> {
   const res = await api.get(`/conversations/${encodeURIComponent(id)}/members`);
   return normalizeMembers(res.data);
 }
+
+/** One conversation from the server inbox (§M0 re-enumerate) — id, type, and the member list
+ * (so a DM can be named by the other member after a reinstall / re-login). */
+export interface InboxConversation {
+  conversationId: string;
+  type: string;
+  name: string | null;
+  memberIds: string[];
+}
+
+/**
+ * The server inbox: every conversation this user belongs to (group-channel `GET
+ * /users/:id/conversations`). Lets a fresh install / re-login re-discover its DMs + groups; the
+ * per-conversation MESSAGE history is then backfilled by the sync engine (afterSeq). Defensive
+ * against casing/shape; a malformed row is dropped, never thrown.
+ */
+export async function fetchInbox(userId: string): Promise<InboxConversation[]> {
+  const res = await api.get(
+    `/users/${encodeURIComponent(userId)}/conversations`,
+  );
+  const rows: unknown[] = Array.isArray(res.data) ? res.data : [];
+  const out: InboxConversation[] = [];
+  for (const raw of rows) {
+    if (!raw || typeof raw !== 'object') continue;
+    const r = raw as Record<string, unknown>;
+    const id = r.conversation_id ?? r.conversationId;
+    if (typeof id !== 'string' || id === '') continue;
+    const members = r.member_ids ?? r.memberIds;
+    out.push({
+      conversationId: id,
+      type: typeof r.type === 'string' ? r.type : 'dm',
+      name: typeof r.name === 'string' && r.name !== '' ? r.name : null,
+      memberIds: Array.isArray(members)
+        ? members.filter((x): x is string => typeof x === 'string')
+        : [],
+    });
+  }
+  return out;
+}

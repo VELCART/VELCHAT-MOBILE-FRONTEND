@@ -20,3 +20,9 @@ export {
   requestContactsPermission,
   requestBluetoothPermission,
 } from './permissions';
+export {
+  ensureContactsPermission,
+  checkContactsPermission,
+  readDeviceContacts,
+} from './deviceContacts';
+export type { DeviceContact, ContactsAccess } from './deviceContacts';

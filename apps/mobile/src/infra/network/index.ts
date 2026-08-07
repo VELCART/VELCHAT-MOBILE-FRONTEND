@@ -17,7 +17,9 @@ export {
   createDm,
   getConversationDetails,
   getConversationMembers,
+  fetchInbox,
 } from './conversations';
+export type { InboxConversation } from './conversations';
 export {
   getPresence,
   subscribePresence,
@@ -45,6 +47,7 @@ export {
   getRefreshToken,
   getDeviceId,
   getAccountId,
+  getPhone,
   hasSession,
   setTokens,
   clearSession,

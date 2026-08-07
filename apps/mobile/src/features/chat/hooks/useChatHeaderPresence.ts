@@ -8,9 +8,12 @@ import { useEffect, useState } from 'react';
 import { syncEngine } from '../../../domain/sync';
 import { usePresence, useTypingUser, type PresenceEntry } from '../../../core';
 
+export type { PresenceEntry };
+
 export function useChatHeaderPresence(conversationId: string): {
   typing: boolean;
   presence: PresenceEntry | undefined;
+  peerId: string | null;
 } {
   const [peerId, setPeerId] = useState<string | null>(null);
   useEffect(() => {
@@ -30,5 +33,5 @@ export function useChatHeaderPresence(conversationId: string): {
 
   const typingUser = useTypingUser(conversationId);
   const presence = usePresence(peerId);
-  return { typing: typingUser !== null, presence };
+  return { typing: typingUser !== null, presence, peerId };
 }

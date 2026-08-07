@@ -6,3 +6,10 @@
  */
 export { useContacts } from './hooks/useContacts';
 export type { Contact } from './api/contactsApi';
+export { useDeviceContacts, prewarmContacts } from './hooks/useDeviceContacts';
+export type {
+  VelchatContact,
+  InviteContact,
+  DeviceContactsStatus,
+} from './hooks/useDeviceContacts';
+export { useNumberSearch } from './hooks/useNumberSearch';
