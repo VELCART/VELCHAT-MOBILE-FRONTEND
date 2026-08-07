@@ -8,9 +8,29 @@ import { normalizeProfile, type Profile } from './profileShape';
 export { normalizeProfile };
 export type { Profile };
 
+// Short-lived profile cache + in-flight dedup. The New-Chat DP fetches + inbox backfill + startDm
+// all resolve the same peer profiles; without this they'd fire many duplicate GET /profile calls
+// (and trip the edge rate limit → 429). Keyed by userId, 5-min TTL, in-memory (session).
+const PROFILE_TTL_MS = 5 * 60_000;
+const profileCache = new Map<string, { at: number; profile: Profile }>();
+const profileInFlight = new Map<string, Promise<Profile>>();
+
 export async function getProfile(userId: string): Promise<Profile> {
-  const res = await api.get(`/users/${userId}/profile`);
-  return normalizeProfile(res.data);
+  const cached = profileCache.get(userId);
+  if (cached && Date.now() - cached.at < PROFILE_TTL_MS) return cached.profile;
+  const inFlight = profileInFlight.get(userId);
+  if (inFlight) return inFlight;
+
+  const p = api
+    .get(`/users/${userId}/profile`)
+    .then(res => {
+      const profile = normalizeProfile(res.data);
+      profileCache.set(userId, { at: Date.now(), profile });
+      return profile;
+    })
+    .finally(() => profileInFlight.delete(userId));
+  profileInFlight.set(userId, p);
+  return p;
 }
 
 export async function updateProfile(
@@ -18,7 +38,9 @@ export async function updateProfile(
   patch: Partial<Profile>,
 ): Promise<Profile> {
   const res = await api.put(`/users/${userId}/profile`, patch);
-  return normalizeProfile(res.data);
+  const profile = normalizeProfile(res.data);
+  profileCache.set(userId, { at: Date.now(), profile }); // keep the cache fresh, don't serve stale
+  return profile;
 }
 
 // ── Media (avatar) upload (§B11): init → single multipart PUT ──
