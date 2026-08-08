@@ -2,40 +2,41 @@
  * Resolve a DM's peer account id (the other member) so the chat list + header can show that
  * user's profile photo. The conversation row stores no peer id, so we look up the member list
  * once and cache it in-module (keyed by conversationId) — subsequent renders/rows are free.
- * No-op for a missing id (pass undefined for groups/self so it never fetches). Best-effort:
- * a failure just leaves the DP as a coloured initial.
+ *
+ * RECYCLE-SAFE: like useContactAvatar, the value is derived from the cache for the CURRENT
+ * conversationId on every render (never held in stale state), so a recycled FlashList row can
+ * never show the previous conversation's peer/photo. A bump forces a re-read after resolve.
+ * No-op for a missing id (pass undefined for groups/self). Best-effort; failure → no peer.
  */
 import { useEffect, useState } from 'react';
 import { getConversationMembers, getAccountId } from '../../../infra';
 
 const peerCache = new Map<string, string>();
+const resolving = new Set<string>(); // in-flight guard (one members fetch per conversation)
 
 export function useConversationPeer(
   conversationId: string | undefined,
 ): string | undefined {
-  const [peer, setPeer] = useState<string | undefined>(() =>
-    conversationId ? peerCache.get(conversationId) : undefined,
-  );
+  const [, bump] = useState(0);
 
   useEffect(() => {
     if (!conversationId) return undefined;
-    const cached = peerCache.get(conversationId);
-    if (cached) {
-      setPeer(cached);
+    if (peerCache.has(conversationId) || resolving.has(conversationId)) {
       return undefined;
     }
     let alive = true;
+    resolving.add(conversationId);
     void (async () => {
       try {
         const members = await getConversationMembers(conversationId);
         const me = getAccountId();
         const other = members.find(m => m !== me) ?? members[0];
-        if (other) {
-          peerCache.set(conversationId, other);
-          if (alive) setPeer(other);
-        }
+        if (other) peerCache.set(conversationId, other);
       } catch {
         // best-effort: no peer → the row shows a coloured initial
+      } finally {
+        resolving.delete(conversationId);
+        if (alive) bump(n => (n + 1) % 1_000_000);
       }
     })();
     return () => {
@@ -43,5 +44,6 @@ export function useConversationPeer(
     };
   }, [conversationId]);
 
-  return peer;
+  // ALWAYS read for the CURRENT conversationId — never stale state from a recycled row.
+  return conversationId ? peerCache.get(conversationId) : undefined;
 }
