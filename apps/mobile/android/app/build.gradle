@@ -58,11 +58,9 @@ react {
     // extraPackagerArgs = []
 
     /* Hermes Commands */
-    //   The hermes compiler command to run. By default it is 'hermesc'
-    // hermesCommand = "$rootDir/my-custom-hermesc/bin/hermesc"
-    //
-    //   The list of flags to pass to the Hermes compiler. By default is "-O", "-output-source-map"
-    // hermesFlags = ["-O", "-output-source-map"]
+    hermesCommand = file("$rootDir/../../../node_modules/.pnpm/hermes-compiler@250829098.0.14/node_modules/hermes-compiler/hermesc/win64-bin/hermesc.exe").exists()
+        ? "$rootDir/../../../node_modules/.pnpm/hermes-compiler@250829098.0.14/node_modules/hermes-compiler/hermesc/win64-bin/hermesc.exe"
+        : "hermesc"
 
     /* Autolinking */
     autolinkLibrariesWithApp()
