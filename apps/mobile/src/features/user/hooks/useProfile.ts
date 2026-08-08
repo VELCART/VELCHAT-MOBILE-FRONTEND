@@ -17,6 +17,7 @@ import {
 import {
   getProfile,
   updateProfile,
+  setAccountEmail,
   initUpload,
   uploadMediaFile,
   getMediaUrl,
@@ -212,10 +213,13 @@ export function useSaveProfile(): {
         // Mirror name/about locally so Settings + Profile render instantly (no fetch).
         if (patch.displayName) kv.set(KVKeys.displayName, patch.displayName);
         if (patch.about !== undefined) kv.set(KVKeys.about, patch.about);
-        // Email isn't a directory field — it's a verified identifier. Keep it locally
-        // for now; server-side attach/verify (magic-link for an existing account) is a
-        // backend follow-up.
-        if (email) kv.set(KVKeys.email, email);
+        // Email is a VERIFIED identifier (auth-service), not a directory field. Persist it
+        // server-side so it survives logout/login (restored via getAccountInfo → no more
+        // re-prompting) and is globally unique — a duplicate throws 409, surfaced below.
+        if (email) {
+          const { email: saved } = await setAccountEmail(email);
+          kv.set(KVKeys.email, saved);
+        }
         return true;
       } catch (e) {
         setError(

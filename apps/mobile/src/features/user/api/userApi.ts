@@ -33,6 +33,18 @@ export async function getProfile(userId: string): Promise<Profile> {
   return p;
 }
 
+/**
+ * Attach/confirm the account's verified email (§B2.1, auth-service). @gmail.com only for now;
+ * the server enforces global uniqueness and throws 409 ("already in use") which the axios layer
+ * surfaces as an AppError. accountId is taken from the token server-side (not sent).
+ */
+export async function setAccountEmail(
+  email: string,
+): Promise<{ email: string }> {
+  const res = await api.post('/auth/email', { email });
+  return res.data as { email: string };
+}
+
 export async function updateProfile(
   userId: string,
   patch: Partial<Profile>,
