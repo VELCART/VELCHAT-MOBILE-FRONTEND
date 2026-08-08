@@ -133,6 +133,8 @@ export {
   ensureContactsPermission,
   checkContactsPermission,
   readDeviceContacts,
+  getAppState,
+  subscribeAppState,
 } from './native';
 export type {
   BatteryStatus,
@@ -140,5 +142,6 @@ export type {
   NotificationPermission,
   DeviceContact,
   ContactsAccess,
+  AppStateStatus,
 } from './native';
 export { toE164, regionFromE164 } from './util';

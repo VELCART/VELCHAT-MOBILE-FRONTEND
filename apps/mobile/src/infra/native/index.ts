@@ -26,3 +26,5 @@ export {
   readDeviceContacts,
 } from './deviceContacts';
 export type { DeviceContact, ContactsAccess } from './deviceContacts';
+export { getAppState, subscribeAppState } from './appState';
+export type { AppStateStatus } from './appState';
