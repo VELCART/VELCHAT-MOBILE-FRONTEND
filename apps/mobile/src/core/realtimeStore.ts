@@ -68,11 +68,27 @@ export function normalizePresenceStatus(raw: string): PresenceStatus {
     : 'offline';
 }
 
+/**
+ * WebSocket lifecycle state machine (§5 addendum). Observable so the UI can show
+ * humanised connection indicators without exposing raw technical errors.
+ */
+export type ConnectionState =
+  | 'disconnected'
+  | 'connecting'
+  | 'connected'
+  | 'syncing'
+  | 'live'
+  | 'reconnecting';
+
 interface RealtimeState {
+  /** WebSocket connection state (§5 addendum). */
+  readonly connectionState: ConnectionState;
   /** conversationId → who is currently typing (auto-expiring). */
   readonly typingByConversation: ReadonlyMap<string, TypingEntry>;
   /** userId → live presence snapshot. */
   readonly presenceByUser: ReadonlyMap<string, PresenceEntry>;
+  /** Writer (domain): set the connection state machine. */
+  setConnectionState: (state: ConnectionState) => void;
   /** Writer (domain): set/refresh a conversation's typing indicator. */
   setTyping: (
     conversationId: string,
@@ -85,13 +101,15 @@ interface RealtimeState {
   setPresence: (userId: string, entry: PresenceEntry) => void;
   /** Writer (domain): drop every typing indicator (e.g. socket dropped — peers no longer trusted). */
   resetTyping: () => void;
-  /** Writer (domain): full dispose (engine stop) — clears typing AND presence. */
+  /** Writer (domain): full dispose (engine stop) — clears typing AND presence AND connection state. */
   reset: () => void;
 }
 
 export const useRealtimeStore = create<RealtimeState>(set => ({
+  connectionState: 'disconnected' as ConnectionState,
   typingByConversation: new Map<string, TypingEntry>(),
   presenceByUser: new Map<string, PresenceEntry>(),
+  setConnectionState: state => set({ connectionState: state }),
   setTyping: (conversationId, userId, expiresAt) =>
     set(s => {
       const next = new Map(s.typingByConversation);
@@ -119,6 +137,7 @@ export const useRealtimeStore = create<RealtimeState>(set => ({
     ),
   reset: () =>
     set({
+      connectionState: 'disconnected' as ConnectionState,
       typingByConversation: new Map<string, TypingEntry>(),
       presenceByUser: new Map<string, PresenceEntry>(),
     }),

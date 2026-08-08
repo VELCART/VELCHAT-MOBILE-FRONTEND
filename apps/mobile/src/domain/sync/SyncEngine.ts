@@ -18,6 +18,7 @@ import {
   normalizePresenceStatus,
   TYPING_TTL_MS,
 } from '../../core';
+import type { ConnectionState } from '../../core';
 import {
   RealtimeSocket,
   WS_CODE_UNAUTHORIZED,
@@ -30,6 +31,7 @@ import {
   normalizePresenceEvent,
   subscribeNetwork,
   getNetworkStatus,
+  subscribeAppState,
   isAppError,
   sendChatMessage,
   fetchMessagesAfter,
@@ -63,6 +65,7 @@ const OUTBOX_MAX_DELAY_MS = 30_000;
 class SyncEngine {
   private socket: RealtimeSocket | null = null;
   private netUnsub: (() => void) | null = null;
+  private appStateUnsub: (() => void) | null = null;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private outboxTimer: ReturnType<typeof setTimeout> | null = null;
   private reconnectAttempts = 0;
@@ -81,6 +84,11 @@ class SyncEngine {
   // The first drain awaits it so it can't claim behind a stuck row.
   private recovery: Promise<unknown> | null = null;
 
+  /** Push the connection state to the observable store (§5 addendum). */
+  private setConnState(s: ConnectionState): void {
+    useRealtimeStore.getState().setConnectionState(s);
+  }
+
   // ── lifecycle ────────────────────────────────────────────────────────────
   start(): void {
     if (this.started) return;
@@ -92,6 +100,11 @@ class SyncEngine {
       log.warn('outbox recovery failed', { reason: String(e) });
     });
     this.netUnsub = subscribeNetwork(s => this.onNetwork(s.connected));
+    // §8 addendum: detect background→foreground transitions. If the socket died silently
+    // while backgrounded (common on iOS), NetInfo doesn't fire — this catches it.
+    this.appStateUnsub = subscribeAppState(s => {
+      if (s === 'active') this.onForeground();
+    });
     // Seed the initial connectivity (the subscription only fires on CHANGES).
     void getNetworkStatus()
       .then(s => this.onNetwork(s.connected))
@@ -104,6 +117,10 @@ class SyncEngine {
     if (this.netUnsub) {
       this.netUnsub();
       this.netUnsub = null;
+    }
+    if (this.appStateUnsub) {
+      this.appStateUnsub();
+      this.appStateUnsub = null;
     }
     this.clearReconnectTimer();
     this.clearOutboxTimer();
@@ -127,12 +144,28 @@ class SyncEngine {
       this.kickOutbox();
     } else if (!connected && was) {
       // Went offline — tear the socket down and pause the outbox (no hammering).
+      this.setConnState('disconnected');
       this.clearReconnectTimer();
       const s = this.socket;
       this.socket = null;
       s?.close();
       this.clearOutboxTimer();
     }
+  }
+
+  /**
+   * §8 addendum: foreground recovery. If the socket died silently while the app was
+   * backgrounded (common on iOS), reconnect and catch up. Single-flight: `connect()`
+   * guards `if (this.socket) return`, so this never creates a duplicate socket.
+   */
+  private onForeground(): void {
+    if (this.stopped || !this.online) return;
+    if (!this.socket || !this.socket.isActive) {
+      log.info('foreground resume: socket dead, reconnecting');
+      this.reconnectAttempts = 0;
+      this.connect();
+    }
+    this.kickOutbox();
   }
 
   // ── socket lifecycle ─────────────────────────────────────────────────────
@@ -143,9 +176,11 @@ class SyncEngine {
     const token = getAccessToken();
     if (!token) return;
     this.clearReconnectTimer();
+    this.setConnState('connecting');
     const socket = new RealtimeSocket({
       onOpen: () => {
         this.reconnectAttempts = 0;
+        this.setConnState('connected');
         log.info('ws open');
       },
       onConnected: () => {
@@ -184,10 +219,16 @@ class SyncEngine {
     if (code === WS_CODE_UNAUTHORIZED) {
       // Missing/invalid account_id/device_id on the socket — don't hammer with a bad token;
       // a future connectivity change or app relaunch re-attempts with a fresh session.
+      this.setConnState('disconnected');
       log.warn('ws unauthorized (4001) — not reconnecting');
       return;
     }
-    if (this.online && hasSession()) this.scheduleReconnect();
+    if (this.online && hasSession()) {
+      this.setConnState('reconnecting');
+      this.scheduleReconnect();
+    } else {
+      this.setConnState('disconnected');
+    }
   }
 
   private onServerReconnect(): void {
@@ -223,6 +264,7 @@ class SyncEngine {
   // ── catch-up (reconnect backfill) ────────────────────────────────────────
   private async resyncAll(): Promise<void> {
     if (this.stopped) return;
+    this.setConnState('syncing');
     let ids: string[] = [];
     try {
       ids = await listConversationIds();
@@ -240,6 +282,7 @@ class SyncEngine {
         log.warn('resync conversation failed', { id, reason: String(e) });
       }
     }
+    if (!this.stopped && this.socket) this.setConnState('live');
   }
 
   // ── inbound frames ───────────────────────────────────────────────────────
@@ -547,6 +590,38 @@ class SyncEngine {
       status: normalizePresenceStatus(ev.status),
       lastSeen: ev.lastSeen,
     });
+  }
+
+  /**
+   * §26 addendum: development-time runtime diagnostics. Exposes a non-sensitive snapshot
+   * of the engine's internal state for debugging. Never exposes tokens, content, or credentials.
+   */
+  getDiagnostics(): {
+    connectionState: ConnectionState;
+    socketActive: boolean;
+    reconnectAttempts: number;
+    online: boolean;
+    started: boolean;
+    stopped: boolean;
+    draining: boolean;
+    outboxTimerActive: boolean;
+    reconnectTimerActive: boolean;
+    activePresencePeers: number;
+    typingTimers: number;
+  } {
+    return {
+      connectionState: useRealtimeStore.getState().connectionState,
+      socketActive: this.socket?.isActive ?? false,
+      reconnectAttempts: this.reconnectAttempts,
+      online: this.online,
+      started: this.started,
+      stopped: this.stopped,
+      draining: this.draining,
+      outboxTimerActive: this.outboxTimer !== null,
+      reconnectTimerActive: this.reconnectTimer !== null,
+      activePresencePeers: this.activePresencePeers.size,
+      typingTimers: this.typingTimers.size,
+    };
   }
 }
 

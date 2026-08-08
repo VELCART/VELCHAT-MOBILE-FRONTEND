@@ -27,6 +27,7 @@ export {
   TYPING_TTL_MS,
 } from './realtimeStore';
 export type {
+  ConnectionState,
   PresenceStatus,
   PresenceEntry,
   TypingEntry,

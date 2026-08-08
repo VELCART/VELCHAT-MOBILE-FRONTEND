@@ -87,6 +87,24 @@ function pickNum(
   return undefined;
 }
 
+/** Like pickNum but also parses ISO 8601 date strings (backend sends `sent_at` as ISO). */
+function pickTimestamp(
+  d: Record<string, unknown>,
+  ...keys: string[]
+): number | undefined {
+  for (const k of keys) {
+    const v = d[k];
+    if (typeof v === 'number' && Number.isFinite(v)) return v;
+    if (typeof v === 'string' && v.length > 0) {
+      const n = Number(v);
+      if (Number.isFinite(n)) return n;
+      const ts = Date.parse(v);
+      if (Number.isFinite(ts)) return ts;
+    }
+  }
+  return undefined;
+}
+
 /** Pull a display string out of a `content` field that may be a string or an object. */
 function pickContent(d: Record<string, unknown>): string | undefined {
   const text = pickStr(d, 'text', 'content_plain', 'contentPlain');
@@ -101,7 +119,13 @@ export function normalizeSendAck(raw: unknown): SendAck {
   const d = rec(raw);
   const messageId = pickStr(d, 'messageId', 'message_id', 'id') ?? '';
   const seq = pickNum(d, 'seq') ?? 0;
-  const serverTs = pickNum(d, 'serverTs', 'server_ts', 'sent_at', 'sentAt');
+  const serverTs = pickTimestamp(
+    d,
+    'serverTs',
+    'server_ts',
+    'sent_at',
+    'sentAt',
+  );
   return {
     messageId,
     seq,
@@ -129,7 +153,13 @@ export function normalizeServerMessage(raw: unknown): ServerMessage | null {
   const clientMsgId = pickStr(d, 'clientMsgId', 'client_msg_id');
   const type = pickStr(d, 'type') ?? 'text';
   const content = pickContent(d);
-  const serverTs = pickNum(d, 'serverTs', 'server_ts', 'sent_at', 'sentAt');
+  const serverTs = pickTimestamp(
+    d,
+    'serverTs',
+    'server_ts',
+    'sent_at',
+    'sentAt',
+  );
   const replyToId = pickStr(
     d,
     'replyToId',

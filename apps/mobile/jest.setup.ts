@@ -64,17 +64,19 @@ jest.mock('react-native-image-crop-picker', () => ({
 // Native BlurView is absent under Jest — stand it in with a plain host component.
 jest.mock('@react-native-community/blur', () => ({ BlurView: 'BlurView' }));
 
-// WatermelonDB's native SQLite adapter is absent under Jest — stub it so importing the
-// database module doesn't crash. Tests don't exercise real DB queries.
-jest.mock('@nozbe/watermelondb/adapters/sqlite', () =>
-  jest
-    .fn()
-    .mockImplementation((opts: { schema?: unknown; migrations?: unknown }) => ({
-      schema: opts?.schema,
-      migrations: opts?.migrations,
-      underlyingAdapter: {},
-    })),
-);
+// WatermelonDB's native SQLite adapter is absent under Jest — use LokiJS in-memory adapter.
+jest.mock('@nozbe/watermelondb/adapters/sqlite', () => {
+  const LokiJSAdapter = require('@nozbe/watermelondb/adapters/lokijs').default;
+  return jest.fn().mockImplementation(
+    (opts: { schema?: unknown; migrations?: unknown }) =>
+      new LokiJSAdapter({
+        schema: opts?.schema,
+        migrations: opts?.migrations,
+        useWebWorker: false,
+        useIncrementalIndexedDB: false,
+      }),
+  );
+});
 
 // FlashList → a plain host component under Jest (native recycler view absent).
 jest.mock('@shopify/flash-list', () => ({ FlashList: 'FlashList' }));
