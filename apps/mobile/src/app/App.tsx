@@ -23,7 +23,6 @@ import {
 } from '../infra';
 import { RootNavigator } from '../navigation';
 import { startSync, stopSync } from '../domain/sync';
-import { registerSelfForDiscovery } from '../domain';
 import { prewarmContacts } from '../features/contacts';
 import { backfillInbox } from '../features/chat';
 import { useAuthBootstrap } from '../features/auth';
@@ -58,15 +57,11 @@ export default function App(): React.JSX.Element {
     // Wake the (free-tier, hibernating) backend up front so the login path is warm by
     // the time the user reaches it — no 30-50s cold-start timeout on the first request.
     warmBackend();
-    // Make this account findable by contacts (opt-in OPRF token) — once per account, off the
-    // render path. Discovery is opt-in server-side, so without this an account that never
-    // opens New Chat stays invisible to its contacts. No-op when signed out.
+    // NOTE: this account's own discovery token is now registered SERVER-SIDE at login (auth
+    // verifyOtp → directToken), and again as a side-effect of `prewarmContacts` discovery — so
+    // we no longer spend a separate client OPRF `evaluate` here (that doubled the rate-limited
+    // calls per launch). Findability is covered without it.
     const acc = getAccountId();
-    if (acc && kv.getString(KVKeys.discoverySelfRegistered) !== acc) {
-      void registerSelfForDiscovery()
-        .then(() => kv.set(KVKeys.discoverySelfRegistered, acc))
-        .catch(() => undefined);
-    }
     // Warm the New-Chat contacts cache in the background so the list is instant when opened —
     // no per-launch wait (best-effort; no-op without permission or a fresh cache).
     if (acc) void prewarmContacts();

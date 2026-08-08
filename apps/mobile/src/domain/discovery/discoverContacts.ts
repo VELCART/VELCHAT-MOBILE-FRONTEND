@@ -37,6 +37,7 @@ import {
   oprfEvaluate,
   oprfMatch,
   oprfRegister,
+  oprfRegisterEdges,
   parseOprfPublicKey,
   toE164,
   unblind,
@@ -160,6 +161,17 @@ export async function discoverContacts(
   const matches: Record<string, string> = {};
   for (const batch of chunk(contactTokens, OPRF_MATCH_BATCH_CAP)) {
     Object.assign(matches, await oprfMatch(accountId, batch));
+  }
+
+  // Record these contact tokens as edges so that a number which is NOT on VelChat yet flips
+  // "on VelChat" LIVE the moment it registers (§contact-sync fan-out). Best-effort, off the
+  // result path — a failure never breaks discovery.
+  try {
+    for (const batch of chunk(contactTokens, OPRF_MATCH_BATCH_CAP)) {
+      await oprfRegisterEdges(accountId, batch);
+    }
+  } catch {
+    // non-fatal: matching already succeeded; edges retry on the next discovery
   }
 
   // Project back onto the original contact phones.

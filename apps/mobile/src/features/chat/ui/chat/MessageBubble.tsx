@@ -125,8 +125,8 @@ function MessageBubbleBase({
         <View
           style={{
             maxWidth: BUBBLE_MAX_WIDTH,
-            paddingHorizontal: t.spacing.md,
-            paddingVertical: t.spacing.xs + 1,
+            paddingHorizontal: 10,
+            paddingVertical: 6,
             borderRadius: R,
             borderTopRightRadius: mine && firstOfRun ? TAIL_RADIUS : R,
             borderTopLeftRadius: !mine && firstOfRun ? TAIL_RADIUS : R,
@@ -135,7 +135,11 @@ function MessageBubbleBase({
         >
           <Text
             variant="body"
-            style={{ color: mine ? t.colors.actionFg : t.colors.textPrimary }}
+            style={{
+              fontSize: 15,
+              lineHeight: 20,
+              color: mine ? t.colors.actionFg : t.colors.textPrimary,
+            }}
           >
             {contentPlain}
           </Text>

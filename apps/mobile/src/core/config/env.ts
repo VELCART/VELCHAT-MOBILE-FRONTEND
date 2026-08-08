@@ -27,6 +27,6 @@ export const appEnv: AppEnv = {
   // Real values come from the flavor's `.env.<flavor>` at build time. `localhost`
   // works on a USB device / emulator because the `android` script runs
   // `adb reverse tcp:8080 tcp:8080` (see package.json).
-  apiBaseUrl: Config.API_BASE_URL ?? 'http://10.190.40.135:8080',
-  wsUrl: Config.WS_URL ?? 'ws://localhost:8080/ws',
+  apiBaseUrl: Config.API_BASE_URL ?? 'https://velchat-api-gateway.onrender.com',
+  wsUrl: Config.WS_URL ?? 'wss://velchat-realtime-gateway.onrender.com/ws',
 };

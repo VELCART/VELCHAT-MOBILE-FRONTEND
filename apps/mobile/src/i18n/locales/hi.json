@@ -82,6 +82,16 @@
   "newChat": {
     "title": "नई चैट",
     "selectContact": "संपर्क चुनें",
+    "contactsCount": "{{count}} संपर्क",
+    "newGroup": "नया ग्रुप",
+    "newContact": "नया संपर्क",
+    "newCommunity": "नई कम्युनिटी",
+    "menuContactSettings": "संपर्क सेटिंग्स",
+    "menuInviteFriend": "मित्र को आमंत्रित करें",
+    "menuContacts": "संपर्क",
+    "menuRefresh": "रिफ्रेश",
+    "menuHelp": "मदद",
+    "searchPlaceholderHeader": "नाम, नंबर, @username",
     "messageYourself": "खुद को संदेश भेजें",
     "noteToSelf": "नोट्स, रिमाइंडर",
     "searchPlaceholder": "नाम या नंबर खोजें",
@@ -209,5 +219,26 @@
     "theme": "थीम: {{mode}} · टॉगल करने के लिए टैप करें",
     "offline": "आप ऑफ़लाइन हैं — नेटवर्क का इंतज़ार",
     "flightMode": "फ़्लाइट मोड ऑन — आप ऑफ़लाइन हैं"
+  },
+  "status": {
+    "title": "स्टेटस",
+    "addStatus": "स्टेटस जोड़ें",
+    "disappearsHint": "24 घंटे बाद हट जाता है",
+    "recentUpdates": "हाल के अपडेट",
+    "viewedUpdates": "देखे गए अपडेट",
+    "hiddenUpdates": "छिपे हुए अपडेट",
+    "channels": "चैनल",
+    "channelsSubtitle": "अपने पसंदीदा विषयों पर अपडेट रहें। नीचे दिए गए चैनलों को फ़ॉलो करें।",
+    "findChannels": "फ़ॉलो करने के लिए चैनल खोजें",
+    "hideConfirmTitle": "{{name}} का स्टेटस छिपाएं?",
+    "hideConfirmBody": "{{name}} के नए स्टेटस अब हाल के अपडेट में नहीं दिखेंगे।",
+    "unhideConfirmTitle": "{{name}} का स्टेटस दिखाएं?",
+    "unhideConfirmBody": "{{name}} के नए स्टेटस हाल के अपडेट में दिखेंगे।",
+    "hide": "छिपाएं",
+    "unhide": "दिखाएं",
+    "createChannel": "चैनल बनाएं",
+    "statusPrivacy": "स्टेटस प्राइवेसी",
+    "adPreferences": "विज्ञापन प्राथमिकताएं",
+    "switchAccount": "अकाउंट बदलें"
   }
 }

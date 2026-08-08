@@ -38,6 +38,7 @@ export {
   oprfEvaluate,
   oprfRegister,
   oprfMatch,
+  oprfRegisterEdges,
   OPRF_EVALUATE_BATCH_CAP,
   OPRF_MATCH_BATCH_CAP,
 } from './discovery';

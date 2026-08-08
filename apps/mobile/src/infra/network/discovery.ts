@@ -115,3 +115,17 @@ export async function oprfMatch(
   const data = res.data as { matches?: Record<string, string> } | undefined;
   return data?.matches ?? {};
 }
+
+/**
+ * Record the caller's contact tokens as discovery EDGES (§contact-sync reverse index) so that
+ * when any of those numbers later joins VelChat, the server can notify this account live.
+ * Tokens are opaque OPRF digests, never plaintext. Best-effort + idempotent; capped like match.
+ */
+export async function oprfRegisterEdges(
+  accountId: string,
+  tokens: string[],
+): Promise<void> {
+  if (tokens.length === 0) return;
+  const capped = tokens.slice(0, OPRF_MATCH_BATCH_CAP);
+  await api.put('/discovery/oprf/edges', { accountId, tokens: capped });
+}

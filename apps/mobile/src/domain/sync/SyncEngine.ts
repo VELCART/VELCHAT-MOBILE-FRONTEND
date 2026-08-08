@@ -250,6 +250,20 @@ class SyncEngine {
     this.clearTyping(m.conversationId);
     try {
       await applyServerMessage(m);
+      // Live fan-out frames are metadata-only (no body) unless the message was server-readable,
+      // so an inbound frame often has no `content` → the bubble would render blank. Pull the
+      // persisted message over REST (which DOES carry content) to fill it in. Best-effort.
+      if (m.content === undefined || m.content === '') {
+        try {
+          const filled = await fetchMessagesAfter(
+            m.conversationId,
+            Math.max(0, m.seq - 1),
+          );
+          if (filled.length > 0) await applyServerMessages(filled);
+        } catch {
+          // best-effort: the metadata row still exists; content syncs on next catch-up
+        }
+      }
       if (m.senderId !== getAccountId()) {
         this.socket?.send('delivered', {
           conversationId: m.conversationId,

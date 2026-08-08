@@ -1,8 +1,8 @@
 /**
- * Profile peek (§F1) — a long-press preview popup for the profile avatar (WhatsApp/iOS
- * style). Shows the photo enlarged with the name, and two quick actions: View profile
- * and Change photo. Dark scrim, spring scale-in, tap-outside to dismiss. Reactive — the
- * avatar reflects the live mirror, and Change photo persists to the backend + everywhere.
+ * Profile peek (§F1) — long-press preview popup for the profile avatar with blurred backdrop.
+ * Shows the photo enlarged with name and frosted glass action buttons:
+ * - Tapping the photo opens full-screen ProfilePhotoViewerModal with WhatsApp-parity 3-action bottom bar.
+ * - View profile / Change photo / Remove photo options.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -24,13 +24,15 @@ import {
   TrashIcon,
   type IconProps,
 } from '../design-system';
-import { useProfileSummary, useAvatarPicker } from '../features/user';
+import {
+  useProfileSummary,
+  useAvatarPicker,
+  ProfilePhotoViewerModal,
+} from '../features/user';
 import type { RootStackParamList } from './types';
 
 const SIZE = 240;
 
-// A frosted-glass circular action button (translucent, light-rimmed) with a label
-// beneath — designed to sit on the dark peek scrim and read as "glass / water".
 function PeekAction({
   icon: Icon,
   label,
@@ -53,23 +55,21 @@ function PeekAction({
         transform: [{ scale: pressed ? 0.93 : 1 }],
       })}
     >
-      {/* A light translucent disc (NOT a live gaussian blur) — reads as glass on the
-          dark scrim but composites cheaply, so the peek springs in without stutter. */}
       <View
         style={{
-          width: 64,
-          height: 64,
-          borderRadius: 32,
+          width: 60,
+          height: 60,
+          borderRadius: 30,
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: 'rgba(255,255,255,0.9)',
+          backgroundColor: 'rgba(255, 255, 255, 0.92)',
           borderWidth: 1,
-          borderColor: 'rgba(255,255,255,0.45)',
+          borderColor: 'rgba(255, 255, 255, 0.5)',
         }}
       >
-        <Icon size={25} color="#000" strokeWidth={2} />
+        <Icon size={24} color="#000" strokeWidth={2} />
       </View>
-      <Text variant="caption" style={{ color: 'rgb(255, 255, 255)' }}>
+      <Text variant="caption" style={{ color: '#ffffff', fontSize: 13 }}>
         {label}
       </Text>
     </Pressable>
@@ -92,6 +92,7 @@ export function ProfilePeek({
   const initial = (displayName ?? '').trim().charAt(0).toUpperCase();
 
   const [rendered, setRendered] = useState(visible);
+  const [viewerOpen, setViewerOpen] = useState(false);
   const anim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -100,15 +101,15 @@ export function ProfilePeek({
       const a = Animated.spring(anim, {
         toValue: 1,
         useNativeDriver: true,
-        speed: 18,
-        bounciness: 7,
+        speed: 20,
+        bounciness: 6,
       });
       a.start();
       return () => a.stop();
     }
     const a = Animated.timing(anim, {
       toValue: 0,
-      duration: 160,
+      duration: 140,
       useNativeDriver: true,
     });
     a.start(({ finished }) => {
@@ -121,7 +122,7 @@ export function ProfilePeek({
 
   const scale = anim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0.85, 1],
+    outputRange: [0.88, 1],
   });
 
   const openProfile = (): void => {
@@ -132,136 +133,155 @@ export function ProfilePeek({
     onClose();
     void pick();
   };
-  // Remove the photo straight away (no confirm) — clears it locally + on the server;
-  // the reactive mirror makes it disappear everywhere at once and it stays gone.
   const removePhoto = (): void => {
     onClose();
     void remove();
   };
 
   return (
-    <Modal
-      visible={rendered}
-      transparent
-      animationType="none"
-      statusBarTranslucent
-      onRequestClose={onClose}
-    >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={tr('common.dismiss')}
-        onPress={onClose}
-        style={{ flex: 1 }}
+    <>
+      <Modal
+        visible={rendered && !viewerOpen}
+        transparent
+        animationType="none"
+        statusBarTranslucent
+        onRequestClose={onClose}
       >
-        <Animated.View
-          style={[
-            StyleSheet.absoluteFill,
-            {
-              backgroundColor: '#000000',
-              opacity: Animated.multiply(anim, 0.6),
-            },
-          ]}
-        />
-        <View
-          style={{
-            flex: 1,
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: t.spacing.xl,
-          }}
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={tr('common.dismiss')}
+          onPress={onClose}
+          style={{ flex: 1 }}
         >
+          {/* Blurred dark glass backdrop overlay */}
           <Animated.View
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: 'rgba(0, 0, 0, 0.82)',
+                opacity: anim,
+              },
+            ]}
+          />
+          <View
             style={{
+              flex: 1,
               alignItems: 'center',
-              width: '100%',
-              opacity: anim,
-              transform: [{ scale }],
+              justifyContent: 'center',
+              padding: t.spacing.xl,
             }}
           >
-            <View
+            <Animated.View
               style={{
-                width: SIZE,
-                height: SIZE,
-                borderRadius: t.radius.xl,
-                backgroundColor: t.colors.bgSubtle,
                 alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
-                // Thin, theme-aware border around the photo.
-                borderWidth: 1,
-                borderColor: t.colors.hairline,
+                width: '100%',
+                opacity: anim,
+                transform: [{ scale }],
               }}
             >
-              {avatar ? (
-                <Image
-                  source={{ uri: avatar }}
-                  style={{ width: SIZE, height: SIZE }}
-                  resizeMode="cover"
-                />
-              ) : initial ? (
-                <Text
-                  variant="display"
+              {/* Avatar image container — press to open full-screen viewer */}
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={tr('profile.viewProfile')}
+                onPress={() => setViewerOpen(true)}
+                style={({ pressed }) => ({
+                  opacity: pressed ? 0.9 : 1,
+                  transform: [{ scale: pressed ? 0.98 : 1 }],
+                })}
+              >
+                <View
                   style={{
-                    fontSize: 92,
-                    lineHeight: 104,
-                    color: t.colors.textSecondary,
+                    width: SIZE,
+                    height: SIZE,
+                    borderRadius: t.radius.xl,
+                    backgroundColor: t.colors.bgSubtle,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    overflow: 'hidden',
+                    borderWidth: 1,
+                    borderColor: 'rgba(255, 255, 255, 0.25)',
+                    ...t.elevation.e2,
                   }}
                 >
-                  {initial}
-                </Text>
-              ) : (
-                <UserIcon
-                  size={110}
-                  color={t.colors.textTertiary}
-                  strokeWidth={1.6}
-                />
-              )}
-            </View>
+                  {avatar ? (
+                    <Image
+                      source={{ uri: avatar }}
+                      style={{ width: SIZE, height: SIZE }}
+                      resizeMode="cover"
+                    />
+                  ) : initial ? (
+                    <Text
+                      variant="display"
+                      style={{
+                        fontSize: 90,
+                        lineHeight: 100,
+                        color: t.colors.textSecondary,
+                      }}
+                    >
+                      {initial}
+                    </Text>
+                  ) : (
+                    <UserIcon
+                      size={110}
+                      color={t.colors.textTertiary}
+                      strokeWidth={1.6}
+                    />
+                  )}
+                </View>
+              </Pressable>
 
-            {/* <Text
-              variant="title"
-              numberOfLines={1}
-              align="center"
-              style={{
-                color: '#FFFFFF',
-                marginTop: t.spacing.lg,
-                fontSize: 22,
-              }}
-            >
-              {displayName ?? tr('settings.addName')}
-            </Text> */}
-
-            {/* Two separate frosted-glass circles, spaced apart. */}
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'flex-start',
-                justifyContent: 'center',
-                gap: t.spacing.xxl,
-                marginTop: t.spacing.xl,
-              }}
-            >
-              <PeekAction
-                icon={UserIcon}
-                label={tr('profile.viewProfile')}
-                onPress={openProfile}
-              />
-              <PeekAction
-                icon={CameraIcon}
-                label={tr('profile.changePhoto')}
-                onPress={changePhoto}
-              />
-              {avatar ? (
+              {/* Action buttons bar */}
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'flex-start',
+                  justifyContent: 'center',
+                  gap: t.spacing.xl,
+                  marginTop: t.spacing.xl,
+                }}
+              >
                 <PeekAction
-                  icon={TrashIcon}
-                  label={tr('profile.removePhoto')}
-                  onPress={removePhoto}
+                  icon={UserIcon}
+                  label={tr('profile.viewProfile')}
+                  onPress={openProfile}
                 />
-              ) : null}
-            </View>
-          </Animated.View>
-        </View>
-      </Pressable>
-    </Modal>
+                <PeekAction
+                  icon={CameraIcon}
+                  label={tr('profile.changePhoto')}
+                  onPress={changePhoto}
+                />
+                {avatar ? (
+                  <PeekAction
+                    icon={TrashIcon}
+                    label={tr('profile.removePhoto')}
+                    onPress={removePhoto}
+                  />
+                ) : null}
+              </View>
+            </Animated.View>
+          </View>
+        </Pressable>
+      </Modal>
+
+      {/* Full Screen Photo Viewer Modal */}
+      <ProfilePhotoViewerModal
+        visible={viewerOpen}
+        onClose={() => {
+          setViewerOpen(false);
+          onClose();
+        }}
+        imageUri={avatar ?? undefined}
+        name={displayName ?? undefined}
+        isSelf
+        onMessage={() => {
+          setViewerOpen(false);
+          openProfile();
+        }}
+        onChangePhoto={() => {
+          setViewerOpen(false);
+          changePhoto();
+        }}
+      />
+    </>
   );
 }

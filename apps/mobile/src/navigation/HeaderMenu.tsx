@@ -1,14 +1,13 @@
 /**
- * Header overflow menu (§F1) — the WhatsApp-style dropdown that opens from the ⋮
- * button: a rounded card pinned top-right that springs in on open and fades back out
- * on close (kept mounted through the exit). Rows use a clean opacity press — no boxed
- * highlight — and a tap-anywhere scrim dismisses it.
+ * Header overflow menu (§F1) — WhatsApp-parity compact dropdown menu.
+ * Pinned top-right with animated spring-in, fast smooth exit fade,
+ * compact sizing, crisp hairline border, and zero shadows.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Modal, Pressable, Animated } from 'react-native';
+import { Modal, Pressable, Animated, Easing } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
-import { Text, Card } from '../design-system';
+import { Text } from '../design-system';
 
 export interface HeaderMenuItem {
   label: string;
@@ -36,20 +35,20 @@ export function HeaderMenu({
       Animated.spring(anim, {
         toValue: 1,
         useNativeDriver: true,
-        speed: 20,
-        bounciness: 6,
+        speed: 28,
+        bounciness: 2,
       }).start();
     } else if (rendered) {
       Animated.timing(anim, {
         toValue: 0,
-        duration: 130,
+        duration: 100,
+        easing: Easing.out(Easing.ease),
         useNativeDriver: true,
       }).start(({ finished }) => {
         if (finished) setRendered(false);
       });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visible]);
+  }, [visible, rendered, anim]);
 
   if (!rendered) return null;
 
@@ -65,50 +64,55 @@ export function HeaderMenu({
         <Animated.View
           style={{
             position: 'absolute',
-            top: insets.top + 50,
-            right: t.spacing.sm,
+            top: insets.top + 46,
+            right: 10,
+            width: 170,
+            backgroundColor: t.colors.surfaceElevated,
+            borderRadius: 12,
+            paddingVertical: 5,
+            borderWidth: 1,
+            borderColor: t.colors.hairline,
             opacity: anim,
             transform: [
               {
                 scale: anim.interpolate({
                   inputRange: [0, 1],
-                  outputRange: [0.9, 1],
+                  outputRange: [0.94, 1],
                 }),
               },
             ],
+            shadowOpacity: 0,
+            elevation: 0,
           }}
         >
-          <Card
-            style={{ padding: t.spacing.xxs, minWidth: 188, maxWidth: 260 }}
-          >
-            {items.map(item => (
-              <Pressable
-                key={item.label}
-                accessibilityRole="menuitem"
-                accessibilityLabel={item.label}
-                onPress={() => {
-                  onClose();
-                  item.onPress();
+          {items.map((item, idx) => (
+            <Pressable
+              key={`${item.label}-${idx}`}
+              accessibilityRole="menuitem"
+              accessibilityLabel={item.label}
+              onPress={() => {
+                onClose();
+                item.onPress();
+              }}
+              style={({ pressed }) => ({
+                paddingHorizontal: 16,
+                paddingVertical: 9,
+                backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
+              })}
+            >
+              <Text
+                variant="body"
+                numberOfLines={1}
+                style={{
+                  fontSize: 14.5,
+                  fontFamily: t.typography.body.fontFamily,
+                  color: item.danger ? t.colors.danger : t.colors.textPrimary,
                 }}
-                style={({ pressed }) => ({
-                  paddingHorizontal: t.spacing.md,
-                  paddingVertical: t.spacing.sm,
-                  opacity: pressed ? 0.45 : 1,
-                })}
               >
-                <Text
-                  variant="body"
-                  numberOfLines={1}
-                  style={{
-                    fontSize: 15,
-                    color: item.danger ? t.colors.danger : t.colors.textPrimary,
-                  }}
-                >
-                  {item.label}
-                </Text>
-              </Pressable>
-            ))}
-          </Card>
+                {item.label}
+              </Text>
+            </Pressable>
+          ))}
         </Animated.View>
       </Pressable>
     </Modal>

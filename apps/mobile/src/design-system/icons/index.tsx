@@ -704,3 +704,77 @@ export function ChevronDownIcon({
     </Svg>
   );
 }
+
+/** Person with a plus sign — New contact. */
+export function UserPlusIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"
+        {...stroke(color, strokeWidth)}
+      />
+      <Circle cx={8.5} cy={7} r={4} {...stroke(color, strokeWidth)} />
+      <Path d="M20 8v6M23 11h-6" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Group of people with a plus sign — New group. */
+export function UsersPlusIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"
+        {...stroke(color, strokeWidth)}
+      />
+      <Circle cx={9} cy={7} r={4} {...stroke(color, strokeWidth)} />
+      <Path d="M23 21v-2a4 4 0 0 0-3-3.87" {...stroke(color, strokeWidth)} />
+      <Path d="M16 3.13a4 4 0 0 1 0 7.75" {...stroke(color, strokeWidth)} />
+      <Path d="M12 11v4M10 13h4" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** QR Code grid — code sharing / contact scan. */
+export function QrCodeIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M3 3h6v6H3zM15 3h6v6h-6zM3 15h6v6H3zM15 15h2v2h-2zM19 15h2v2h-2zM15 19h2v2h-2zM19 19h2v2h-2z"
+        {...stroke(color, strokeWidth)}
+      />
+    </Svg>
+  );
+}
+
+/** 3x3 Keypad dots — search dialpad hint. */
+export function DialpadIcon({
+  size = 24,
+  color = '#000',
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={6} cy={6} r={1.5} fill={color} />
+      <Circle cx={12} cy={6} r={1.5} fill={color} />
+      <Circle cx={18} cy={6} r={1.5} fill={color} />
+      <Circle cx={6} cy={12} r={1.5} fill={color} />
+      <Circle cx={12} cy={12} r={1.5} fill={color} />
+      <Circle cx={18} cy={12} r={1.5} fill={color} />
+      <Circle cx={6} cy={18} r={1.5} fill={color} />
+      <Circle cx={12} cy={18} r={1.5} fill={color} />
+      <Circle cx={18} cy={18} r={1.5} fill={color} />
+    </Svg>
+  );
+}

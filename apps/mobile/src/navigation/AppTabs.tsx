@@ -21,6 +21,7 @@ import {
 } from '../features/user';
 import { useAccountInfo } from '../features/auth';
 import { ChatsList } from '../features/chat';
+import { UpdatesList } from '../features/status';
 import { TabBar } from './TabBar';
 import { HomeHeader } from './HomeHeader';
 import { OfflineBanner } from './OfflineBanner';
@@ -32,8 +33,7 @@ function ChatsScreen(): React.JSX.Element {
   return <ChatsList />;
 }
 function UpdatesScreen(): React.JSX.Element {
-  const { t } = useTranslation();
-  return <Placeholder title={t('tabs.updates')} subtitle={t('common.empty')} />;
+  return <UpdatesList />;
 }
 function CommunitiesScreen(): React.JSX.Element {
   const { t } = useTranslation();

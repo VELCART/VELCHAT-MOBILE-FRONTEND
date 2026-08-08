@@ -76,13 +76,13 @@ export function Composer({
         flexDirection: 'row',
         alignItems: 'flex-end',
         gap: t.spacing.xs,
-        paddingHorizontal: t.spacing.sm,
-        paddingTop: t.spacing.xs,
+        paddingHorizontal: t.spacing.xs,
+        paddingTop: t.spacing.xxs,
         paddingBottom: keyboardUp
           ? t.spacing.huge
           : Math.max(insets.bottom, t.spacing.xs),
         backgroundColor: t.colors.surface,
-        borderTopWidth: 1,
+        borderTopWidth: 0,
         borderTopColor: t.colors.hairline,
       }}
     >
