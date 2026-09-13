@@ -1015,7 +1015,7 @@
       "title": "Message window sorts by created_at, not seq — a device clock ahead of the server permanently mis-orders own messages",
       "severity": "P1",
       "priority": "P1",
-      "status": "Open",
+      "status": "Fixed",
       "layer": "CLIENT",
       "feature": "Messaging / Ordering",
       "component": "apps/mobile/src/infra/db (message window query)",
@@ -1035,12 +1035,13 @@
       "user_impact": "Messages appear in the wrong order and never correct themselves.",
       "suspected_cause": "The window query orders by the local timestamp rather than the server seq.",
       "rootCause": "Confirmed by code reading.",
-      "testIds": ["VC-UNIT-211"],
+      "testIds": ["messageOrdering.test.ts: VC-030 — a device clock running ahead of the server"],
       "evidence": ["QA/_audit/sync-db-audit.md"],
       "refs": ["docs/backend-integration-reference.md §5"],
       "regression": false,
-      "notes": "",
-      "jira": "VC-30"
+      "notes": "FIX: two causes, both in the created_at-as-sort-key design. (1) markMessageSent() re-stamped createdAt to the server clock FORWARD ONLY (if (ack.serverTs > m.createdAt)), a rule meant to stop a slow server clock re-burying an offline-composed bubble. Forward-only mixes two clocks in one sort key: on a device whose clock leads the server, an own message keeps its future local stamp and beats every server timestamp that follows it, permanently. The server clock is the same authority that assigns seq, so its timestamp is now adopted in EITHER direction. (2) messageWindowClauses() (extracted from observeMessages so the real query is testable rather than duplicated in a test) now sorts by created_at DESC then seq DESC — seq is the ordering identity per backend-integration-reference §5, and the gateway fans bursts out inside one millisecond, so identical created_at values are normal and were previously resolved by whatever order rows happened to be written. seq is the SECOND key, not the first, because an unsent message has no seq and sorting on it first would file every pending bubble under a null and drag it out of the newest-first window. The pre-existing test never drags a message backwards in time encoded the defect; it was rewritten to assert the concern it actually cared about — that a backwards re-stamp does not change the bubble POSITION — which now holds because seq decides the order. Verified: full jest suite 492/492 pass, tsc --noEmit clean, eslint 0 errors.",
+      "jira": "VC-30",
+      "fixedIn": "dev branch, 2026-09-13"
     },
     {
       "id": "VC-031",
@@ -1648,11 +1649,11 @@
     },
     {
       "id": "VC-049",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
-      "testIds": [],
+      "testIds": ["profileGate.test.ts: VC-049"],
       "title": "Email-prompt bottom sheet reappears on every login even when an email is already saved",
       "severity": "P1",
       "priority": "P1",
@@ -1674,10 +1675,11 @@
       "user_impact": "Users with an email already on file are repeatedly nagged for it on every login, a persistent, avoidable annoyance that looks like the app isn't remembering their profile.",
       "suspected_cause": "The bottom-sheet trigger likely checks a stale/cached email-presence flag instead of current profile state, or the check itself is missing.",
       "rootCause": "Not yet investigated.",
-      "notes": "Reported by Tusha Bhadouriya during production QA testing.",
+      "notes": "FIX (root-caused): the email is NOT a directory-profile field — profileShape.ts states it is a separately-verified identifier owned by the auth-service (GET /auth/account). useProfileGate decided purely from the LOCAL MMKV mirror, and purgeAccountData() wipes KVKeys.email on every sign-out, so immediately after any login the mirror is empty and the gate prompted unconditionally. useAccountInfo() does fetch the real email and mirror it, but it runs in parallel from AppTabs, so its answer always lost the race — and dismissal is session-only, which is why it returned every single login. The gate now asks the auth-service itself before deciding, via a new pure shouldPromptForProfile() (features/user/model/profileGate.ts): a mirrored email means never prompt; a server email means never prompt (and is re-mirrored so later launches short-circuit with no network); an UNANSWERED server (in flight or unreachable) means WAIT rather than prompt, which also removes the flash of the sheet before the answer lands. Only a definitive server no-email prompts. Verified: full jest suite 492/492 pass (5 new decision tests), tsc --noEmit clean, eslint 0 errors, no eslint-plugin-boundaries violation for the user→auth import (authApi depends only on infra, so no cycle). Not reproduced on a device — no Android hardware attached to this machine; fix is verified at the unit level against the exact reported condition.",
       "assignee": "Tusha Bhadouriya",
       "assigneeAccountId": "712020:f2e5ac48-d89a-4817-850b-66bd48f7dd28",
-      "jira": "VC-49"
+      "jira": "VC-49",
+      "fixedIn": "dev branch, 2026-09-13"
     }
   ]
 }

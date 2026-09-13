@@ -22,18 +22,37 @@ const MESSAGE_WINDOW = 50;
  * reactions/attachments are intentionally NOT observed (the bubble doesn't render them yet)
  * so a receipt burst can't trigger an O(n) re-query for columns nothing draws.
  */
+/**
+ * The exact clauses the chat window is read with, newest-first.
+ *
+ * Exported so a test can assert the REAL ordering: the window observable emits asynchronously
+ * under the Loki test adapter, so tests read it with `.fetch()` instead — and a test that
+ * rebuilt these clauses by hand could stay green while the query the UI actually runs was
+ * wrong, which is precisely the class of defect this ordering has already had.
+ */
+export function messageWindowClauses(conversationId: string, limit: number) {
+  return [
+    Q.where('conversation_id', conversationId),
+    Q.where('deleted', false),
+    Q.sortBy('created_at', Q.desc),
+    // `seq` breaks the tie, and it is the real ordering identity (§5 of the backend contract:
+    // sort by seq, never timestamp). The gateway fans a burst out inside one millisecond, so
+    // identical `created_at` values are normal — and with only the timestamp to go on, those
+    // rows came back in whatever order they happened to be written. It is the SECOND key rather
+    // than the first because an unsent message has no seq yet: sorting on seq first would file
+    // every pending bubble under a null and drag it out of the newest-first window entirely.
+    Q.sortBy('seq', Q.desc),
+    Q.take(Math.max(1, limit)),
+  ];
+}
+
 export function observeMessages(
   conversationId: string,
   limit: number = MESSAGE_WINDOW,
 ) {
   return getDatabase()
     .get<Message>('messages')
-    .query(
-      Q.where('conversation_id', conversationId),
-      Q.where('deleted', false),
-      Q.sortBy('created_at', Q.desc),
-      Q.take(Math.max(1, limit)),
-    )
+    .query(...messageWindowClauses(conversationId, limit))
     .observeWithColumns(['state']);
 }
 
@@ -378,13 +397,20 @@ export async function markMessageSent(
         m.seq = ack.seq;
         if (ack.serverTs !== undefined) {
           m.serverTs = ack.serverTs;
-          // Re-stamp the ordering key to the SERVER clock. The list is ordered by `created_at`,
-          // which was stamped when the user hit send — fine online, hours stale for a message
-          // composed offline. Left alone it stays pinned at its compose time, buried under
-          // everything that arrived while there was no signal (and, past a window's worth,
-          // outside the loaded window entirely), which reads as "my message disappeared".
-          // Never move it backwards: a skewed server clock must not re-bury it.
-          if (ack.serverTs > m.createdAt) m.createdAt = ack.serverTs;
+          // Re-stamp the ordering key to the SERVER clock, in EITHER direction. `created_at` is
+          // stamped when the user hits send — fine online, hours stale for a message composed
+          // offline, and minutes in the future on a device whose clock runs fast.
+          //
+          // This used to move forward only, to stop a slow server clock re-burying a bubble. But
+          // a forward-only rule mixes two clocks in one sort key, which is how a fast device
+          // clock pinned an own message above everything that came after it, permanently
+          // (VC-030): its local stamp beat every server timestamp that followed. The server
+          // clock is the ordering authority — it is the same authority that assigns `seq`, and
+          // §5 of the backend contract says order by seq, never timestamp — so once the server
+          // has spoken, its timestamp is the truth for this row, whichever way it moves. Rows
+          // that have a seq are then ordered by seq anyway (see `messageWindowClauses`), so
+          // adopting it cannot reorder a confirmed message against its neighbours.
+          m.createdAt = ack.serverTs;
         }
         if (m.state === 'sending' || m.state === 'failed') m.state = 'sent';
       }),
