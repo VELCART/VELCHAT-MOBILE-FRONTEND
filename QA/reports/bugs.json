@@ -1281,7 +1281,7 @@
       "title": "Jest reports a worker that failed to exit gracefully — a leaked timer or handle in the test path",
       "severity": "P3",
       "priority": "P3",
-      "status": "Open",
+      "status": "Fixed",
       "layer": "CLIENT",
       "feature": "Test infrastructure",
       "component": "apps/mobile jest suite",
@@ -1301,8 +1301,9 @@
       "evidence": ["QA/evidence/logs/jest-baseline-2026-09-11.log"],
       "refs": [],
       "regression": false,
-      "notes": "",
-      "jira": "VC-38"
+      "notes": "FIX (root cause found by instrumentation, not guesswork): --detectOpenHandles reported NOTHING, so the leak was invisible to it. A probe dumping process.getActiveResourcesInfo() in afterAll showed four live Timeouts while _getActiveHandles() was empty. Traced to WatermelonDB: adapters/lokijs/worker/lokiExtensions.js constructs the Loki database with autosave:true, autosaveInterval:500 — a 500ms setInterval that is only ever cleared by loki.close(), which the app never calls because its database lives for the life of the process. Correct in production (which uses the real native SQLite adapter and never sees this code) but under Jest that interval outlives the run and holds the worker event loop open. Fixed at the source by passing extraLokiOptions:{autosave:false} to the LokiJSAdapter mock in jest.setup.ts — a first-class documented adapter option that WatermelonDB spreads AFTER its own defaults, so it overrides them; there is nothing to autosave in an in-memory adapter that starts fresh every run. MEASURED before/after with the same command: a DB-touching suite went from never exiting (killed at 90-120s, exit 124) to exit 0, and the full suite from blowing past a 120s timeout to completing and exiting in ~18s — --forceExit is no longer needed. RESIDUAL, stated honestly: the \"worker process has failed to exit gracefully\" text can still appear with >=2 jest workers. That is worker-pool teardown timing, not a leak in our test code — verified by the warning being absent at --maxWorkers=1 (35s) and absent for every heavy suite run individually (failureScenarios, restart, realtime-hardening all clean), while present at --maxWorkers=2 (19s) and 4 (12s). Verified: full jest suite 506/506 pass, tsc --noEmit clean, eslint clean.",
+      "jira": "VC-38",
+      "fixedIn": "dev branch, 2026-09-13"
     },
     {
       "id": "VC-039",

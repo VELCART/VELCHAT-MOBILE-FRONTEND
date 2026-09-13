@@ -77,6 +77,18 @@ jest.mock('@nozbe/watermelondb/adapters/sqlite', () => {
         migrations: opts?.migrations,
         useWebWorker: false,
         useIncrementalIndexedDB: false,
+        // Loki's autosave is a 500ms setInterval that WatermelonDB turns on by default and only
+        // ever clears on `loki.close()` — which the app never calls, because its database lives
+        // for the life of the process. Under Jest that interval outlives the tests and holds the
+        // worker's event loop open, so every DB-touching suite ended with "a worker process has
+        // failed to exit gracefully" and hung ~100s past a run that had already finished
+        // (VC-038). `--detectOpenHandles` never found it: the timer is created inside Loki's own
+        // persistence callback, so it does not show up as a tracked handle.
+        //
+        // There is nothing to autosave here anyway — the adapter is in-memory and every run
+        // starts from a fresh database. Production is untouched: this mock only replaces the
+        // native SQLite adapter under Jest.
+        extraLokiOptions: { autosave: false },
       }),
   );
 });
