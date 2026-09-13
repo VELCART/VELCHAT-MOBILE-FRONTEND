@@ -12,18 +12,22 @@
 import { useEffect, useState } from 'react';
 import { observeConversation } from '../../../infra';
 import { discoveredContacts, peerDisplayName } from '../../contacts';
+import { resolveWallpaperId, type WallpaperId } from '../model/wallpaper';
 import { refreshPeerIdentity } from '../api/refreshPeerIdentity';
 
 export interface ConversationIdentity {
   readonly peerId: string | undefined;
   readonly peerAvatarUrl: string | undefined;
   readonly name: string | undefined;
+  /** Chat wallpaper (§F2), resolved from the row — `plain` until someone picks another. */
+  readonly wallpaper: WallpaperId;
 }
 
 const EMPTY: ConversationIdentity = {
   peerId: undefined,
   peerAvatarUrl: undefined,
   name: undefined,
+  wallpaper: 'plain',
 };
 
 export function useConversationIdentity(
@@ -43,6 +47,7 @@ export function useConversationIdentity(
           peerAvatarUrl: row.peerAvatarUrl,
           // The header shows the name the USER saved, matching the chat list (VC-047).
           name: peerDisplayName(discoveredContacts(), row.peerId, row.name),
+          wallpaper: resolveWallpaperId(row.wallpaper),
         });
         // Fire-and-forget: never blocks the header, and no-ops unless the cache is stale.
         void refreshPeerIdentity(conversationId, row.peerId);

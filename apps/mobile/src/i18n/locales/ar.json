@@ -77,7 +77,14 @@
     "jumpToLatest": "الانتقال إلى الأحدث",
     "typing": "يكتب الآن…",
     "online": "متصل",
-    "lastSeen": "آخر ظهور {{time}}"
+    "lastSeen": "آخر ظهور {{time}}",
+    "wallpaper": {
+      "title": "خلفية المحادثة",
+      "subtitle": "تنطبق على هذه المحادثة فقط",
+      "plain": "سادة",
+      "frosted": "ضبابي",
+      "blush": "وردي"
+    }
   },
   "newChat": {
     "title": "محادثة جديدة",

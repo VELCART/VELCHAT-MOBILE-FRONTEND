@@ -95,6 +95,8 @@ export interface ConversationPatch {
   peerId?: string;
   /** That peer's photo URL, so a list row never fetches one while the user is scrolling. */
   peerAvatarUrl?: string;
+  /** Chat wallpaper id (§F2) — per conversation, like WhatsApp. Empty/absent = `plain`. */
+  wallpaper?: string;
 }
 
 /**
@@ -192,6 +194,7 @@ export async function upsertConversation(
         if (patch.lastMessagePreview !== undefined) {
           c.lastMessagePreview = patch.lastMessagePreview;
         }
+        if (patch.wallpaper !== undefined) c.wallpaper = patch.wallpaper;
         // Never move the sort key backwards (a stale patch mustn't reorder the list).
         if (
           patch.lastMessageAt !== undefined &&

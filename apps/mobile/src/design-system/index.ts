@@ -67,5 +67,8 @@ export {
   UsersPlusIcon,
   QrCodeIcon,
   DialpadIcon,
+  CheckIcon,
+  DoubleCheckIcon,
+  AlertCircleIcon,
 } from './icons';
 export type { IconProps } from './icons';

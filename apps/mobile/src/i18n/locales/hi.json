@@ -77,7 +77,14 @@
     "jumpToLatest": "नए मैसेज पर जाएं",
     "typing": "टाइप कर रहे हैं…",
     "online": "ऑनलाइन",
-    "lastSeen": "अंतिम बार देखा {{time}}"
+    "lastSeen": "अंतिम बार देखा {{time}}",
+    "wallpaper": {
+      "title": "चैट वॉलपेपर",
+      "subtitle": "सिर्फ़ इसी चैट पर लागू होगा",
+      "plain": "सादा",
+      "frosted": "फ़्रॉस्टेड",
+      "blush": "गुलाबी"
+    }
   },
   "newChat": {
     "title": "नई चैट",

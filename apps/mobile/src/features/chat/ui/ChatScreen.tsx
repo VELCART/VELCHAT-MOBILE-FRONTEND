@@ -42,6 +42,11 @@ import { ChatHeader } from './chat/ChatHeader';
 import { Composer } from './chat/Composer';
 import { JumpToLatest } from './chat/JumpToLatest';
 import { MessageBubble } from './chat/MessageBubble';
+import { ChatWallpaper } from './chat/ChatWallpaper';
+import { WallpaperSheet } from './chat/WallpaperSheet';
+import { setChatWallpaper } from '../api/setChatWallpaper';
+import { useConversationIdentity } from '../hooks/useConversationIdentity';
+import { wallpaperPaint, type WallpaperId } from '../model/wallpaper';
 import {
   compactTime,
   dayCategory,
@@ -86,6 +91,21 @@ export function ChatScreen(): React.JSX.Element {
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const route = useRoute<RouteProp<RootStackParamList, 'Chat'>>();
   const { conversationId, name } = route.params;
+  // The header observes this row too; one extra subscription to a single row is cheaper than
+  // threading the value down through the header's props.
+  const { wallpaper } = useConversationIdentity(conversationId);
+  const paint = wallpaperPaint(wallpaper, t.scheme);
+  const [wallpaperOpen, setWallpaperOpen] = useState(false);
+  const openWallpaper = useCallback(() => setWallpaperOpen(true), []);
+  const closeWallpaper = useCallback(() => setWallpaperOpen(false), []);
+  // Write it straight to the row; the identity subscription above re-renders the thread, so
+  // the new ground is on screen before the sheet has finished closing.
+  const pickWallpaper = useCallback(
+    (id: WallpaperId) => {
+      void setChatWallpaper(conversationId, id).catch(() => undefined);
+    },
+    [conversationId],
+  );
   const { messages, meId, loadOlder } = useMessages(conversationId);
   const send = useSendMessage(conversationId);
   const retry = useRetrySend();
@@ -179,6 +199,7 @@ export function ChatScreen(): React.JSX.Element {
   );
 
   // Depends only on stable references, so a new emission no longer re-renders every cell.
+  // The two wallpaper values are plain strings off a memoised paint, so they don't churn.
   const renderItem = useCallback(
     ({ item }: { item: MessageRow }) => (
       <MessageBubble
@@ -190,17 +211,32 @@ export function ChatScreen(): React.JSX.Element {
         firstOfRun={item.firstOfRun}
         dateLabel={item.dateLabel}
         onRetry={retry}
+        incomingTint={paint.incomingTint}
+        incomingBorder={paint.incomingBorder}
       />
     ),
-    [retry],
+    [retry, paint.incomingTint, paint.incomingBorder],
   );
 
   return (
     <Screen edges={['top']} padded={false}>
-      <ChatHeader conversationId={conversationId} name={name} onBack={onBack} />
+      <ChatHeader
+        conversationId={conversationId}
+        name={name}
+        onBack={onBack}
+        onOpenWallpaper={openWallpaper}
+      />
+      <WallpaperSheet
+        visible={wallpaperOpen}
+        current={wallpaper}
+        onClose={closeWallpaper}
+        onPick={pickWallpaper}
+      />
 
       <View style={{ flex: 1, paddingBottom: kbHeight }}>
         <View style={{ flex: 1, backgroundColor: t.colors.bgBase }}>
+          {/* Behind the list and outside it, so scrolling never repaints the wallpaper. */}
+          <ChatWallpaper id={wallpaper} />
           <FlashList
             ref={listRef}
             data={rows}

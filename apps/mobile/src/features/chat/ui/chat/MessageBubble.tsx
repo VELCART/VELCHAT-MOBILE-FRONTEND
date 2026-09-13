@@ -2,7 +2,8 @@
  * A single message row (§F2/§L6): an optional date separator, then the bubble — mine on the
  * right (brand fill / inverse text), theirs on the left (subtle fill / primary text). Same-
  * sender runs are grouped tight; only the FIRST (top) bubble of a run carries the corner
- * tail. Mine keep the per-state send indicator (clock / ✓ / ✓✓ / read / failed+retry).
+ * tail. Mine keep the per-state send indicator (clock, one check, two checks, blue when read,
+ * and a tappable alert when the send failed) — drawn icons, never typeset characters.
  *
  * Props are PRIMITIVES, not the DB row: WatermelonDB mutates its cached model in place, so a
  * memoised row keyed on the object reference would never see sending→sent→read. Passing the
@@ -14,13 +15,19 @@ import React from 'react';
 import { View, Pressable } from 'react-native';
 import { useTheme } from '../../../../theme';
 import { useTranslation } from '../../../../i18n';
-import { Text, ClockIcon } from '../../../../design-system';
+import {
+  Text,
+  ClockIcon,
+  CheckIcon,
+  DoubleCheckIcon,
+  AlertCircleIcon,
+} from '../../../../design-system';
 import { DateChip } from './DateChip';
 
-const BUBBLE_MAX_WIDTH = '80%';
-const TAIL_RADIUS = 4;
-const GAP_WITHIN_RUN = 2;
-const GAP_BETWEEN_RUNS = 10;
+const BUBBLE_MAX_WIDTH = '78%';
+const TAIL_RADIUS = 6;
+const GAP_WITHIN_RUN = 3;
+const GAP_BETWEEN_RUNS = 12;
 
 /**
  * Per-state send indicator for MY messages: a clock while sending, one check when sent,
@@ -46,37 +53,30 @@ function SendStatus({
         accessibilityLabel={tr('newChat.retry')}
         onPress={onRetry}
         hitSlop={8}
-        style={({ pressed }) => ({
-          width: 16,
-          height: 16,
-          borderRadius: 8,
-          backgroundColor: t.colors.danger,
-          alignItems: 'center',
-          justifyContent: 'center',
-          opacity: pressed ? 0.6 : 1,
-        })}
+        style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
       >
-        <Text
-          variant="caption"
-          style={{ fontSize: 11, lineHeight: 13, color: t.colors.actionFg }}
-        >
-          !
-        </Text>
+        <AlertCircleIcon size={15} color={t.colors.danger} />
       </Pressable>
     );
   }
-  const read = state === 'read';
+  // `read` is the one state that earns colour, at full strength. Everything else rides the
+  // bubble's own foreground, dimmed so the ticks never compete with the message text — the
+  // opacity lives on a wrapper because an Svg does not take one directly.
+  if (state === 'read') {
+    return <DoubleCheckIcon size={16} color={t.colors.info} />;
+  }
   return (
-    <Text
-      variant="caption"
-      style={{
-        fontSize: 12,
-        color: read ? t.colors.info : t.colors.actionFg,
-        opacity: read ? 1 : 0.75,
-      }}
-    >
-      {state === 'sent' ? '✓' : '✓✓'}
-    </Text>
+    <View style={{ opacity: 0.78 }}>
+      {state === 'sent' ? (
+        <CheckIcon size={16} color={t.colors.actionFg} strokeWidth={1.7} />
+      ) : (
+        <DoubleCheckIcon
+          size={16}
+          color={t.colors.actionFg}
+          strokeWidth={1.7}
+        />
+      )}
+    </View>
   );
 }
 
@@ -90,6 +90,13 @@ interface MessageBubbleProps {
   firstOfRun: boolean;
   dateLabel: string | null;
   onRetry: (clientMsgId: string) => void;
+  /**
+   * Incoming-bubble overrides for the chat's wallpaper (§F2). A decorated ground needs a
+   * translucent bubble, or an opaque `bgSubtle` rectangle sits on the wash like a sticker.
+   * `null` (the `plain` wallpaper) keeps the theme's own values.
+   */
+  incomingTint?: string | null;
+  incomingBorder?: string | null;
 }
 
 function MessageBubbleBase({
@@ -101,6 +108,8 @@ function MessageBubbleBase({
   firstOfRun,
   dateLabel,
   onRetry,
+  incomingTint = null,
+  incomingBorder = null,
 }: MessageBubbleProps): React.JSX.Element {
   const t = useTheme();
   const R = t.radius.lg;
@@ -118,12 +127,26 @@ function MessageBubbleBase({
         <View
           style={{
             maxWidth: BUBBLE_MAX_WIDTH,
-            paddingHorizontal: 10,
-            paddingVertical: 6,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
             borderRadius: R,
             borderTopRightRadius: mine && firstOfRun ? TAIL_RADIUS : R,
             borderTopLeftRadius: !mine && firstOfRun ? TAIL_RADIUS : R,
-            backgroundColor: mine ? t.colors.brandFrom : t.colors.bgSubtle,
+            backgroundColor: mine
+              ? t.colors.brandFrom
+              : (incomingTint ?? t.colors.bgSubtle),
+            // An incoming bubble is `bgSubtle` on `bgBase`. In dark those are #121214 on
+            // #0A0A0B — so close in value that the bubble barely reads as a shape at all.
+            // A hairline gives it an edge, which is exactly what §design-direction
+            // prescribes for dark (shadows don't register on a near-black ground). On a
+            // decorated wallpaper the border comes from the wallpaper instead, in both schemes.
+            ...(mine
+              ? null
+              : incomingBorder !== null
+                ? { borderWidth: 1, borderColor: incomingBorder }
+                : t.scheme === 'dark'
+                  ? { borderWidth: 1, borderColor: t.colors.hairline }
+                  : null),
           }}
         >
           <Text

@@ -86,10 +86,13 @@ export function ChatHeader({
   conversationId,
   name,
   onBack,
+  onOpenWallpaper,
 }: {
   conversationId: string;
   name: string | undefined;
   onBack: () => void;
+  /** Overflow (⋯) → the chat wallpaper picker (§F2). */
+  onOpenWallpaper: () => void;
 }): React.JSX.Element {
   const t = useTheme();
   const { t: tr } = useTranslation();
@@ -202,7 +205,7 @@ export function ChatHeader({
       />
       <HeaderIconButton
         label={tr('chat.more')}
-        onPress={noop}
+        onPress={onOpenWallpaper}
         icon={MoreIcon}
       />
     </View>
