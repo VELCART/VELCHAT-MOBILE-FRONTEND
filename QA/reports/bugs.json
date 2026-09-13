@@ -281,7 +281,7 @@
       "evidence": ["QA/evidence/api/api-2026-09-11.jsonl"],
       "refs": ["apps/mobile/src/infra/network/client.ts:33-62"],
       "regression": false,
-      "notes": "Blocked on VC-007: if the gateway reached its upstreams, a proxied ping would wake them and this would resolve itself.",
+      "notes": "INVESTIGATED — BLOCKED on information the client does not have. warmBackend() can only ping hosts it knows, and the only per-service origins in config are API_BASE_URL (velchat-edge-gateway-2aje.onrender.com) and WS_URL (velchat-realtime-service-2aje.onrender.com). identity/messaging/content/platform have no hostname anywhere in the repo, so there is nothing to warm them WITH. They appear to share a Render instance suffix (-2aje), which makes a pattern like velchat-identity-service-2aje.onrender.com plausible — but deliberately NOT guessed and baked into a shipping app: a wrong host is at best a wasted request on every cold start and at worst traffic aimed at somebody elses service. To fix, add the real per-service origins to .env.dev/.env.prod (e.g. WARM_ORIGINS as a comma-separated list) and have warmBackend fan its health pings across them; the function already fires them fire-and-forget off the render path, so only the list is missing. Needs the actual Render hostnames from the owner.",
       "jira": "VC-14"
     },
     {
