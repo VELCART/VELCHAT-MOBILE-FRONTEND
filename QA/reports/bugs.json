@@ -1686,6 +1686,39 @@
       "assigneeAccountId": "712020:f2e5ac48-d89a-4817-850b-66bd48f7dd28",
       "jira": "VC-49",
       "fixedIn": "dev branch, 2026-09-13"
+    },
+    {
+      "id": "VC-050",
+      "status": "Fixed",
+      "regression": false,
+      "evidence": [],
+      "refs": [],
+      "testIds": ["authBootstrap.test.ts: cold start with a session already on the device"],
+      "title": "Cold start holds a splash screen on a network refresh — up to minutes before home appears",
+      "severity": "P0",
+      "priority": "P0",
+      "layer": "CLIENT",
+      "feature": "App launch / Auth bootstrap",
+      "component": "apps/mobile/src/features/auth/hooks/useAuth.ts (useAuthBootstrap) + app/App.tsx",
+      "environment": "Production",
+      "device": "Android",
+      "os": "Android",
+      "frequency": "Every launch more than 15 minutes after the last one",
+      "reproducibility": "Deterministic — access tokens live 15 minutes",
+      "preconditions": "A signed-in install that has not been opened for more than 15 minutes, against a hibernating free-tier backend.",
+      "steps": [
+        "Leave the app closed for more than 15 minutes so the access token expires and the Render services hibernate.",
+        "Open the app.",
+        "Time how long the splash screen stays up before the home screen appears."
+      ],
+      "expected": "Home renders immediately from local data. The app is offline-first — §M0 rule 2 is that the UI never waits on the network on the render path.",
+      "actual": "App.tsx renders <Splash/> until useAuthBootstrap reports ready, and the hook awaited a token refresh whenever the stored access token was expired. Against a hibernating free-tier backend that refresh alone takes 40-60s (client.ts documents a measured 44s wake, DEFAULT_TIMEOUT is 60s), and on timeout the hook then awaited TWO more network calls (requestChallenge, loginWithDeviceKey) before giving up — so the splash could hold for minutes.",
+      "user_impact": "The app looks hung on every real launch. This is the first thing a user sees, so it reads as the whole app being broken rather than one slow request.",
+      "suspected_cause": "The bootstrap conflated 'can we show the app' with 'is the access token fresh enough to open a socket'.",
+      "rootCause": "Confirmed by reading the boot path and reproduced in a hook test: with the refresh mocked to never resolve, `ready` never became true.",
+      "notes": "FIX: split the two questions the bootstrap had conflated — \"can we show the app\" and \"is the access token fresh enough for a socket\". If a session exists on the device at all (hasSession(), presence-only), the app now hydrates and reports ready IMMEDIATELY, whatever the token age; the chat list renders from the local DB, the HTTP client refreshes on its first 401, and the socket heals itself via 4001 -> refresh -> reconnect. VC-036 is not regressed: a fresh token is still wanted as early as possible so the first handshake is not doomed, so the refresh is still fired at once — it just runs BEHIND the app instead of in front of it. The no-session path (signed out but a device key survives) still attempts a silent restore, but is now bounded by MAX_SILENT_RESTORE_MS = 4000 so a hibernating backend cannot freeze the splash; a restore that lands later still navigates home on its own, because RootNavigator follows the auth store (state === active). Verified: full jest suite 521/521 pass (5 new hook tests, two of which fail against the old code by hanging until waitFor times out), tsc --noEmit clean, eslint 0 errors. Measured on device: not yet — needs a launch on real hardware to confirm the wall-clock improvement.",
+      "fixedIn": "dev branch, 2026-09-13",
+      "jira": "VC-51"
     }
   ]
 }

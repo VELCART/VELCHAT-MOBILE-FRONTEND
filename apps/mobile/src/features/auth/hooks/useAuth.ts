@@ -10,6 +10,7 @@ import {
   hasNotificationPermission,
   hasDeviceKey,
   signChallenge,
+  hasSession,
   hasValidSession,
   getRefreshToken,
   refreshAccessToken,
@@ -33,6 +34,13 @@ import { useAuthStore } from '../model/authStore';
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_POLLS = 40; // ~2 min
+/**
+ * Longest the launch splash may wait on a silent device-key restore before showing onboarding
+ * instead. Generous enough for a warm backend to answer two round trips, short enough that a
+ * hibernating one (40-60s to wake) cannot strand the user on a splash screen. A restore that
+ * lands after this still navigates home on its own — the navigator follows the auth store.
+ */
+const MAX_SILENT_RESTORE_MS = 4000;
 
 export function useStartPhoneAuth(): {
   start: (phone: string) => Promise<boolean>;
@@ -266,13 +274,24 @@ export function useAuthBootstrap(): boolean {
   const hydrate = useAuthStore(s => s.hydrate);
 
   useEffect(() => {
-    // `hasValidSession()`, not merely "a token exists" (VC-036): an access token that is present
-    // but EXPIRED must fall through to the refresh branch below, not hydrate straight away — that
-    // used to hand SyncEngine a token the server was certain to reject, costing a guaranteed
-    // failed handshake + refresh + reconnect on every cold start after 15 minutes idle.
-    if (hasValidSession()) {
+    // A session exists on this device — show the app NOW, whatever the token's age.
+    //
+    // §M0 rule 2 is "the UI never waits on the network on the render path", and App.tsx holds
+    // a splash screen until this hook says ready, so anything awaited here is time the user
+    // spends looking at a splash. Awaiting the refresh (which is what an EXPIRED token used to
+    // do, and access tokens live 15 minutes, so that is essentially every launch) cost 40-60s
+    // against a hibernating free-tier backend — and if it timed out, two more network calls
+    // after it. The chat list renders from the local DB anyway, the HTTP client refreshes on
+    // its first 401, and the socket heals itself through 4001 -> refresh -> reconnect.
+    if (hasSession()) {
       hydrate();
       setReady(true);
+      // VC-036's point still stands — a fresh token means the socket's first handshake is not
+      // doomed — so the refresh still happens immediately. It just happens BEHIND the app
+      // instead of in front of it.
+      if (!hasValidSession()) {
+        void refreshAccessToken().catch(() => undefined);
+      }
       return undefined;
     }
     let active = true;
@@ -299,9 +318,17 @@ export function useAuthBootstrap(): boolean {
         if (active) setReady(true);
       }
     };
-    void run();
+    // There is no session, so a silent device-key restore is worth ATTEMPTING — but it is still
+    // network, and a hibernating backend must not turn "signed out" into a frozen splash. Give
+    // it a bounded slice of the launch; if it lands later the user is moved to home anyway,
+    // because the navigator follows the auth store (`state === 'active'`).
+    const bail = setTimeout(() => {
+      if (active) setReady(true);
+    }, MAX_SILENT_RESTORE_MS);
+    void run().finally(() => clearTimeout(bail));
     return () => {
       active = false;
+      clearTimeout(bail);
     };
   }, [hydrate, provision]);
 
