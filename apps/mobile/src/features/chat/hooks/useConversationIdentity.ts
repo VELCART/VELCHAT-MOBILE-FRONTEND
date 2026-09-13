@@ -11,6 +11,7 @@
  */
 import { useEffect, useState } from 'react';
 import { observeConversation } from '../../../infra';
+import { discoveredContacts, peerDisplayName } from '../../contacts';
 import { refreshPeerIdentity } from '../api/refreshPeerIdentity';
 
 export interface ConversationIdentity {
@@ -40,7 +41,8 @@ export function useConversationIdentity(
         setIdentity({
           peerId: row.peerId,
           peerAvatarUrl: row.peerAvatarUrl,
-          name: row.name,
+          // The header shows the name the USER saved, matching the chat list (VC-047).
+          name: peerDisplayName(discoveredContacts(), row.peerId, row.name),
         });
         // Fire-and-forget: never blocks the header, and no-ops unless the cache is stale.
         void refreshPeerIdentity(conversationId, row.peerId);

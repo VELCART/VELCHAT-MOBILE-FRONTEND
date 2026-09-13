@@ -1504,7 +1504,7 @@
       "user_impact": "Users see raw phone numbers instead of contact names until they interact with the chat, which reads as broken contact sync.",
       "suspected_cause": "Not yet investigated.",
       "rootCause": "Not yet investigated — reported from manual production QA testing, needs code-level triage.",
-      "notes": "Reported by Tusha Bhadouriya during production QA testing.",
+      "notes": "PARTIALLY FIXED — still open pending the remaining half. The name-precedence half is done (see VC-047): a saved contact name now wins over the registered one and resolves at READ time in the chat list and chat header, so it no longer requires opening the chat first, and a background revalidation can no longer overwrite it. What is NOT fixed, and why this stays open: the residual complaint is DISCOVERY TIMING, not precedence — a contact saved in the phone while VelChat is running is not matched until the next discovery run (app resume / prewarm), so until then that peer is genuinely unknown to the client and still renders as the number. Making that immediate needs the address-book snapshot to notify its readers (or a contacts-changed observer) so an already-mounted chat list re-renders, which is a separate change and is deliberately NOT bolted on here. Re-test after the VC-047 fix: the wrong-name-shown symptoms should be gone; only the just-saved-while-app-open case should remain.",
       "assignee": "Tusha Bhadouriya",
       "assigneeAccountId": "712020:f2e5ac48-d89a-4817-850b-66bd48f7dd28",
       "jira": "VC-44"
@@ -1579,11 +1579,14 @@
     },
     {
       "id": "VC-047",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
-      "testIds": [],
+      "testIds": [
+        "peerDisplayName.test.ts: VC-044 / VC-047",
+        "conversationRow.test.ts: VC-044 / VC-047"
+      ],
       "title": "Chat List shows the registered VelChat name instead of the saved contact name until a chat is opened",
       "severity": "P2",
       "priority": "P2",
@@ -1607,10 +1610,11 @@
       "user_impact": "Users see the wrong display name for their own saved contacts until they happen to open that specific chat, which is confusing and looks like a sync bug.",
       "suspected_cause": "Possibly the same underlying cause as the contact-sync bug reported separately — the Chat List may resolve the display name before local contact-name resolution/caching has run.",
       "rootCause": "Not yet investigated.",
-      "notes": "Reported by Tusha Bhadouriya during production QA testing. May share a root cause with the contact-sync issue reported as a separate entry.",
+      "notes": "FIX (root-caused): the address book was consulted on exactly ONE path. startDm() writes the saved name when a chat is opened from New Chat / Message Yourself — which is why the name corrected itself after opening — while every other path used server data, and refreshPeerIdentity() actively OVERWROTE a saved name with the registered one on its next background revalidation (once per TTL/session). Introduced peerDisplayName() (features/contacts/model), the single precedence rule: the name YOU saved wins over the name the peer registered; falls back to the registered name for someone not in your book or when the book has not loaded; returns undefined when neither side has a usable name so callers keep what they have; group rows are untouched (no peerId to look up). Applied at both the WRITE side (refreshPeerIdentity, both the TTL path and the profile-changed push, so a revalidation can no longer downgrade a saved name) and the READ side (toConversationRow for the chat list, useConversationIdentity for the chat header), the latter being what makes a saved name appear WITHOUT having to open the chat first. Exposed discoveredContacts() from the contacts barrel as a cache read (no re-discovery). Verified: full jest suite 502/502 pass (10 new tests), tsc --noEmit clean, eslint 0 errors and no boundary violation. Not re-tested on a device — no Android hardware attached to this machine.",
       "assignee": "Tusha Bhadouriya",
       "assigneeAccountId": "712020:f2e5ac48-d89a-4817-850b-66bd48f7dd28",
-      "jira": "VC-47"
+      "jira": "VC-47",
+      "fixedIn": "dev branch, 2026-09-13"
     },
     {
       "id": "VC-048",

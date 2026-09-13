@@ -13,6 +13,11 @@
  */
 import { useEffect, useState } from 'react';
 import { observeConversations, Conversation } from '../../../infra';
+import {
+  discoveredContacts,
+  peerDisplayName,
+  type VelchatContact,
+} from '../../contacts';
 
 /** One chat-list row, as the UI renders it. Immutable primitives only — never a DB model. */
 export interface ConversationRowVM {
@@ -69,15 +74,23 @@ export function conversationTimeLabel(
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
 
-/** Snapshot a DB model into a row view-model. Pure — the unit of the memo contract above. */
+/**
+ * Snapshot a DB model into a row view-model. Pure — the unit of the memo contract above.
+ *
+ * `contacts` are the discovered address-book matches (`null` when the book has not loaded).
+ * Resolving the title HERE rather than trusting the stored row is what makes the saved name
+ * appear without having to open the chat first: the row carries whatever the server said, and
+ * the name a DM is shown under is the user's own (VC-044 / VC-047).
+ */
 export function toConversationRow(
   c: Conversation,
   now: number,
+  contacts: readonly VelchatContact[] | null = null,
 ): ConversationRowVM {
   return {
     id: c.id,
     type: c.type,
-    name: c.name,
+    name: peerDisplayName(contacts, c.peerId, c.name),
     preview: c.lastMessagePreview ?? '',
     unread: c.unreadCount,
     pinned: c.isPinned,
@@ -98,10 +111,13 @@ export function useConversations(): ConversationsState {
       // getDatabase() throws if the native module isn't in the binary yet (pre-rebuild) —
       // degrade to an empty list instead of crashing the tab.
       sub = observeConversations().subscribe(models => {
-        // One `now` per emission so every row is bucketed against the same instant.
+        // One `now` per emission so every row is bucketed against the same instant. The address
+        // book is read once per emission too — it is a cache read, and resolving it per row
+        // would re-read it for every chat in the list.
         const now = Date.now();
+        const contacts = discoveredContacts();
         setState({
-          rows: models.map(m => toConversationRow(m, now)),
+          rows: models.map(m => toConversationRow(m, now, contacts)),
           loaded: true,
         });
       });

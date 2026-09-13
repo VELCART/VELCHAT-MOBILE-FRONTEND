@@ -197,6 +197,19 @@ function persistDiscoveryCache(cache: DiscoveryCache): void {
 }
 
 /**
+ * The address-book matches this account has already discovered, or `null` when nothing has been
+ * discovered yet (no permission, first run, or still in flight).
+ *
+ * Exposed so anything that titles a DM can prefer the name the USER saved over the one the peer
+ * registered (VC-044 / VC-047) without re-running discovery — it is a cache read, safe to call
+ * on a render or write path. Returns `null` rather than an empty list for "unknown", so callers
+ * can tell "not in your contacts" from "contacts not loaded".
+ */
+export function discoveredContacts(): VelchatContact[] | null {
+  return readCache(getAccountId())?.onVelchat ?? null;
+}
+
+/**
  * Drop this account's remembered discovery outcomes. MUST be called on sign-out — the cache maps
  * E.164 numbers to accountIds and would otherwise outlive the account that built it.
  */
