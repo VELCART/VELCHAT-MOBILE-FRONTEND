@@ -46,6 +46,7 @@ import {
 } from '../../../infra';
 import { syncEngine } from '../../../domain/sync';
 import { setConversationMute } from '../api/prefs';
+import { runSequentially } from './runSequentially';
 
 /** How many conversation names to mirror natively. Bounded — this is a notification title. */
 const NAME_MIRROR_LIMIT = 200;
@@ -298,11 +299,11 @@ export async function runQueuedPushActions(): Promise<void> {
       count: events.length,
     });
   }
-  // Sequentially, and each one awaited. `allSettled` over the results rather than a bare loop so
-  // one failing action cannot abandon the rest — a reply must still go out if a mute failed.
-  const outcomes = await Promise.allSettled(
-    events.map(event => () => handlePushEvent(event)).map(run => run()),
-  );
+  // Sequentially, and each one awaited, without letting one failing action abandon the rest — a
+  // reply must still go out if a mute failed. This used to map the events to thunks and then map
+  // again to CALL them, which started every handler before `allSettled` waited on anything, so
+  // the drain was concurrent despite the comment (VC-031).
+  const outcomes = await runSequentially(events, handlePushEvent);
   for (let i = 0; i < outcomes.length; i++) {
     const outcome = outcomes[i];
     if (outcome?.status === 'rejected') {

@@ -949,7 +949,7 @@
       "title": "No event_id dedup anywhere — the documented at-least-once guard does not exist",
       "severity": "P1",
       "priority": "P1",
-      "status": "Open",
+      "status": "Won't Fix",
       "layer": "CLIENT",
       "feature": "Realtime / Idempotency",
       "component": "apps/mobile/src/infra/realtime/socket.ts:7 (doc comment only)",
@@ -972,7 +972,7 @@
       "evidence": ["QA/_audit/sync-db-audit.md"],
       "refs": ["apps/mobile/src/infra/realtime/socket.ts:7"],
       "regression": false,
-      "notes": "",
+      "notes": "NO CODE CHANGE — not reproducible as filed; closing with evidence rather than building the suggested LRU. Two points. (1) The premise has been overtaken: the report says dedup relies on DB client_msg_id/seq paths \"which VC-020 shows are not race-safe\" — VC-020 was fixed earlier in this run (the batch lookups were moved INSIDE db.write, making check-and-act atomic), so those paths ARE now race-safe. (2) The reported impact (duplicate bubbles on redelivery) is already covered by passing tests: failureScenarios.test.ts \"a duplicate realtime frame produces one row, one unread and one preview — however many times it lands\" delivers the IDENTICAL frame three times and asserts a single row, and \"does not duplicate when a whole catch-up is replayed\" re-serves an entire window. Also note socket.ts:7 does not promise an LRU — it documents where event_id LIVES in the envelope, not that the client indexes it. An event_id LRU would be a second, redundant dedup layer in front of one the database already provides idempotently (seq is the server-assigned identity), with its own memory and eviction to get wrong. Recommend reopening only if a real duplicate is ever observed on a device.",
       "jira": "VC-28"
     },
     {
@@ -1048,7 +1048,7 @@
       "title": "runQueuedPushActions runs queued notification actions concurrently while claiming to serialize them",
       "severity": "P2",
       "priority": "P2",
-      "status": "Open",
+      "status": "Fixed",
       "layer": "CLIENT",
       "feature": "Push / Notification actions",
       "component": "apps/mobile/src/features/notifications/model/pushRuntime.ts:301-305",
@@ -1068,15 +1068,16 @@
       "user_impact": "Replies sent from notifications can arrive out of order.",
       "suspected_cause": "The double `.map` invokes eagerly; the intent was a sequential reduce.",
       "rootCause": "Confirmed by code reading.",
-      "testIds": ["VC-UNIT-212"],
+      "testIds": ["runSequentially.test.ts: VC-031"],
       "evidence": ["QA/_audit/auth-network-push-audit.md#d9"],
       "refs": [
         "apps/mobile/src/features/notifications/model/pushRuntime.ts:301-305",
         "apps/mobile/src/features/notifications/__tests__/pushRuntime.test.ts:215-226"
       ],
       "regression": false,
-      "notes": "The existing test passes only because sendText is invoked synchronously at the top of each handler — it cannot fail for the reason it claims.",
-      "jira": "VC-31"
+      "notes": "FIX: the drain mapped each queued event to a thunk and then IMMEDIATELY mapped again to call it — events.map(e => () => handle(e)).map(run => run()) — so every handler was already in flight before Promise.allSettled waited on anything. The code did the exact opposite of the comment directly above it. Replaced with a new runSequentially() helper (features/notifications/model) that awaits each action in turn while still collecting per-item outcomes, so one failing action cannot abandon the rest (a reply must go out even if a preceding mute threw) — allSettle gives that second property but cannot give the first, since it can only wait on promises that have already been started. Verified: full jest suite 506/506 pass (4 new tests, including a max-concurrency assertion that fails against the old eager implementation), tsc --noEmit clean, eslint 0 errors.",
+      "jira": "VC-31",
+      "fixedIn": "dev branch, 2026-09-13"
     },
     {
       "id": "VC-032",
