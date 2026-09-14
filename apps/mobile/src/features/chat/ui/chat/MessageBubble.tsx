@@ -128,7 +128,9 @@ function MessageBubbleBase({
           style={{
             maxWidth: BUBBLE_MAX_WIDTH,
             paddingHorizontal: 12,
-            paddingVertical: 8,
+            // Horizontal padding is what stops the text touching the edge; vertical padding
+            // just makes the bubble tall. Keep the former, spend less on the latter.
+            paddingVertical: 5,
             borderRadius: R,
             borderTopRightRadius: mine && firstOfRun ? TAIL_RADIUS : R,
             borderTopLeftRadius: !mine && firstOfRun ? TAIL_RADIUS : R,
@@ -153,7 +155,7 @@ function MessageBubbleBase({
             variant="body"
             style={{
               fontSize: 15,
-              lineHeight: 20,
+              lineHeight: 19,
               color: mine ? t.colors.actionFg : t.colors.textPrimary,
             }}
           >
@@ -165,7 +167,9 @@ function MessageBubbleBase({
               alignItems: 'center',
               gap: 4,
               alignSelf: 'flex-end',
-              marginTop: 2,
+              // The meta row sits tight under the text — it is a footnote, not a second
+              // paragraph, and the gap here was a visible chunk of each bubble's height.
+              marginTop: 0,
             }}
           >
             <Text

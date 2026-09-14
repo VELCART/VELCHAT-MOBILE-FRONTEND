@@ -114,7 +114,12 @@ export function ChatHeader({
         minHeight: 60,
         paddingLeft: t.spacing.xs,
         paddingRight: t.spacing.xs,
-        backgroundColor: t.colors.surface,
+        // `bgBase`, NOT `surface`: the safe-area inset above this header is painted by `Screen`
+        // (bgBase) and the home header uses bgBase too. In light both tokens are #FFFFFF so the
+        // difference was invisible, but in dark `surface` is #1A1A1C against a #0A0A0B inset —
+        // a visible seam under the status bar, and a chat header that did not match the home
+        // header it was navigated from.
+        backgroundColor: t.colors.bgBase,
         borderBottomWidth: 1,
         borderBottomColor: t.colors.hairline,
       }}

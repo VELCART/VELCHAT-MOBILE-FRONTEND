@@ -47,6 +47,7 @@ import { WallpaperSheet } from './chat/WallpaperSheet';
 import { setChatWallpaper } from '../api/setChatWallpaper';
 import { useConversationIdentity } from '../hooks/useConversationIdentity';
 import { wallpaperPaint, type WallpaperId } from '../model/wallpaper';
+import { shouldScrollToLatest } from '../model/autoScroll';
 import {
   compactTime,
   dayCategory,
@@ -129,7 +130,12 @@ export function ChatScreen(): React.JSX.Element {
   const showJumpRef = useRef(false);
   const [showJump, setShowJump] = useState(false);
 
+  // Live scroll offset, kept in a ref so tracking it costs no re-render. The auto-follow below
+  // needs to know whether the user is at the bottom at the MOMENT a message lands.
+  const offsetRef = useRef(0);
+
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    offsetRef.current = e.nativeEvent.contentOffset.y;
     const next = e.nativeEvent.contentOffset.y > JUMP_THRESHOLD;
     if (next !== showJumpRef.current) {
       showJumpRef.current = next;
@@ -197,6 +203,28 @@ export function ChatScreen(): React.JSX.Element {
       })),
     [messages, meId, dateLabelFor],
   );
+
+  // Follow the newest message.
+  //
+  // The list is inverted, so new rows grow the content underneath the viewport and nothing
+  // pulled it back — a message, including one the user had just typed, landed below the fold
+  // and had to be scrolled to by hand. `rows[0]` is the newest (the query is created_at DESC).
+  // A reader who has scrolled up into history is deliberately left alone and keeps the
+  // jump-to-latest button instead; see `shouldScrollToLatest`.
+  const newestIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const newest = rows[0];
+    if (!newest) return;
+    const previous = newestIdRef.current;
+    newestIdRef.current = newest.id;
+    // First emission just records where we are — opening a chat already starts at the bottom.
+    if (previous === undefined || previous === newest.id) return;
+    if (
+      shouldScrollToLatest({ own: newest.mine, offsetY: offsetRef.current })
+    ) {
+      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    }
+  }, [rows]);
 
   // Depends only on stable references, so a new emission no longer re-renders every cell.
   // The two wallpaper values are plain strings off a memoised paint, so they don't churn.
