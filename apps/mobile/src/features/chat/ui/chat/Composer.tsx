@@ -78,11 +78,17 @@ export function Composer({
         gap: t.spacing.xs,
         paddingHorizontal: t.spacing.xs,
         paddingTop: t.spacing.xxs,
+        // With the keyboard up the parent has already lifted this bar by the keyboard height,
+        // so the only padding still needed is breathing room. It was `huge` (48dp), which left
+        // a wide empty band between the input and the keys and cost a whole message of thread
+        // while the user was actually writing (VC-061).
         paddingBottom: keyboardUp
-          ? t.spacing.huge
+          ? t.spacing.xs
           : Math.max(insets.bottom, t.spacing.xs),
         backgroundColor: t.colors.surface,
-        borderTopWidth: 0,
+        // The separator the style has always declared: `borderTopWidth: 0` meant the colour
+        // beside it never drew anything, so the thread bled straight into the composer.
+        borderTopWidth: 1,
         borderTopColor: t.colors.hairline,
       }}
     >

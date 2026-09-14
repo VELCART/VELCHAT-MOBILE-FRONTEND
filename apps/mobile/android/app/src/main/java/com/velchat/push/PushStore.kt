@@ -371,6 +371,25 @@ internal class PushStore(context: Context) {
     return n
   }
 
+  /**
+   * How many MESSAGES are stacked across every conversation that currently has a notification.
+   *
+   * The group summary used `countedConversations()` and formatted it with "%d new messages", so
+   * it reported the number of chats while naming messages — it read "5 new messages" for a burst
+   * of eight and "5 new messages" again for a single one (VC-054). The per-conversation counts
+   * were already here; this just adds them up instead of discarding them.
+   */
+  fun countedMessages(): Int {
+    val counts = readJson(KEY_COUNTS)
+    var n = 0
+    val keys = counts.keys()
+    while (keys.hasNext()) {
+      val c = counts.optInt(keys.next(), 0)
+      if (c > 0) n += c
+    }
+    return n
+  }
+
   fun clearCount(conversationId: String) {
     val counts = readJson(KEY_COUNTS)
     counts.remove(conversationId)

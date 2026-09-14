@@ -102,3 +102,26 @@ export function presenceTimeLabel(
   if (cat === 'yesterday') return yesterdayLabel;
   return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
 }
+
+/**
+ * What the chat header calls this conversation (VC-053).
+ *
+ * Three sources in order of authority: the name the navigation passed (the chat list and search
+ * both know it), then the conversation row the header already observes, then a generic label.
+ *
+ * The row matters because ONE entry point carries no name at all — the notification deep link is
+ * `chat/:conversationId` and nothing else — and without this that path rendered the bottom-tab
+ * label "Chats" as the peer's name. Blank is treated as absent in both sources: an unresolved row
+ * carries an empty string, and `??` would have accepted it and drawn an empty header.
+ */
+export function chatTitle(
+  routeName: string | undefined,
+  rowName: string | undefined,
+  fallback: string,
+): string {
+  const fromRoute = routeName?.trim();
+  if (fromRoute) return fromRoute;
+  const fromRow = rowName?.trim();
+  if (fromRow) return fromRow;
+  return fallback;
+}

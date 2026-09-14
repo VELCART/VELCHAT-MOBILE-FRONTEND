@@ -137,18 +137,18 @@ function MessageBubbleBase({
             backgroundColor: mine
               ? t.colors.brandFrom
               : (incomingTint ?? t.colors.bgSubtle),
-            // An incoming bubble is `bgSubtle` on `bgBase`. In dark those are #121214 on
-            // #0A0A0B — so close in value that the bubble barely reads as a shape at all.
-            // A hairline gives it an edge, which is exactly what §design-direction
-            // prescribes for dark (shadows don't register on a near-black ground). On a
-            // decorated wallpaper the border comes from the wallpaper instead, in both schemes.
+            // An incoming bubble is `bgSubtle` on `bgBase`, and in BOTH schemes those are far
+            // too close to read as a shape on their own: #121214 on #0A0A0B in dark, and
+            // #F7F7F8 on #FFFFFF in light — about 1.04:1, well under the 3:1 WCAG 1.4.11 asks
+            // of a component boundary. The hairline used to be dark-only, so the default
+            // light + plain combination shipped with bubbles that had no edge at all (VC-060).
+            // On a decorated wallpaper the border comes from the wallpaper instead.
             ...(mine
               ? null
-              : incomingBorder !== null
-                ? { borderWidth: 1, borderColor: incomingBorder }
-                : t.scheme === 'dark'
-                  ? { borderWidth: 1, borderColor: t.colors.hairline }
-                  : null),
+              : {
+                  borderWidth: 1,
+                  borderColor: incomingBorder ?? t.colors.hairline,
+                }),
           }}
         >
           <Text

@@ -498,7 +498,9 @@ internal object PushNotifications {
       NotificationManagerCompat.from(context).cancel(SUMMARY_ID)
       return
     }
-    val total = active
+    // The summary names MESSAGES, so it must count messages — `active` is the number of chats
+    // and using it made the collapsed notification misreport both ways (VC-054).
+    val total = store.countedMessages()
     val summary =
         NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_notification)

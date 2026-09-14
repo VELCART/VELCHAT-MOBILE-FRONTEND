@@ -22,7 +22,7 @@ import {
   useChatHeaderPresence,
   type PresenceEntry,
 } from '../../hooks/useChatHeaderPresence';
-import { presenceTimeLabel } from './chatModel';
+import { chatTitle, presenceTimeLabel } from './chatModel';
 
 const AVATAR = 40;
 
@@ -96,15 +96,23 @@ export function ChatHeader({
 }): React.JSX.Element {
   const t = useTheme();
   const { t: tr } = useTranslation();
-  const title = name ?? tr('tabs.chats');
-  const initial = (name ?? '').trim().charAt(0).toUpperCase();
   const { typing, presence } = useChatHeaderPresence(conversationId);
   // The photo comes from the conversation row the inbox sync already resolved, so the header is
   // complete on the first frame instead of three round-trips after the tap. Stale entries are
   // revalidated in the background by the hook, and the row is observed, so a changed picture
   // appears without the user doing anything.
-  const { peerAvatarUrl } = useConversationIdentity(conversationId);
+  const { peerAvatarUrl, name: rowName } =
+    useConversationIdentity(conversationId);
   const dp = peerAvatarUrl;
+  // The notification deep link is `chat/:conversationId` and carries no name, so `name` is
+  // undefined on that entry point and the header used to read "Chats" — the tab label — while
+  // the avatar and presence line beside it were right (VC-053). The row already observed here
+  // knows the peer; prefer it over the generic label.
+  // `''` as the fallback means "nothing names this conversation yet", which is what the avatar
+  // needs to know: it must fall back to the person glyph, not to the initial of a tab label.
+  const resolvedName = chatTitle(name, rowName, '');
+  const title = resolvedName || tr('tabs.chats');
+  const initial = resolvedName.charAt(0).toUpperCase();
   const presenceLine = derivePresenceLine(typing, presence, tr);
   return (
     <View

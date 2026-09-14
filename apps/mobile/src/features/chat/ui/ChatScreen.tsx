@@ -211,7 +211,22 @@ export function ChatScreen(): React.JSX.Element {
   // and had to be scrolled to by hand. `rows[0]` is the newest (the query is created_at DESC).
   // A reader who has scrolled up into history is deliberately left alone and keeps the
   // jump-to-latest button instead; see `shouldScrollToLatest`.
+  //
+  // Deciding to follow is not enough, and this is what VC-052 was: FlashList v2 turns
+  // `maintainVisibleContentPosition` ON BY DEFAULT (`minIndexForVisible: 0`). `inverted` is only
+  // a scaleY(-1) transform, so a new message is inserted at internal index 0 — the scroll START —
+  // and the native anchor PINS the viewport, pushing the offset out by exactly the height of the
+  // new bubbles. A `scrollToOffset` issued in this commit is therefore undone by the anchor
+  // adjustment that lands after it, which is why the new message sat clipped behind the composer.
+  // The library's own follow knob cannot help: `autoscrollToBottomThreshold` defaults to disabled
+  // and targets the internal END (the OLDEST rows here), and `autoscrollToTopThreshold` is
+  // declared in FlashListProps but never read anywhere in 2.3.2.
+  //
+  // So the decision is recorded here and the scroll is issued from `onContentSizeChange`, which
+  // fires AFTER the new rows are laid out and the anchor has had its say. Anchoring is kept,
+  // because it is exactly what should happen to a reader scrolled up in history.
   const newestIdRef = useRef<string | undefined>(undefined);
+  const followPendingRef = useRef(false);
   useEffect(() => {
     const newest = rows[0];
     if (!newest) return;
@@ -222,9 +237,34 @@ export function ChatScreen(): React.JSX.Element {
     if (
       shouldScrollToLatest({ own: newest.mine, offsetY: offsetRef.current })
     ) {
-      listRef.current?.scrollToOffset({ offset: 0, animated: true });
+      followPendingRef.current = true;
     }
   }, [rows]);
+
+  // `scrollToIndex`, NOT `scrollToOffset`, and fired from the size callback rather than the
+  // data effect. Both details are load-bearing:
+  //
+  //  - FlashList re-pins the viewport itself. On every data change its controller measures how
+  //    far the FIRST VISIBLE item moved and calls `scrollAnchorRef.scrollBy(diff)` to cancel the
+  //    shift, gated on a `pauseOffsetCorrection` flag. `scrollToOffset` does not touch that flag,
+  //    so a plain offset scroll is simply undone — which is why the thread kept landing exactly
+  //    one bubble short of the newest message. `scrollToIndex` RAISES the flag for the whole
+  //    scroll (and 300ms after it settles) and re-targets if the layout moves under it, so it is
+  //    the only scroll command that wins against the correction.
+  //  - `onContentSizeChange` fires once the new rows are actually laid out, so index 0 has a real
+  //    layout to scroll to instead of the stale one it would have in the same commit.
+  const onContentSizeChange = useCallback(() => {
+    if (!followPendingRef.current) return;
+    followPendingRef.current = false;
+    listRef.current?.scrollToIndex({ index: 0, animated: true });
+  }, []);
+
+  // A pending follow belongs to the message that triggered it, not to the next content change.
+  // If the user takes hold of the list first, drop it — and `loadOlder` growing the content must
+  // never be mistaken for a new message arriving.
+  const onScrollBeginDrag = useCallback(() => {
+    followPendingRef.current = false;
+  }, []);
 
   // Depends only on stable references, so a new emission no longer re-renders every cell.
   // The two wallpaper values are plain strings off a memoised paint, so they don't churn.
@@ -273,6 +313,8 @@ export function ChatScreen(): React.JSX.Element {
             renderItem={renderItem}
             getItemType={messageItemType}
             onScroll={onScroll}
+            onScrollBeginDrag={onScrollBeginDrag}
+            onContentSizeChange={onContentSizeChange}
             scrollEventThrottle={16}
             // Inverted list: the "end" is the TOP, i.e. the oldest bubble on screen. Without this
             // the history simply stopped at one window and nothing could ever load more.

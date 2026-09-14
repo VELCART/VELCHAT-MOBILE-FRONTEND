@@ -56,6 +56,10 @@
         <item quantity="other">%d new messages</item>
     </plurals>
 
-    <!-- Brand violet — the notification accent, matching the app's gradient start. -->
-    <color name="push_accent">#7C5CFF</color>
+    <!-- The app's brand accent. The shipped theme is monochrome (design-system/tokens.ts:
+         brandFrom #0B0B0C light / #F5F5F7 dark), so the notification tint is that same near-black.
+         It used to be the violet #7C5CFF from the abandoned violet->pink direction, a hue that
+         appears nowhere in the running app (VC-055). Android lightens this itself where a dark
+         accent would be unreadable against the shade. -->
+    <color name="push_accent">#0B0B0C</color>
 </resources>

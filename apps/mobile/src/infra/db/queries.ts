@@ -207,15 +207,19 @@ export async function upsertConversation(
           c.peerAvatarUrl = patch.peerAvatarUrl;
           c.peerAvatarAt = now;
         }
-        if (patch.lastMessagePreview !== undefined) {
+        if (patch.wallpaper !== undefined) c.wallpaper = patch.wallpaper;
+        // Never move the sort key backwards (a stale patch mustn't reorder the list) — and the
+        // preview is part of the same fact, so it moves with it or not at all (VC-058). It used
+        // to be written unconditionally, which let a late-arriving OLDER message (FCM gives no
+        // ordering guarantee, and a backfill can land after a live message) leave the row
+        // correctly sorted but previewing a message the user had already read.
+        const fresher =
+          patch.lastMessageAt === undefined ||
+          patch.lastMessageAt >= (c.lastMessageAt ?? 0);
+        if (fresher && patch.lastMessagePreview !== undefined) {
           c.lastMessagePreview = patch.lastMessagePreview;
         }
-        if (patch.wallpaper !== undefined) c.wallpaper = patch.wallpaper;
-        // Never move the sort key backwards (a stale patch mustn't reorder the list).
-        if (
-          patch.lastMessageAt !== undefined &&
-          patch.lastMessageAt >= (c.lastMessageAt ?? 0)
-        ) {
+        if (patch.lastMessageAt !== undefined && fresher) {
           c.lastMessageAt = patch.lastMessageAt;
         }
         c.updatedAt = now;
