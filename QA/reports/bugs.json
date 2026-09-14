@@ -1758,7 +1758,7 @@
     },
     {
       "id": "VC-052",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
@@ -1784,12 +1784,13 @@
       "actual": "The list stays anchored on the OLD content. The new bubble is left below the fold — typically clipped behind the composer, so only a sliver of it shows — and after two or three arrivals the jump-to-latest button appears and the user has to scroll by hand. The offset ends up wrong by almost exactly the height of the newly inserted bubbles.",
       "user_impact": "The single most-used interaction in the app feels broken. A user sends a message and cannot see it; a message arrives and they do not know. Reported directly by the product owner as 'new message ane ya krne pe chup jata hai, scroll krke upar krna pdta hai'.",
       "suspected_cause": "CONFIRMED by reading @shopify/flash-list@2.3.2: `maintainVisibleContentPosition` is ENABLED BY DEFAULT (RecyclerView.js -> maintainVisibleContentPositionInternal sets `minIndexForVisible: 0` whenever `maintainVisibleContentPosition?.disabled` is not true). The chat list is `inverted`, which FlashList implements purely as a scaleY(-1) transform, so a NEW message is inserted at internal index 0 — the scroll START. The native anchor therefore pins the viewport and pushes the scroll offset out by the inserted height, undoing the `scrollToOffset({offset: 0})` the follow effect issues in the same commit. The library's own follow knob does not help: `autoscrollToBottomThreshold` defaults to -1 (disabled) and targets the internal END (the OLDEST messages in an inverted list), and `autoscrollToTopThreshold` is declared in FlashListProps.d.ts but is NEVER READ anywhere in the 2.3.2 implementation.",
-      "notes": "Evidence: scratchpad/shots/b_fg_follow.png (B at the bottom, F1-F3 arrive, list stays on S8 and the jump FAB appears), scratchpad/shots/b_one.png (single message ONE1 arrives, list left exactly one bubble short), scratchpad/shots/a_own_follow.png (A's OWN sent ONE1 clipped behind the composer), scratchpad/shots/b_offline_send.png (own offline sends clipped). The race explains the intermittency: sometimes the manual scroll lands after the anchor adjustment and it looks fine.",
-      "jira": "VC-53"
+      "notes": "Evidence: scratchpad/shots/b_fg_follow.png (B at the bottom, F1-F3 arrive, list stays on S8 and the jump FAB appears), scratchpad/shots/b_one.png (single message ONE1 arrives, list left exactly one bubble short), scratchpad/shots/a_own_follow.png (A's OWN sent ONE1 clipped behind the composer), scratchpad/shots/b_offline_send.png (own offline sends clipped). The race explains the intermittency: sometimes the manual scroll lands after the anchor adjustment and it looks fine.\n\nFIX: the follow now goes through FlashList's `scrollToIndex({index:0})` instead of `scrollToOffset({offset:0})`, fired from `onContentSizeChange` rather than the data effect. Root cause confirmed by reading useRecyclerViewController.js: on every data change FlashList measures how far the FIRST VISIBLE item moved and calls scrollAnchorRef.scrollBy(diff) to cancel the shift, gated on a `pauseOffsetCorrection` ref that ONLY scrollToIndex raises — so a plain offset scroll was undone every time and the thread landed exactly one bubble short. Firing from onContentSizeChange means index 0 has a real layout instead of the stale one it would have in the same commit. Anchoring is deliberately kept: it is the right behaviour for a reader scrolled up in history, whom shouldScrollToLatest still leaves alone; a drag cancels any pending follow so loadOlder growing the content is never mistaken for a new message. An intermediate attempt using scrollToOffset from onContentSizeChange plus a requestAnimationFrame retry was built and tested on device and still landed one bubble short — that is what identified the pauseOffsetCorrection gate. VERIFIED ON DEVICE: a four-message burst now ends with the newest message fully visible above the composer (scratchpad/shots/v2_own_follow.png) where the same burst on the previous build left it clipped (v_own_follow.png). Still to verify with a second device: the INCOMING-message path, and the notification tap-through landing position.",
+      "jira": "VC-53",
+      "fixedIn": "dev branch, 2026-09-14"
     },
     {
       "id": "VC-053",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": ["VC-048"],
@@ -1816,12 +1817,13 @@
       "actual": "The header reads 'Chats' — the bottom-tab label — while the avatar and the 'online' presence line underneath are correct. Opening the same conversation from the chat list immediately afterwards shows the right name, which isolates it to the deep-link entry point.",
       "user_impact": "Tapping a notification lands the user in a chat that does not say who they are talking to. On a device with several conversations it is genuinely ambiguous, and it makes the deep-link path look unfinished.",
       "suspected_cause": "CONFIRMED in code. The linking config maps `Chat: 'chat/:conversationId'`, so a deep link supplies `conversationId` and NOTHING else; `route.params.name` is `undefined`. ChatHeader.tsx:95 then does `const title = name ?? tr('tabs.chats')` and line 96 `const initial = (name ?? '').trim().charAt(0).toUpperCase()`, so the title falls back to the tab label and the avatar's placeholder letter goes blank. The header already subscribes to the conversation row via `useConversationIdentity(conversationId)` and reads `peerAvatarUrl` off it — the row's `name` column is right there and simply is not used.",
-      "notes": "Evidence: scratchpad/shots/b_tapthrough.png and b_jump.png (header 'Chats' after notification tap) vs scratchpad/shots/b_off_kbd.png (header 'Aayush Jain 🤗' for the same chat opened from the list). Relates to VC-048, which reported the tap-through as not opening the chat at all; the open now works, this is the remaining defect on that path.",
-      "jira": "VC-54"
+      "notes": "Evidence: scratchpad/shots/b_tapthrough.png and b_jump.png (header 'Chats' after notification tap) vs scratchpad/shots/b_off_kbd.png (header 'Aayush Jain 🤗' for the same chat opened from the list). Relates to VC-048, which reported the tap-through as not opening the chat at all; the open now works, this is the remaining defect on that path.\n\nFIX: new pure helper `chatTitle(routeName, rowName, fallback)` in ui/chat/chatModel.ts, covered by chatTitle.test.ts (4 cases, RED first). ChatHeader now resolves the title from the route name, then the conversation row it was already observing for the avatar, and only then a generic label; blank counts as absent in both sources. The avatar initial is taken from the resolved name with an empty fallback, so a genuinely unnamed conversation still falls back to the person glyph instead of showing the initial of a tab label. Needs a second device to re-verify the live tap-through.",
+      "jira": "VC-54",
+      "fixedIn": "dev branch, 2026-09-14"
     },
     {
       "id": "VC-054",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
@@ -1847,12 +1849,13 @@
       "actual": "The summary read 'VelChat — 5 new messages' after 8 messages arrived, and read 'VelChat — 5 new messages' again after a single message arrived. The number is the count of conversations with a non-zero counter and never changes with the message count.",
       "user_impact": "The collapsed notification — often the only thing a user sees on a locked phone — lies about how much is waiting, and does so in both directions (under-reports a burst, over-reports a single message).",
       "suspected_cause": "CONFIRMED in code. `postSummary` does `val active = store.countedConversations()` then `val total = active` and formats it with `R.plurals.push_summary_text` ('%d new messages'). `PushStore.countedConversations()` returns the number of KEYS whose count is > 0, discarding the per-conversation counts it just read. The per-conversation counts are already stored, so summing them is a one-line change.",
-      "notes": "Evidence: dumpsys output captured twice in the live session (8 messages -> '5 new messages'; 1 message -> '5 new messages').",
-      "jira": "VC-55"
+      "notes": "Evidence: dumpsys output captured twice in the live session (8 messages -> '5 new messages'; 1 message -> '5 new messages').\n\nFIX: added `PushStore.countedMessages()`, which sums the per-conversation counters the store already held, and postSummary now formats that instead of `countedConversations()`. The <=1 guard that suppresses the summary for a single chat still uses the conversation count, which is correct. Needs a second device to re-verify live.",
+      "jira": "VC-55",
+      "fixedIn": "dev branch, 2026-09-14"
     },
     {
       "id": "VC-055",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
@@ -1878,8 +1881,9 @@
       "actual": "push_accent is hardcoded to #7C5CFF and the resource comment still describes it as 'Brand violet — the notification accent, matching the app's gradient start'. The violet->pink gradient direction it refers to was dropped; nothing in the running app is violet, so every notification carries an accent from a design that no longer exists.",
       "user_impact": "Notifications are the app's most public surface — they appear on the lock screen next to every other app. A tint that appears nowhere in the product reads as an unfinished or mismatched build and weakens brand recognition.",
       "suspected_cause": "Leftover from the abandoned violet->pink design direction in docs/design-direction.md. The app tokens were migrated to monochrome; the native notification colour was not.",
-      "notes": "Confirmed by reading tokens.ts (brandFrom '#0B0B0C' / '#F5F5F7') against push_strings.xml (#7C5CFF) and by the live dumpsys record color=0xff7c5cff.",
-      "jira": "VC-56"
+      "notes": "Confirmed by reading tokens.ts (brandFrom '#0B0B0C' / '#F5F5F7') against push_strings.xml (#7C5CFF) and by the live dumpsys record color=0xff7c5cff.\n\nFIX: push_accent is now #0B0B0C, the monochrome brand accent from design-system/tokens.ts, and the misleading resource comment about a violet gradient is replaced. Android resolves this against the shade background for contrast. Needs a second device to re-verify live.",
+      "jira": "VC-56",
+      "fixedIn": "dev branch, 2026-09-14"
     },
     {
       "id": "VC-056",
@@ -1946,7 +1950,7 @@
     },
     {
       "id": "VC-058",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
@@ -1971,8 +1975,9 @@
       "actual": "The row previewed 'KILL1' while 'KILL2' was the newer message, and stayed that way until a still-newer message arrived.",
       "user_impact": "The chat list — the app's home screen — shows the wrong 'last message' for a conversation, so the user's summary of their inbox is wrong and can point at a message they have already read.",
       "suspected_cause": "CONFIRMED in code. In `upsertConversation` the sort key is protected: `if (patch.lastMessageAt !== undefined && patch.lastMessageAt >= (c.lastMessageAt ?? 0)) c.lastMessageAt = patch.lastMessageAt;` with the comment 'Never move the sort key backwards (a stale patch mustn't reorder the list)'. The preview immediately above it has no such guard: `if (patch.lastMessagePreview !== undefined) c.lastMessagePreview = patch.lastMessagePreview;`. So a stale patch is prevented from reordering the list but is still allowed to overwrite what the row says.",
-      "notes": "Evidence: scratchpad/shots/b_after_reply.png (row reads 'KILL1' while KILL2 was newer). Fix is to move the preview write inside the same freshness check as the timestamp.",
-      "jira": "VC-59"
+      "notes": "Evidence: scratchpad/shots/b_after_reply.png (row reads 'KILL1' while KILL2 was newer). Fix is to move the preview write inside the same freshness check as the timestamp.\n\nFIX: the preview write now sits behind the same freshness check as the sort key in upsertConversation — a single `fresher` predicate gates both, so a stale patch can no longer overwrite what the row says while being correctly refused a reorder.",
+      "jira": "VC-59",
+      "fixedIn": "dev branch, 2026-09-14"
     },
     {
       "id": "VC-059",
@@ -2006,7 +2011,7 @@
     },
     {
       "id": "VC-060",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
@@ -2032,12 +2037,13 @@
       "actual": "The bubble is `bgSubtle` #F7F7F8 on `bgBase` #FFFFFF — a contrast ratio of about 1.04:1 — and no border is drawn, so the bubble has essentially no edge. MessageBubble only adds a hairline when `t.scheme === 'dark'` or when a decorated wallpaper supplies `incomingBorder`; the light + plain combination, which is the default, gets neither.",
       "user_impact": "Incoming messages read as floating text rather than as bubbles, the incoming/outgoing distinction weakens, and the effect is worst in bright light and for low-vision users. Own messages are fine (solid black fill), so the thread looks lopsided.",
       "suspected_cause": "The dark-mode hairline was added deliberately ('shadows don't register on a near-black ground') but the light + plain case was assumed to have enough contrast from the fill alone. It does not: the two tokens are 1.04:1 apart.",
-      "notes": "Evidence: scratchpad/shots/a_relaunch.png — the 'kkr' and 'h' bubbles in light theme. Fix options: give the incoming bubble a hairline in BOTH schemes, or darken `bgSubtle` for this use.",
-      "jira": "VC-61"
+      "notes": "Evidence: scratchpad/shots/a_relaunch.png — the 'kkr' and 'h' bubbles in light theme. Fix options: give the incoming bubble a hairline in BOTH schemes, or darken `bgSubtle` for this use.\n\nFIX: the incoming-bubble hairline is no longer dark-only; it applies in both schemes, using the wallpaper-supplied border when the chat has a decorated ground and t.colors.hairline otherwise.",
+      "jira": "VC-61",
+      "fixedIn": "dev branch, 2026-09-14"
     },
     {
       "id": "VC-061",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
@@ -2062,8 +2068,9 @@
       "actual": "`paddingBottom` is `t.spacing.huge` (48dp) when the keyboard is up, leaving a wide empty strip between the input bar and the keyboard. On a 2412px screen this is roughly 144px of dead space that could be showing another message.",
       "user_impact": "With the keyboard open — the state the user is in while actually writing — the app shows one fewer message than it needs to and the input bar looks detached from the keyboard. It reads as a layout mistake rather than a design choice.",
       "suspected_cause": "The keyboard-up branch was tuned while the manual keyboard-height lift was being worked out and the compensation was left larger than it needs to be.",
-      "notes": "Evidence: scratchpad/shots/a_cal.png and a_own_follow.png — the white band between the composer pill and the keyboard's suggestion strip. Same file also sets `borderTopWidth: 0` alongside a `borderTopColor`, so the intended separator between the thread and the composer never draws.",
-      "jira": "VC-62"
+      "notes": "Evidence: scratchpad/shots/a_cal.png and a_own_follow.png — the white band between the composer pill and the keyboard's suggestion strip. Same file also sets `borderTopWidth: 0` alongside a `borderTopColor`, so the intended separator between the thread and the composer never draws.\n\nFIX: keyboard-up paddingBottom drops from spacing.huge (48dp) to spacing.xs (8dp), and borderTopWidth goes from 0 to 1 so the separator the style always declared actually draws. VERIFIED ON DEVICE: scratchpad/shots/v2_own_follow.png shows the hairline above the composer and the composer sitting close to the keyboard.",
+      "jira": "VC-62",
+      "fixedIn": "dev branch, 2026-09-14"
     }
   ]
 }
