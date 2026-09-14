@@ -1918,7 +1918,7 @@
     },
     {
       "id": "VC-057",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": ["VC-032"],
@@ -1945,8 +1945,9 @@
       "actual": "The rebuilt notification listed S6, S7, S8, BG1 and then the new lines — messages the user had already read in the app minutes earlier.",
       "user_impact": "The user is re-notified about messages they have already read, so the notification badge and preview overstate what is actually new and the thread is cluttered with stale content. It also undermines trust that opening a chat actually clears it.",
       "suspected_cause": "The chat-open path does not reach `PushNotifications.cancel()`. The tray entry vanishing on tap is explained by the notification's own AUTO_CANCEL flag, which removes the posted notification but does NOT run the app's clearing code, so `store.clearLines()` never executes and the stored lines survive to be rebuilt into the next notification. Needs a check that `setActiveConversationForPush`/`clearConversationNotification` fires on chat mount and that it routes into `cancel()` rather than only `NotificationManager.cancel()`.",
-      "notes": "Evidence: scratchpad/shots/b_shade.png (S3..S8 before opening), scratchpad/shots/b_tapthrough.png (chat opened, tray cleared, all read), scratchpad/shots/b_reply_open.png (next notification still carries S6, S7, S8, BG1).",
-      "jira": "VC-58"
+      "notes": "Evidence: scratchpad/shots/b_shade.png (S3..S8 before opening), scratchpad/shots/b_tapthrough.png (chat opened, tray cleared, all read), scratchpad/shots/b_reply_open.png (next notification still carries S6, S7, S8, BG1).\n\nROOT CAUSE FOUND and FIXED via VC-062. The clearing path was wired correctly all along — clearConversationNotification -> VelChatPushModule.clearConversation -> PushNotifications.cancel -> store.clearLines — but it only ran from the chat screen's MOUNT effect. A notification tap RESUMES an already-mounted ChatScreen, so that effect never re-ran, and the tray entry disappearing was just the notification's own AUTO_CANCEL flag removing the posted notification while the stored lines and counters survived. useMessages now also clears on every return to the foreground. Live re-verification pending a second device.",
+      "jira": "VC-58",
+      "fixedIn": "dev branch, 2026-09-14"
     },
     {
       "id": "VC-058",
@@ -2071,6 +2072,39 @@
       "notes": "Evidence: scratchpad/shots/a_cal.png and a_own_follow.png — the white band between the composer pill and the keyboard's suggestion strip. Same file also sets `borderTopWidth: 0` alongside a `borderTopColor`, so the intended separator between the thread and the composer never draws.\n\nFIX: keyboard-up paddingBottom drops from spacing.huge (48dp) to spacing.xs (8dp), and borderTopWidth goes from 0 to 1 so the separator the style always declared actually draws. VERIFIED ON DEVICE: scratchpad/shots/v2_own_follow.png shows the hairline above the composer and the composer sitting close to the keyboard.",
       "jira": "VC-62",
       "fixedIn": "dev branch, 2026-09-14"
+    },
+    {
+      "id": "VC-062",
+      "status": "Fixed",
+      "regression": false,
+      "evidence": [],
+      "refs": ["VC-051", "VC-057"],
+      "testIds": ["chatVisibility.test.tsx: the chat only counts as on screen while it is visible"],
+      "title": "A chat left open while the app is backgrounded keeps marking arriving messages read — the sender gets a blue tick for a message nobody has seen",
+      "severity": "P1",
+      "priority": "P1",
+      "layer": "CLIENT",
+      "feature": "Chat / messaging — read receipts",
+      "component": "apps/mobile/src/features/chat/hooks/useMessages.ts (AppState listener) + domain/sync/SyncEngine.ts:1057 (read-on-arrival)",
+      "environment": "Production build, live backend",
+      "device": "Both test devices",
+      "os": "Android",
+      "frequency": "Every message that arrives while the app is backgrounded on a chat screen — i.e. constantly in normal use",
+      "reproducibility": "Deterministic once the state is set up; confirmed by reading the code path.",
+      "preconditions": "The recipient has a conversation OPEN and then leaves the app or locks the screen. The chat screen stays mounted, because backgrounding does not unmount it.",
+      "steps": [
+        "On device B open a DM and leave it open.",
+        "Press Home, or lock the screen. Do not go back to the chat list.",
+        "From device A send a message.",
+        "Look at the tick state on A."
+      ],
+      "expected": "A message is only 'read' once the recipient can actually see it. A backgrounded app is showing nothing, so the ticks stay grey until the user returns to the chat — which is exactly the rule the push layer beside this already follows.",
+      "actual": "The sender's bubble goes blue immediately. The SyncEngine reads every message landing in `activeConversationId` on arrival, and `useMessages` only ever cleared that id on UNMOUNT.",
+      "user_impact": "Read receipts stop meaning anything: a sender is told their message was read by someone whose phone was in their pocket. It also silently clears the recipient's unread badge for messages they have never seen, so those messages can be lost in the list. This is very likely the read-receipt half of VC-051, where the sender saw blue ticks for a message the recipient never received at all.",
+      "suspected_cause": "CONFIRMED in code. `SyncEngine.setActiveConversation` is called on chat mount and in the cleanup on unmount, and nowhere else. The AppState listener in the same effect correctly does `setActiveConversationForPush(state === 'active' ? conversationId : null)` — it simply never does the equivalent for the engine, so the engine's idea of 'on screen' survives backgrounding.",
+      "notes": "Found while tracing VC-057. Same listener is also the only place a notification TAP can clear a conversation's stored notification lines, because tapping resumes an ALREADY-MOUNTED chat screen and the mount effect never re-runs.\n\nFIX: the AppState listener in useMessages now withdraws and re-asserts the ENGINE's active conversation alongside the push layer's, and on returning to the foreground it re-reports the read and clears the conversation notification. Three new hook tests (chatVisibility.test.tsx) cover it, written RED first: before the change the background case recorded zero setActiveConversation calls, which is the bug exactly. Clearing on resume is also what fixes VC-057 — a notification TAP resumes an ALREADY-MOUNTED chat screen, so the mount effect never re-ran and the stored MessagingStyle lines were never dropped. Verified: 534/534 jest, tsc clean, eslint 0 errors. Live two-device re-verification still pending — the test phone was disconnected before it could be run.",
+      "fixedIn": "dev branch, 2026-09-14",
+      "jira": "VC-63"
     }
   ]
 }

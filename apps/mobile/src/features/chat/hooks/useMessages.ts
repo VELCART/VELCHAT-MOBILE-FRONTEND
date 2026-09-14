@@ -80,12 +80,25 @@ export function useMessages(conversationId: string): {
     // Native suppresses a push only for the chat on screen, so it has to be told which
     // one that is — and told again (null) on leaving, or this chat stays silent.
     setActiveConversationForPush(conversationId);
-    // Suppression must track what is actually VISIBLE, not merely what was last opened. A
-    // backgrounded app is showing nothing, so the id is withdrawn on leaving the foreground and
-    // re-asserted on return — otherwise a chat left open behind a locked screen swallows every
-    // notification for itself.
+    // "On screen" must mean VISIBLE, not merely "last opened", and that applies to the ENGINE
+    // as much as to the push layer. The engine reads every message that lands in its active
+    // conversation on arrival; it only ever cleared that id on UNMOUNT, and backgrounding does
+    // not unmount — so an app left sitting on a chat behind a locked screen went on marking
+    // arriving messages read, and the sender got a blue tick for a message nobody had looked at.
+    // Withdraw both on leaving the foreground, re-assert both on return.
     const appStateSub = AppState.addEventListener('change', state => {
-      setActiveConversationForPush(state === 'active' ? conversationId : null);
+      const visible = state === 'active';
+      setActiveConversationForPush(visible ? conversationId : null);
+      syncEngine.setActiveConversation(visible ? conversationId : null);
+      if (!visible) return;
+      // Coming back to a chat that is on screen is a read, and it has to be reported here:
+      // everything below runs only on mount, and a notification TAP resumes an ALREADY-MOUNTED
+      // screen, so the mount effect never re-runs on the one path that most needs it.
+      void syncEngine.markConversationRead(conversationId);
+      // Same reason the tray still held lines the user had read: AUTO_CANCEL removes the posted
+      // notification on tap but runs none of our clearing, so the stored MessagingStyle lines
+      // survived to be rebuilt into the next one.
+      clearConversationNotification(conversationId);
     });
     let sub: { unsubscribe: () => void } | undefined;
     try {
