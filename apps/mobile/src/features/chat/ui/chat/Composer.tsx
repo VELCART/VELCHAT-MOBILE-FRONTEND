@@ -78,12 +78,15 @@ export function Composer({
         gap: t.spacing.xs,
         paddingHorizontal: t.spacing.xs,
         paddingTop: t.spacing.xxs,
-        // With the keyboard up the parent has already lifted this bar by the keyboard height,
-        // so the only padding still needed is breathing room. It was `huge` (48dp), which left
-        // a wide empty band between the input and the keys and cost a whole message of thread
-        // while the user was actually writing (VC-061).
+        // `huge` (48dp) looks over-generous and reads as a white band below the pill, but it is
+        // LOAD-BEARING: the parent lifts this bar by `keyboardDidShow.endCoordinates.height`,
+        // and under RN 0.86's Android edge-to-edge that value lands short of the keyboard the
+        // user actually sees. Trimming it to `xs` (tried for VC-061) moved the pill 40dp down
+        // and put it BEHIND the keyboard on a 3-button-nav device — measured on a CPH2643.
+        // Until the lift itself is correct this padding is what keeps the input visible, so it
+        // stays; the band is cosmetic and invisible against a light keyboard.
         paddingBottom: keyboardUp
-          ? t.spacing.xs
+          ? t.spacing.huge
           : Math.max(insets.bottom, t.spacing.xs),
         backgroundColor: t.colors.surface,
         // The separator the style has always declared: `borderTopWidth: 0` meant the colour

@@ -58,6 +58,9 @@ import {
 /** Show the FAB once scrolled this far from the newest message (inverted list: y≈0 = bottom). */
 const JUMP_THRESHOLD = 120;
 
+/** How long FlashList's scroll-anchor correction takes to settle before the follow is re-issued. */
+const FOLLOW_SETTLE_MS = 180;
+
 // Hoisted: an inline literal is a fresh prop identity on every render. Same value as before
 // (`spacing` is the static token the theme carries), so the rendered padding is unchanged.
 const LIST_CONTENT_STYLE: ViewStyle = { paddingVertical: spacing.xs };
@@ -253,18 +256,41 @@ export function ChatScreen(): React.JSX.Element {
   //    the only scroll command that wins against the correction.
   //  - `onContentSizeChange` fires once the new rows are actually laid out, so index 0 has a real
   //    layout to scroll to instead of the stale one it would have in the same commit.
+  //
+  // Twice, ~180ms apart. FlashList's correction does not move the scroll directly: it nudges an
+  // invisible ScrollAnchor, which is a STATE update, so the shift lands a render or two after
+  // this callback. One scroll here is enough on an emulator and loses the race on a real
+  // device — measured on a CPH2643, where the newest bubbles kept landing below the fold while
+  // the same build followed correctly on the emulator. The retry runs after the anchor has
+  // settled; if the first scroll already won, scrolling to index 0 again is a no-op.
+  const followTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const clearFollowTimer = useCallback(() => {
+    if (followTimerRef.current !== null) {
+      clearTimeout(followTimerRef.current);
+      followTimerRef.current = null;
+    }
+  }, []);
+  // §M7: the timer is owned and released, so a scroll can never be delivered to a list that is gone.
+  useEffect(() => clearFollowTimer, [clearFollowTimer]);
+
   const onContentSizeChange = useCallback(() => {
     if (!followPendingRef.current) return;
     followPendingRef.current = false;
     listRef.current?.scrollToIndex({ index: 0, animated: true });
-  }, []);
+    clearFollowTimer();
+    followTimerRef.current = setTimeout(() => {
+      followTimerRef.current = null;
+      listRef.current?.scrollToIndex({ index: 0, animated: true });
+    }, FOLLOW_SETTLE_MS);
+  }, [clearFollowTimer]);
 
   // A pending follow belongs to the message that triggered it, not to the next content change.
   // If the user takes hold of the list first, drop it — and `loadOlder` growing the content must
   // never be mistaken for a new message arriving.
   const onScrollBeginDrag = useCallback(() => {
     followPendingRef.current = false;
-  }, []);
+    clearFollowTimer();
+  }, [clearFollowTimer]);
 
   // Depends only on stable references, so a new emission no longer re-renders every cell.
   // The two wallpaper values are plain strings off a memoised paint, so they don't churn.
