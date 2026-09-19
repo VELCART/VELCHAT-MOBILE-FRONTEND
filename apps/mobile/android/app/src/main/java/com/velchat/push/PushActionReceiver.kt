@@ -28,16 +28,28 @@ internal class PushActionReceiver : BroadcastReceiver() {
 
   override fun onReceive(context: Context, intent: Intent) {
     val action = intent.action ?: return
-    val conversationId = intent.getStringExtra(EXTRA_CONVERSATION_ID) ?: return
-    val seq = intent.getLongExtra(EXTRA_SEQ, 0L)
     val appContext = context.applicationContext
     val store = PushStore(appContext)
 
+    // The group summary stands for every conversation at once, so it is the one action that
+    // carries no conversation id and it has to be answered before an id is demanded below.
+    if (action == ACTION_DISMISS_SUMMARY) {
+      store.clearAllCounts()
+      store.clearAllLines()
+      return
+    }
+
+    val conversationId = intent.getStringExtra(EXTRA_CONVERSATION_ID) ?: return
+    val seq = intent.getLongExtra(EXTRA_SEQ, 0L)
+
     when (action) {
       ACTION_DISMISS -> {
-        // Swiped away. Nothing to tell anyone — just stop the count from carrying over into the
-        // next notification, which would otherwise say "3 new messages" for a single new one.
+        // Swiped away. Nothing to tell anyone, but BOTH halves of the state have to go, exactly
+        // as `PushNotifications.cancel` drops both: clearing the count alone left the lines
+        // behind, so the next single message rebuilt the thread with the three the user had
+        // deliberately dismissed while the badge said 1 (VC-067).
         store.clearCount(conversationId)
+        store.clearLines(conversationId)
         return
       }
 
@@ -154,6 +166,7 @@ internal class PushActionReceiver : BroadcastReceiver() {
     const val ACTION_MARK_READ = "com.velchat.push.MARK_READ"
     const val ACTION_MUTE = "com.velchat.push.MUTE"
     const val ACTION_DISMISS = "com.velchat.push.DISMISS"
+    const val ACTION_DISMISS_SUMMARY = "com.velchat.push.DISMISS_SUMMARY"
 
     const val EXTRA_CONVERSATION_ID = "conversationId"
     const val EXTRA_SEQ = "seq"
@@ -175,6 +188,16 @@ internal class PushActionReceiver : BroadcastReceiver() {
           setPackage(context.packageName)
           putExtra(EXTRA_CONVERSATION_ID, conversationId)
           putExtra(EXTRA_SEQ, seq)
+        }
+
+    /**
+     * The group summary's dismiss. Its own builder because the summary belongs to no single
+     * conversation, so there is no id to carry and none to be honest about carrying.
+     */
+    fun summaryIntent(context: Context): Intent =
+        Intent(context, PushActionReceiver::class.java).apply {
+          action = ACTION_DISMISS_SUMMARY
+          setPackage(context.packageName)
         }
   }
 }

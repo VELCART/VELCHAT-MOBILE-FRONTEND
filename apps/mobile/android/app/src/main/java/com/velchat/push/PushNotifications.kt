@@ -233,11 +233,30 @@ internal object PushNotifications {
                 body,
                 System.currentTimeMillis(),
                 senderId = senderId,
+                seq = seq,
             ),
         )
+    // What the COLLAPSED row quotes, taken from the thread's newest incoming line rather than
+    // from the message that just arrived — after ordering by seq those are not always the same
+    // one, and an out-of-order push must not be able to advertise itself as the latest (VC-056).
+    // Incoming only: an inline reply can sort last, and quoting the user's own words back at
+    // them is not a notification about anything.
+    val newest = lines.lastOrNull { !it.mine }
+    val newestBody = newest?.text ?: body
+    // Guarded on `newest`, not on its sender: a stored line whose `sid` was blank reads back as
+    // null, and falling through to the ARRIVING sender there would put one person's face beside
+    // another person's words in a group.
+    val newestSenderId = if (newest != null) newest.senderId else senderId
     // Remembered so the notification can be REBUILT after an inline reply with actions that
     // still acknowledge the right message — see `showOwnReply`.
     store.setLastSeq(conversationId, seq)
+    // The HIGHEST seq seen for this chat, not the one that just arrived. The whole premise of the
+    // ordering fix above is that FCM delivers out of order, so a late push would otherwise rebuild
+    // the actions with a LOWER seq — and `immutableFlags()` carries FLAG_UPDATE_CURRENT, so the
+    // extras really are rewritten. Tapping "Mark read" would then acknowledge up to the late
+    // message and leave the newer one unread to its sender. `showOwnReply` already reads it this
+    // way when it rebuilds.
+    val ackSeq = store.lastSeq(conversationId)
 
     val id = notificationId(conversationId)
 
@@ -259,12 +278,12 @@ internal object PushNotifications {
                   // directly and show nothing at all if only the style is populated.
                   .setContentTitle(conversationName)
                   .setContentText(
-                      if (isGroup && lines.size == 1) "$senderName: $body" else body)
+                      if (isGroup && lines.size == 1) "$senderName: $body" else newestBody)
                   // The COLLAPSED row does not draw the style's per-message faces, so the photo
                   // has to be set here as well or it appears only once the user expands — which
                   // is exactly when they no longer need help recognising who wrote.
                   .apply {
-                    senderId?.let { PushAvatars.bitmap(store.personAvatarFile(it)) }?.let(
+                    newestSenderId?.let { PushAvatars.bitmap(store.personAvatarFile(it)) }?.let(
                         ::setLargeIcon)
                   }
                   .setCategory(NotificationCompat.CATEGORY_MESSAGE)
@@ -276,8 +295,8 @@ internal object PushNotifications {
                   .setGroup(GROUP_MESSAGES)
                   .setContentIntent(openConversationIntent(context, conversationId, id))
                   .setDeleteIntent(dismissIntent(context, conversationId, id))
-                  .addAction(replyAction(context, conversationId, seq, id))
-                  .addAction(markReadAction(context, conversationId, seq, id))
+                  .addAction(replyAction(context, conversationId, ackSeq, id))
+                  .addAction(markReadAction(context, conversationId, ackSeq, id))
                   .addAction(muteAction(context, conversationId, id))
           postSafely(context, id, builder.build())
         } catch (e: Throwable) {
@@ -510,6 +529,12 @@ internal object PushNotifications {
                 context.resources.getQuantityString(R.plurals.push_summary_text, total, total))
             .setGroup(GROUP_MESSAGES)
             .setGroupSummary(true)
+            // Dismissing the bundle has to clear our state too. Not all of Android delivers the
+            // CHILDREN's delete intents when a group is swiped away, and on a build that does
+            // not, every count and every line survived a dismissal wholesale — so the next single
+            // message re-posted a summary counting messages the user had already swept away
+            // (VC-067). Idempotent where the children's intents do arrive.
+            .setDeleteIntent(summaryDismissIntent(context))
             .setOnlyAlertOnce(true)
             .setAutoCancel(true)
             .build()
@@ -608,6 +633,18 @@ internal object PushNotifications {
           context,
           requestCode(base, ACTION_DISMISS),
           PushActionReceiver.intent(context, PushActionReceiver.ACTION_DISMISS, conversationId, 0L),
+          immutableFlags(),
+      )
+
+  /**
+   * The bundle's own dismiss. `SUMMARY_ID` as the request code base is safe: `notificationId`
+   * never returns it, so this PendingIntent can never be confused with a conversation's.
+   */
+  private fun summaryDismissIntent(context: Context): PendingIntent =
+      PendingIntent.getBroadcast(
+          context,
+          requestCode(SUMMARY_ID, ACTION_DISMISS),
+          PushActionReceiver.summaryIntent(context),
           immutableFlags(),
       )
 

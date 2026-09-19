@@ -5,7 +5,7 @@
  * existing optimistic path); emoji / attach / camera / mic are no-op stubs for now.
  */
 import React, { useCallback } from 'react';
-import { View, TextInput, Pressable } from 'react-native';
+import { View, TextInput, Pressable, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../../../../theme';
 import { useTranslation } from '../../../../i18n';
@@ -18,30 +18,43 @@ import {
 } from '../../../../design-system';
 
 const INPUT_MAX_HEIGHT = 120;
-const noop = (): void => undefined;
 
+/** Hoisted: a fresh object per render is a new prop identity for no reason. */
+const DISABLED = { disabled: true } as const;
+const ENABLED = { disabled: false } as const;
+const PILL_ICON_STYLE: ViewStyle = {
+  width: 34,
+  height: 38,
+  alignItems: 'center',
+  justifyContent: 'center',
+};
+
+/**
+ * One of the pill's inline controls. Every one of them is currently a stub, so this button is
+ * DISABLED rather than merely inert (VC-059): it used to carry a real accessibility label and dip
+ * to 0.6 on press, which is the whole vocabulary a button has for saying "I did something" — so a
+ * sighted user read a dead tap as the app being broken, and TalkBack announced four buttons
+ * without a hint that three of them do nothing.
+ *
+ * Only the TRUTH changes here, not the look: the icon, the 34x38 box and the full opacity are
+ * exactly as they were. Whether an unbuilt control should be hidden or visibly greyed is a
+ * product decision, and it has not been made.
+ */
 function PillIconButton({
   label,
-  onPress,
   children,
 }: {
   label: string;
-  onPress: () => void;
   children: React.ReactNode;
 }): React.JSX.Element {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
-      onPress={onPress}
+      accessibilityState={DISABLED}
+      disabled
       hitSlop={6}
-      style={({ pressed }) => ({
-        width: 34,
-        height: 38,
-        alignItems: 'center',
-        justifyContent: 'center',
-        opacity: pressed ? 0.6 : 1,
-      })}
+      style={PILL_ICON_STYLE}
     >
       {children}
     </Pressable>
@@ -106,7 +119,7 @@ export function Composer({
           backgroundColor: t.colors.bgSubtle,
         }}
       >
-        <PillIconButton label={tr('chat.emoji')} onPress={noop}>
+        <PillIconButton label={tr('chat.emoji')}>
           <SmileyIcon size={23} color={t.colors.textTertiary} strokeWidth={2} />
         </PillIconButton>
         <TextInput
@@ -127,22 +140,27 @@ export function Composer({
             color: t.colors.textPrimary,
           }}
         />
-        <PillIconButton label={tr('chat.attach')} onPress={noop}>
+        <PillIconButton label={tr('chat.attach')}>
           <PaperclipIcon
             size={22}
             color={t.colors.textTertiary}
             strokeWidth={2}
           />
         </PillIconButton>
-        <PillIconButton label={tr('chat.camera')} onPress={noop}>
+        <PillIconButton label={tr('chat.camera')}>
           <CameraIcon size={22} color={t.colors.textTertiary} strokeWidth={2} />
         </PillIconButton>
       </View>
 
+      {/* Send when there is text, and a mic that is not built yet when there is not — so the
+          same circle is a working control half the time and a stub the other half. It reports
+          which one it currently is instead of looking identical in both (VC-059). */}
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={hasText ? tr('chat.send') : tr('chat.voice')}
-        onPress={hasText ? onPrimary : noop}
+        accessibilityState={hasText ? ENABLED : DISABLED}
+        disabled={!hasText}
+        onPress={onPrimary}
         style={({ pressed }) => ({
           width: 46,
           height: 46,
@@ -150,7 +168,7 @@ export function Composer({
           backgroundColor: t.colors.brandFrom,
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: pressed ? 0.8 : 1,
+          opacity: pressed && hasText ? 0.8 : 1,
         })}
       >
         {hasText ? (

@@ -61,6 +61,15 @@ export function useMessages(conversationId: string): {
     })();
   }, [conversationId, limit]);
 
+  // Opening the chat is a ONE-TIME act, so it keys on the conversation and nothing else.
+  //
+  // All of this used to share an effect with the subscription below, which also depends on
+  // `limit` — so every `loadOlder` page tore it all down and ran it again: a receipts GET and a
+  // read frame per page of scrollback, and the pair `setActiveConversationForPush(null)` →
+  // `…(conversationId)`. That bridge hop is ASYNC, so for one native round trip the native side
+  // believed NO chat was on screen, and a push landing inside that window posted a heads-up
+  // notification for the chat the user was reading — the exact thing this mechanism exists to
+  // prevent (VC-068). Ten pages of history was ten such windows.
   useEffect(() => {
     // Opening the chat = read it: clear the unread badge locally + tell the server (§F2).
     // Telling the engine this chat is ON SCREEN is what keeps that true for messages that arrive
@@ -100,19 +109,25 @@ export function useMessages(conversationId: string): {
       // survived to be rebuilt into the next one.
       clearConversationNotification(conversationId);
     });
+    return () => {
+      appStateSub.remove();
+      syncEngine.setActiveConversation(null);
+      setActiveConversationForPush(null);
+    };
+  }, [conversationId]);
+
+  // The only thing a wider window changes: re-run the query, release the narrower one. `meId` was
+  // never read by either half — it is a stable account id, and keeping it in the array only ever
+  // meant more ways to re-run all of the above.
+  useEffect(() => {
     let sub: { unsubscribe: () => void } | undefined;
     try {
       sub = observeMessages(conversationId, limit).subscribe(setMessages);
     } catch {
       setMessages([]);
     }
-    return () => {
-      appStateSub.remove();
-      sub?.unsubscribe();
-      syncEngine.setActiveConversation(null);
-      setActiveConversationForPush(null);
-    };
-  }, [conversationId, meId, limit]);
+    return () => sub?.unsubscribe();
+  }, [conversationId, limit]);
   return { messages, meId, loadOlder };
 }
 

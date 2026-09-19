@@ -46,6 +46,22 @@ export function messageWindowClauses(conversationId: string, limit: number) {
   ];
 }
 
+/**
+ * Every column the chat window re-renders for. Kept beside the subscription, and asserted by a
+ * test, so the two cannot drift: `observeWithColumns` wakes only for the columns it is NAMED
+ * (and for a change in the matched-record SET), so a column the bubble draws but this list omits
+ * is invisibly stale until the screen is re-entered.
+ */
+export const MESSAGE_OBSERVED_COLUMNS: readonly string[] = [
+  'state',
+  // The body, because it can arrive AFTER the row does. A fan-out frame carrying no text
+  // inserts a bodiless row — a set change, so the blank bubble appears — and the REST refill
+  // then writes `content_plain` on a row the query already matches. Without this column named,
+  // that write lands in the database and nothing re-renders: the text is there and the user
+  // still sees an empty bubble until they leave the chat and come back (VC-063).
+  'content_plain',
+];
+
 export function observeMessages(
   conversationId: string,
   limit: number = MESSAGE_WINDOW,
@@ -53,7 +69,7 @@ export function observeMessages(
   return getDatabase()
     .get<Message>('messages')
     .query(...messageWindowClauses(conversationId, limit))
-    .observeWithColumns(['state']);
+    .observeWithColumns([...MESSAGE_OBSERVED_COLUMNS]);
 }
 
 /** How many more messages a "load older" step reveals. */
@@ -84,6 +100,61 @@ export async function minSeqForConversation(
     )
     .fetch();
   return rows[0]?.seq ?? 0;
+}
+
+/**
+ * How far down a conversation the contiguity scan looks. Bounded on purpose: this runs when a
+ * chat is opened and once per backfill page, and a long conversation must not materialise.
+ * A hole further back than this is history the user read long ago.
+ */
+const CONTIGUITY_SCAN = 500;
+
+/**
+ * The highest seq with no KNOWN hole beneath it — the honest ceiling for a receipt (VC-069).
+ *
+ * Receipts are cumulative: one frame carries `upToSeq` and covers every message at or below it.
+ * Every emitter used to take that number from `maxSeqForConversation`, so a conversation missing
+ * a message acknowledged straight over it and the sender saw a blue tick for something the
+ * recipient never received.
+ *
+ * "Known" is the load-bearing word. The device holds a bounded window, so a conversation whose
+ * oldest local row is seq 900 is normal, not a gap — reading it as one would pin every receipt
+ * at 0 and leave every sender on a single grey tick forever, which is a worse bug than the one
+ * this fixes. So the scan starts at the OLDEST row we hold and walks up, and a deleted message
+ * still counts as held: a tombstone keeps its row, and stalling the watermark behind one would
+ * be the same failure by another route.
+ */
+export async function maxContiguousSeqForConversation(
+  conversationId: string,
+): Promise<number> {
+  const rows = await getDatabase()
+    .get<Message>('messages')
+    .query(
+      Q.where('conversation_id', conversationId),
+      Q.where('seq', Q.gt(0)),
+      Q.sortBy('seq', Q.desc),
+      Q.take(CONTIGUITY_SCAN),
+    )
+    .fetch();
+  if (rows.length === 0) return 0;
+  // Ascending, so the first break in the run is the LOWEST hole — the one that actually caps
+  // what a cumulative watermark may claim. Stopping at the highest hole instead would still
+  // acknowledge every deeper one.
+  const seqs: number[] = [];
+  for (const row of rows) {
+    if (typeof row.seq === 'number' && row.seq > 0) seqs.push(row.seq);
+  }
+  if (seqs.length === 0) return 0;
+  seqs.sort((a, b) => a - b);
+  let contiguous = seqs[0] ?? 0;
+  for (const seq of seqs) {
+    if (seq === contiguous || seq === contiguous + 1) {
+      contiguous = seq;
+      continue;
+    }
+    break; // a hole: everything above it is unclaimable
+  }
+  return contiguous;
 }
 
 /**
@@ -156,6 +227,11 @@ export async function sendMessageLocal(
 }
 
 // ── inbound reconciliation (§L6) ─────────────────────────────────────────────
+
+/** A body the UI can actually draw. `undefined` and `''` are the same thing to a bubble. */
+function hasBody(content: string | undefined): boolean {
+  return typeof content === 'string' && content !== '';
+}
 
 interface ConvBump {
   preview: string;
@@ -265,15 +341,25 @@ export async function applyServerMessages(
         : undefined;
       const byClient = clientRow ? [clientRow] : [];
       const bySeq = bySeqKey.get(`${s.conversationId}#${String(s.seq)}`) ?? [];
+      // A row we hold for this seq that has no body, against a copy that does: the refill after
+      // a bodiless fan-out frame (VC-063). `hasBody` is deliberately the whole test — a message
+      // that legitimately has no text (an attachment with no caption) offers none either, so it
+      // still reconciles as an ordinary duplicate.
+      const offersBody = hasBody(s.content);
+      const seqRowMissingBody =
+        offersBody &&
+        bySeq.length > 0 &&
+        bySeq.every(r => !hasBody(r.contentPlain));
       const decision = reconcileDecision({
         hasClientMsgIdRow: byClient.length > 0,
         hasSeqRow: bySeq.length > 0,
+        seqRowMissingBody,
       });
       if (decision === 'skip') continue;
       const own = meId !== undefined && s.senderId === meId;
       const nextState = own ? 'sent' : 'delivered';
       if (decision === 'update') {
-        const row = byClient[0];
+        const row = byClient[0] ?? bySeq[0];
         if (!row) continue;
         // Drop any live-echo dup that already carried this seq (WS raced ahead of the ack).
         for (const d of bySeq) {
@@ -289,7 +375,11 @@ export async function applyServerMessages(
               m.state = nextState;
           }),
         );
-        accumulateBump(bumps, s, 0, now, true);
+        // A refill corrects a row that already exists — it is not an arrival, so unread never
+        // moves — but the preview it corrects is the one the bodiless frame wrote as empty, so
+        // the chat list has to be re-bumped or the row keeps a blank last message. The echo
+        // branch keeps its own `true`: a row matched by `client_msg_id` is ours by definition.
+        accumulateBump(bumps, s, 0, now, byClient.length > 0 || own);
       } else {
         ops.push(
           msgs.prepareCreate(m => {

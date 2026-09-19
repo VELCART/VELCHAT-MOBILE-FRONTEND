@@ -1447,3 +1447,216 @@ describe('a message dropped by fan-out', () => {
     expect(mockFetchAfter).not.toHaveBeenCalled();
   });
 });
+
+// ── a realtime frame that carries no body (VC-063) ───────────────────────────
+
+/**
+ * The gateway's fan-out payload carries `text` only when the message is server-readable, so a
+ * frame routinely arrives as metadata alone — and at the E2EE phase every frame will. The engine
+ * already answers that by pulling the message over REST (which does carry the body) and applying
+ * it, but the reconcile treated the refill as a duplicate of the row it had just inserted and
+ * dropped it, so the bubble stayed blank for the life of the install.
+ *
+ * As with the gap tests above, the socket comes up while the device is ALREADY caught up, so the
+ * reconnect backfill has nothing to fetch and cannot fill the body on the refill's behalf.
+ */
+describe('a realtime frame with no body', () => {
+  const conv = 'bodyless_conv';
+
+  /** Caught up at seq 3 on both sides, socket live, nothing left for the reconnect backfill. */
+  async function caughtUpAtThree(): Promise<MockSocket> {
+    serverHistory.set(
+      conv,
+      [1, 2, 3].map(s => serverMsg(conv, s)),
+    );
+    await applyServerMessages([1, 2, 3].map(s => serverMsg(conv, s)));
+    const socket = await bootConnected();
+    await settle();
+    return socket;
+  }
+
+  /** The same message the server holds, as the gateway relays it: metadata, no `text`. */
+  function bodylessFrame(seq: number): Record<string, unknown> {
+    return {
+      messageId: `srv_${conv}_${String(seq)}`,
+      conversationId: conv,
+      seq,
+      senderId: PEER,
+      type: 'text',
+      serverTs: T0 + seq * 1000,
+    };
+  }
+
+  beforeEach(async () => {
+    await upsertConversation(conv, { type: 'dm', name: 'Peer' });
+  });
+
+  it('fills the body from REST instead of leaving a permanently blank bubble', async () => {
+    const socket = await caughtUpAtThree();
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4].map(s => serverMsg(conv, s)),
+    );
+    socket.cb.onMessage?.(bodylessFrame(4));
+
+    await until(
+      async () => (await messagesOf(conv)).length === 4,
+      'the metadata row to land',
+    );
+    // The refill is requested from just below the message, so the response carries it…
+    await until(
+      () => mockFetchAfter.mock.calls.some(c => c[1] === 3),
+      'the REST refill to be requested',
+    );
+    // …and it has to reach the row. This is the half that was dead: the refill answered with
+    // the body and the reconcile threw it away as a duplicate of the row inserted a moment
+    // earlier, so no later catch-up could ever fill it either.
+    await until(
+      async () =>
+        (await rowsBySeq(conv)).find(r => r.seq === 4)?.contentPlain ===
+        'body 4',
+      'the body to be filled in from REST',
+    );
+  });
+
+  it('repairs the empty chat-list preview the bodyless frame wrote', async () => {
+    const socket = await caughtUpAtThree();
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4].map(s => serverMsg(conv, s)),
+    );
+    socket.cb.onMessage?.(bodylessFrame(4));
+
+    await until(
+      async () => (await conversationRow(conv)).lastMessagePreview === 'body 4',
+      'the preview to be repaired',
+    );
+    expect((await conversationRow(conv)).lastMessageSeq).toBe(4);
+  });
+
+  it('does not count the refill as a second unread message', async () => {
+    const socket = await caughtUpAtThree();
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4].map(s => serverMsg(conv, s)),
+    );
+    socket.cb.onMessage?.(bodylessFrame(4));
+
+    await until(
+      async () =>
+        (await rowsBySeq(conv)).find(r => r.seq === 4)?.contentPlain ===
+        'body 4',
+      'the body to be filled in from REST',
+    );
+    await settle();
+    // Three from the catch-up plus this one. Filling a body is a correction, not an arrival —
+    // the badge must not move, and there must still be exactly one row per seq.
+    expect((await conversationRow(conv)).unreadCount).toBe(4);
+    expect((await rowsBySeq(conv)).map(r => r.seq)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('still skips a genuine duplicate — a frame that repeats a body we already hold', async () => {
+    const socket = await caughtUpAtThree();
+    const frame = serverMsg(conv, 4);
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4].map(s => serverMsg(conv, s)),
+    );
+    socket.cb.onMessage?.(frame);
+    await until(
+      async () => (await messagesOf(conv)).length === 4,
+      'the message to land',
+    );
+
+    socket.cb.onMessage?.(frame);
+    socket.cb.onMessage?.(frame);
+    await settle();
+
+    expect((await rowsBySeq(conv)).map(r => r.seq)).toEqual([1, 2, 3, 4]);
+    expect((await conversationRow(conv)).unreadCount).toBe(4);
+  });
+});
+
+// ── a hole the server can never fill must not freeze the ticks ───────────────
+
+/**
+ * The contiguity clamp (VC-069) must not outlive its usefulness.
+ *
+ * A cumulative `read` may not cover a message this device never received, so the watermark stops
+ * below a hole. On its own that assumes every hole is FILLABLE, and on this backend it is not:
+ * chat history filters `deleted:false`, so a delete-for-everyone leaves a seq that can never be
+ * served again, and the seq counter is incremented before the insert with no release path, so a
+ * failed send burns one permanently. Clamping on a hole like that would hold the watermark below
+ * it for the life of the install — every later message stuck on a grey tick, unrepairable,
+ * because the server takes `$max` of what it is told.
+ *
+ * A completed catch-up is the proof that a hole is legitimate: we asked for everything after a
+ * cursor and the server ran out. These tests pin both directions — still clamped while the hole
+ * might yet arrive, free to pass it once the server has answered.
+ */
+/** The highest seq this device has acknowledged as read over the socket. */
+function highestReadSeq(socket: MockSocket): number {
+  return socket.sent
+    .filter(f => f.type === 'read')
+    .reduce(
+      (max, f) => Math.max(max, Number((f.data as { seq?: number }).seq ?? 0)),
+      0,
+    );
+}
+
+describe('a hole the server will never fill', () => {
+  const conv = 'perm_gap';
+
+  beforeEach(async () => {
+    await upsertConversation(conv, { type: 'dm', name: 'Peer' });
+  });
+
+  it('does not hold the read watermark below it once a catch-up has proven it', async () => {
+    // The server's own history has no seq 4 — deleted for everyone, or a burned counter.
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 5, 6].map(s => serverMsg(conv, s)),
+    );
+    await applyServerMessages([1, 2, 3].map(s => serverMsg(conv, s)));
+
+    syncEngine.setActiveConversation(conv);
+    const socket = await bootConnected();
+    // The catch-up pages from 3, receives 5 and 6, and runs out — so seq 4 is proven absent.
+    await until(
+      async () => (await messagesOf(conv)).length === 5,
+      'the catch-up to land',
+    );
+    await settle();
+
+    await syncEngine.markConversationRead(conv);
+    // The receipt flush is scheduled, not synchronous, so wait for the frame rather than for a
+    // fixed delay. 6, not 3 — stopping at 3 would leave the peer's 5 and 6 grey forever.
+    await until(
+      () => highestReadSeq(socket) === 6,
+      'the honest watermark to go out',
+    );
+    expect(highestReadSeq(socket)).toBe(6);
+  });
+
+  it('still refuses to acknowledge across a hole that has NOT been proven', async () => {
+    // Caught up at 3 on both sides, so the reconnect backfill proves nothing beyond it.
+    serverHistory.set(
+      conv,
+      [1, 2, 3].map(s => serverMsg(conv, s)),
+    );
+    await applyServerMessages([1, 2, 3].map(s => serverMsg(conv, s)));
+    syncEngine.setActiveConversation(conv);
+    const socket = await bootConnected();
+    await settle();
+
+    // seq 5 arrives live while 4 is still in flight somewhere. Nothing has proven 4 is gone.
+    mockFetchAfter.mockImplementation(() => Promise.resolve([]));
+    socket.cb.onMessage?.(serverMsg(conv, 5));
+    await settle();
+    socket.sent.length = 0;
+
+    await syncEngine.markConversationRead(conv);
+    await settle(400);
+    expect(highestReadSeq(socket)).toBeLessThan(5);
+  });
+});

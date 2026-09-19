@@ -32,6 +32,31 @@ describe('reconcileDecision (§L6 dedup)', () => {
       reconcileDecision({ hasClientMsgIdRow: false, hasSeqRow: false }),
     ).toBe('insert');
   });
+
+  // VC-063. A fan-out frame carrying no body inserts a bodiless row, and the REST refill that
+  // follows is the SAME (conversation, seq) — so the plain "we hold this seq → skip" rule threw
+  // away the only copy of the message that had any text in it. A peer's message can never be
+  // matched by client_msg_id (there is none on the wire; the insert synthesises one), so this is
+  // the only branch that can ever reach it.
+  test('a seq we hold whose body is still missing → UPDATE, so the refill can land', () => {
+    expect(
+      reconcileDecision({
+        hasClientMsgIdRow: false,
+        hasSeqRow: true,
+        seqRowMissingBody: true,
+      }),
+    ).toBe('update');
+  });
+
+  test('a genuine duplicate — same seq, body already held → still SKIP', () => {
+    expect(
+      reconcileDecision({
+        hasClientMsgIdRow: false,
+        hasSeqRow: true,
+        seqRowMissingBody: false,
+      }),
+    ).toBe('skip');
+  });
 });
 
 describe('backoffMs (§M8/§L4 full-jitter, capped)', () => {

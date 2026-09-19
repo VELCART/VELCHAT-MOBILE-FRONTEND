@@ -31,6 +31,7 @@ import {
   getAccountId,
   getDeviceId,
   getConversationMembers,
+  maxContiguousSeqForConversation,
   getPresence,
   subscribePresence,
   presenceOnline,
@@ -234,6 +235,44 @@ class SyncEngine {
     ReturnType<typeof setTimeout>
   >();
   private readonly activePresencePeers = new Map<string, string>();
+  /**
+   * Bumped by every close. `activatePresence` captures it before its first await and bails if it
+   * has moved, because that means the chat it was resolving for is no longer open (VC-065).
+   * Without it the late resume registered a peer AFTER the close had deleted it — a ghost the map
+   * could never lose, which made `deactivatePresence` stop clearing timers for the whole session
+   * — and started a 20s poll for a chat nobody was looking at.
+   */
+  private presenceEpoch = 0;
+
+  /**
+   * Per conversation, the seq up to which the SERVER has been asked and has answered — so any
+   * hole below it is proven legitimate rather than merely missing.
+   *
+   * The contiguity clamp (VC-069) exists to stop a cumulative `read` covering a message this
+   * device never received. On its own it assumes every hole is fillable, and on this backend
+   * that is false in two ways: history filters `deleted:false`, so a delete-for-everyone leaves
+   * a seq that can NEVER be served again, and the seq counter is incremented before the insert
+   * with no release path, so a failed send burns one permanently. Clamping on a hole like that
+   * would freeze the watermark for the life of the install — the sender stuck on a grey tick
+   * forever, which is worse than the bug the clamp fixes.
+   *
+   * A completed catch-up is the proof: if we asked for everything after X and the server ran out,
+   * whatever is still missing below the newest is not coming. In memory on purpose — losing it
+   * on a restart costs one clamped window until the next sync, and a wrong PERSISTED floor would
+   * be the permanent lie all over again.
+   */
+  private readonly provenFloor = new Map<string, number>();
+
+  /**
+   * Which `activatePresence` call owns each conversation's entry, by epoch.
+   *
+   * The epoch alone says "something closed since I started"; it does not say whether the entry
+   * under this id is still MINE. Open a chat, back out, re-open it, and the first call's network
+   * fetch can resolve after the second call has already registered and started polling — its
+   * undo would then delete a live registration and stop the poll for a chat that is on screen,
+   * leaving the presence line frozen until the user leaves and comes back.
+   */
+  private readonly presenceOwner = new Map<string, number>();
   // One-shot crash-recovery: resets outbox rows orphaned in `sending` by a prior kill.
   // The first drain awaits it so it can't claim behind a stuck row.
   private recovery: Promise<unknown> | null = null;
@@ -377,7 +416,11 @@ class SyncEngine {
     this.gapProbedFrom.clear();
     this.loadingOlder.clear();
     this.namedPeers.clear();
+    this.presenceEpoch += 1; // an activate still in flight must not repopulate this
+    this.presenceOwner.clear();
     this.activePresencePeers.clear();
+    this.presenceOwner.clear();
+    this.provenFloor.clear();
     // Not awaited, but it must not be remembered: a resync in flight when the session ends would
     // otherwise make the NEXT session's first `resyncNow()` a no-op returning the old promise.
     this.pushResync = null;
@@ -456,7 +499,11 @@ class SyncEngine {
     this.activeConversationId = null;
     this.gapProbedFrom.clear();
     this.namedPeers.clear();
+    this.presenceEpoch += 1; // an activate still in flight must not repopulate this
+    this.presenceOwner.clear();
     this.activePresencePeers.clear();
+    this.presenceOwner.clear();
+    this.provenFloor.clear();
     const s = this.socket;
     this.socket = null;
     s?.close();
@@ -810,7 +857,11 @@ class SyncEngine {
         cursor,
         BACKFILL_PAGE,
       );
-      if (batch.length === 0) return;
+      if (batch.length === 0) {
+        // The server has nothing after `cursor`: everything up to here is accounted for.
+        this.noteProvenFloor(conversationId, cursor);
+        return;
+      }
       await applyServerMessages(batch);
       // Rows that just landed may already have been delivered/read by the peer — their receipt
       // arrived while we had nothing to apply it to. Re-apply the remembered watermark so those
@@ -822,11 +873,17 @@ class SyncEngine {
       );
       const me = getAccountId();
       const inbound = batch.filter(m => m.senderId !== me);
+      // Both watermarks below are cumulative, so neither may reach past a hole we still hold
+      // (VC-069) — and both are clamped, not just the read one.
       if (inbound.length > 0) {
         // Received while we were away — the sender is still waiting on a second grey tick.
+        const highestInbound = inbound.reduce(
+          (max, m) => (m.seq > max ? m.seq : max),
+          0,
+        );
         this.noteDelivered(
           conversationId,
-          inbound.reduce((max, m) => (m.seq > max ? m.seq : max), 0),
+          await this.honestWatermarkIfHoled(conversationId, highestInbound),
         );
       }
       // A page landing in the conversation ON SCREEN has been seen, exactly like the live path
@@ -834,7 +891,10 @@ class SyncEngine {
       // on the conversation the user is actively reading, and the peer's ticks stall on grey until
       // the user leaves and re-enters.
       if (this.activeConversationId === conversationId) {
-        this.noteRead(conversationId, highest);
+        this.noteRead(
+          conversationId,
+          await this.honestWatermarkIfHoled(conversationId, highest),
+        );
         try {
           await clearUnread(conversationId);
         } catch {
@@ -843,7 +903,10 @@ class SyncEngine {
       }
       if (highest <= cursor) return; // server isn't advancing — stop rather than spin
       cursor = highest;
-      if (batch.length < BACKFILL_PAGE) return; // short page = caught up
+      if (batch.length < BACKFILL_PAGE) {
+        this.noteProvenFloor(conversationId, cursor); // short page = caught up
+        return;
+      }
     }
     log.warn('backfill hit the page cap — more history remains', {
       conversationId,
@@ -1065,7 +1128,10 @@ class SyncEngine {
       recordLatency('recv.apply', Date.now() - arrivedAt);
       if (m.senderId !== getAccountId()) {
         void this.nameStubConversation(m.conversationId, m.senderId);
-        this.noteDelivered(m.conversationId, m.seq);
+        // Clamped like the read below it, and for the same reason: `delivered` is cumulative
+        // too, so the frame that SKIPS ahead of what we hold would claim a second grey tick for
+        // every message it skipped (VC-069). `localMax` is already in hand from the gap check.
+        this.noteDelivered(m.conversationId, this.clampToHeld(m.seq, localMax));
       }
       // A message that lands in the conversation ON SCREEN has been seen — whoever sent it.
       //
@@ -1075,7 +1141,7 @@ class SyncEngine {
       // back, where the mount-time read finally reported it. Reading a chat you are looking at is
       // true regardless of who wrote the message.
       if (this.activeConversationId === m.conversationId) {
-        this.noteRead(m.conversationId, m.seq);
+        this.noteRead(m.conversationId, this.clampToHeld(m.seq, localMax));
         try {
           await clearUnread(m.conversationId);
         } catch {
@@ -1366,10 +1432,65 @@ class SyncEngine {
    * read up to the latest seq we hold (§F2/§5). Best-effort: the read frame only goes out
    * when the socket is up; the local badge clears regardless (offline-first).
    */
+  /**
+   * A cumulative watermark for an arriving frame, held back to what this device actually has.
+   *
+   * The frame that skips ahead of `localMax` is the one that OPENS a hole, and acknowledging its
+   * own seq would claim every message it skipped (VC-069). `localMax` is read before the message
+   * is applied, so this costs nothing on the inbound hot path — no DB scan. `localMax === 0` is
+   * a conversation we hold nothing for, where the skipped range is unloaded history, not a hole.
+   */
+  private clampToHeld(incomingSeq: number, localMax: number): number {
+    if (localMax === 0 || incomingSeq <= localMax + 1) return incomingSeq;
+    return localMax;
+  }
+
+  /** Remember that the server has been asked up to `seq` and had nothing more to give. */
+  private noteProvenFloor(conversationId: string, seq: number): void {
+    if (seq <= 0) return;
+    const previous = this.provenFloor.get(conversationId) ?? 0;
+    if (seq > previous) this.provenFloor.set(conversationId, seq);
+  }
+
+  /**
+   * The highest seq this device may honestly acknowledge (VC-069).
+   *
+   * The contiguous max, lifted past any hole a completed catch-up has already proven the server
+   * cannot fill, and never above what we actually hold.
+   */
+  private async honestWatermark(conversationId: string): Promise<number> {
+    const [contiguous, max] = await Promise.all([
+      maxContiguousSeqForConversation(conversationId),
+      maxSeqForConversation(conversationId),
+    ]);
+    const proven = this.provenFloor.get(conversationId) ?? 0;
+    return Math.min(max, Math.max(contiguous, proven));
+  }
+
+  /**
+   * The same rule, but skipped entirely for a conversation no hole has ever been detected in.
+   *
+   * `maxContiguousSeqForConversation` materialises up to 500 rows, and the backfill calls this
+   * once PER PAGE, inside a loop that runs for several conversations at a time on reconnect —
+   * on the 3 GB reference device (§R5) that is real work to spend on a question whose answer is
+   * almost always "nothing is missing". A conversation the gap probe has never fired for has no
+   * known hole, so `candidate` is already honest.
+   */
+  private async honestWatermarkIfHoled(
+    conversationId: string,
+    candidate: number,
+  ): Promise<number> {
+    if (!this.gapProbedFrom.has(conversationId)) return candidate;
+    return Math.min(candidate, await this.honestWatermark(conversationId));
+  }
+
   async markConversationRead(conversationId: string): Promise<void> {
     await clearUnread(conversationId);
     try {
-      const seq = await maxSeqForConversation(conversationId);
+      // The CONTIGUOUS max, not the plain one. A `read` frame is cumulative — it covers every
+      // message at or below its seq — so sending the local maximum across a hole told the
+      // sender their message had been read when this device never received it (VC-069).
+      const seq = await this.honestWatermark(conversationId);
       // Record it even with the socket down: the ledger is durable, so opening a chat offline
       // still turns the sender's ticks blue as soon as we reconnect.
       if (seq > 0) this.noteRead(conversationId, seq);
@@ -1560,11 +1681,15 @@ class SyncEngine {
   async activatePresence(conversationId: string): Promise<string | null> {
     const me = getAccountId();
     if (!me) return null;
+    const epoch = this.presenceEpoch;
     let peerId: string | null = null;
     // The inbox sync already resolved this DM's peer onto the row, so opening a chat should not
     // pay a members round-trip to learn something we stored. Falling back to the network only
     // covers a conversation that arrived before that field existed (or a group).
     const stored = await peerIdFor(conversationId).catch(() => undefined);
+    // The chat closed while we were reading the row. Returning HERE is what stops the ghost:
+    // anything past this point writes to `activePresencePeers`.
+    if (epoch !== this.presenceEpoch) return null;
     if (stored) {
       peerId = stored;
     } else {
@@ -1576,14 +1701,31 @@ class SyncEngine {
         log.warn('presence members resolve failed', { reason: String(e) });
         return null;
       }
+      if (epoch !== this.presenceEpoch) return null;
     }
     if (peerId === null) return null;
     this.activePresencePeers.set(conversationId, peerId);
+    this.presenceOwner.set(conversationId, epoch);
     const peer = peerId;
     void subscribePresence(me, [peer]).catch((e: unknown) => {
       log.warn('presence subscribe failed', { reason: String(e) });
     });
     await this.refreshPeerPresence(peer);
+    // Checked AGAIN, because that fetch is a network round trip and the user can close the chat
+    // inside it. Starting the poll here is what left an invisible interval waking the JS thread
+    // every 20s for a chat that is gone — all night, when push is unavailable and the suspend
+    // never runs (§M13). Undo the registration too: this call no longer owns anything.
+    if (epoch !== this.presenceEpoch) {
+      // Undo only what is still OURS. A newer activate for the same chat may have registered
+      // while this one was awaiting, and tearing down its live registration would stop the poll
+      // for a conversation the user is looking at.
+      if (this.presenceOwner.get(conversationId) === epoch) {
+        this.presenceOwner.delete(conversationId);
+        this.activePresencePeers.delete(conversationId);
+        if (this.activePresencePeers.size === 0) this.clearPeerPresenceTimer();
+      }
+      return null;
+    }
     // The snapshot alone is a single point-in-time reading and there is no live presence frame
     // to correct it, so keep re-reading it while this chat is on screen.
     this.startPeerPresencePolling(peer);
@@ -1592,6 +1734,10 @@ class SyncEngine {
 
   /** A chat closed → stop tracking its peer (the last-known snapshot may stay in the store). */
   deactivatePresence(conversationId: string): void {
+    // Before the delete, so an activate still awaiting sees the move and bails instead of
+    // re-registering the peer we are about to forget.
+    this.presenceEpoch += 1;
+    this.presenceOwner.delete(conversationId);
     this.activePresencePeers.delete(conversationId);
     // §M7: the poll belongs to the open chat — it must not outlive it.
     if (this.activePresencePeers.size === 0) this.clearPeerPresenceTimer();

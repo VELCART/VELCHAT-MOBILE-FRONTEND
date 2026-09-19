@@ -1889,7 +1889,7 @@
     },
     {
       "id": "VC-056",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
@@ -1915,8 +1915,9 @@
       "actual": "The thread listed '... BG1, KILL2, KILL1' — KILL1 (09:37) below KILL2 (09:39) — and the collapsed notification therefore advertised KILL1 as the latest message. The in-app conversation ordered the same two messages correctly, so this is purely the notification's own line store.",
       "user_impact": "The notification tells the user the wrong thing is the most recent message, and the preview they glance at on the lock screen can be a message they have already seen.",
       "suspected_cause": "Lines are appended to the per-conversation store in arrival order and rendered in that order. The push payload already carries `seq`, which the reply/mark-read actions use — sorting the stored lines by it before building MessagingStyle would make the order independent of FCM's (explicitly unguaranteed) delivery order.",
-      "notes": "Evidence: scratchpad/shots/b_reply_open.png (expanded notification shows S6, S7, S8, BG1, KILL2, KILL1) vs scratchpad/shots/a_inline_rx.png (chat shows KILL1 09:37 then KILL2 09:39, correct).",
-      "jira": "VC-57"
+      "notes": "Evidence: scratchpad/shots/b_reply_open.png (expanded notification shows S6, S7, S8, BG1, KILL2, KILL1) vs scratchpad/shots/a_inline_rx.png (chat shows KILL1 09:37 then KILL2 09:39, correct).\n\nFIX: `PushStore.Line` now carries the message's own `seq`, persisted as the JSON key `\"q\"`, and `showMessage` passes the push's seq into `appendLine`. `appendLine` SORTS before applying the `MAX_LINES` cap, and that order is the fix rather than a detail: capping first dropped whichever line FCM happened to deliver earliest, so an out-of-order push could evict a message newer than the one it kept. `setContentText` and `setLargeIcon` now read the newest INCOMING line (`lines.lastOrNull { !it.mine }`) instead of the message that arrived last, so the collapsed row and the face on it agree with the expanded thread — incoming only, because an inline reply can sort last and quoting the user's own words back at them is not a notification about anything.\n\nMIGRATION for installs whose stored lines predate `q`: in `sortBySeq` each entry inherits the rank of the one before it and the sort is stable, so a legacy thread ranks entirely at zero and comes back exactly as stored — the only order anyone ever knew for it — while an inline reply (also seq 0) ranks immediately after the message it answered.\n\nKNOWN LIMITATION, left open deliberately: `Line.at` is still the ARRIVAL timestamp (`System.currentTimeMillis()` at `showMessage`), because the push payload carries no message timestamp. MessagingStyle stamps each line with it, so a REORDERED thread can show non-monotonic times until the backend sends a message timestamp. The order is now right; the clock beside it is not.\n\nNO AUTOMATED TEST: this project has no Kotlin test source set at all — `android/app/src` holds only `main`, `dev` and `prod` — so nothing in the push package is reachable from Jest. Verified by code review against the report; the live repro still needs re-running on a device.",
+      "jira": "VC-57",
+      "fixedIn": "dev branch, 2026-09-19"
     },
     {
       "id": "VC-057",
@@ -1984,11 +1985,14 @@
     },
     {
       "id": "VC-059",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
-      "testIds": [],
+      "testIds": [
+        "composerControls.test.tsx: the controls that are not built yet",
+        "composerControls.test.tsx: the one control that is wired"
+      ],
       "title": "Composer's emoji, attach, camera and mic buttons are dead controls that look and behave as if they work",
       "severity": "P3",
       "priority": "P3",
@@ -2009,8 +2013,9 @@
       "actual": "All four are wired to `noop`. They render at full opacity, carry `accessibilityRole=\"button\"` with a real label, and give press feedback (opacity dips to 0.6, and the mic shares the send button's full brand fill), so nothing tells the user they are inert. Tapping does nothing at all — no sheet, no toast, no disabled state.",
       "user_impact": "Four of the five affordances in the composer are dead. A user tapping the paperclip or the mic concludes the app is broken rather than that the feature is not built yet, and a screen-reader user is told they are buttons with no indication they do nothing.",
       "suspected_cause": "Intentional stubs — the file's own header says 'Only send is wired ... emoji / attach / camera / mic are no-op stubs for now' — but they ship looking fully enabled.",
-      "notes": "Minimum viable fix for a release build: hide the unimplemented controls, or render them disabled (reduced opacity + accessibilityState disabled) so neither sighted nor screen-reader users are misled.",
-      "jira": "VC-60"
+      "notes": "Minimum viable fix for a release build: hide the unimplemented controls, or render them disabled (reduced opacity + accessibilityState disabled) so neither sighted nor screen-reader users are misled.\n\nFIX: `PillIconButton` lost its `onPress` prop entirely — emoji, attach and camera now render a `Pressable` with a real `disabled` and `accessibilityState={{disabled: true}}`, and the pressed-opacity branch is gone, so a tap produces no fake response at all and TalkBack announces them as disabled rather than as working buttons. The primary circle does the same conditionally (`disabled={!hasText}`, `accessibilityState` following it, and `opacity: pressed && hasText ? 0.8 : 1`), so the one control that is a send button half the time and an unbuilt mic the other half reports which one it currently is.\n\nEverything visual is UNCHANGED on purpose: the icons, the 34x38 box and the full opacity are exactly what shipped. `composerControls.test.tsx` (7 tests) pins that box and the opacity so a well-meant \"just dim them\" is caught as the visual change it would be.\n\nSTILL ACTIONABLE — PRODUCT DECISION OUTSTANDING. What shipped only stops these controls lying about being enabled. Whether an unbuilt control should be HIDDEN or visibly greyed has NOT been decided, and this fix deliberately does neither. Marked Fixed for the a11y/misleading-affordance defect as reported; the visual treatment is a separate call the product owner still owes.",
+      "jira": "VC-60",
+      "fixedIn": "dev branch, 2026-09-19"
     },
     {
       "id": "VC-060",
@@ -2110,11 +2115,15 @@
     },
     {
       "id": "VC-063",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
-      "testIds": [],
+      "testIds": [
+        "syncLogic.test.ts: reconcileDecision (§L6 dedup)",
+        "failureScenarios.test.ts: a realtime frame with no body",
+        "observeMessages.test.ts: observeMessages column coverage"
+      ],
       "title": "A message whose realtime frame carries no body renders a permanently blank bubble — the REST recovery is dead code and the list would not re-render anyway",
       "severity": "P1",
       "priority": "P1",
@@ -2136,16 +2145,20 @@
       "actual": "An empty bubble with only a timestamp, and an empty preview on the chat list. The recovery cannot work, for two independent reasons, and both must be fixed or the bubble stays blank.",
       "user_impact": "A received message shows as blank. The user has no idea what was said and no way to recover it inside the app. At the E2EE phase this would be every single inbound message.",
       "suspected_cause": "(a) THE FILL IS SKIPPED AS A DUPLICATE. `fetchMessagesAfter(conv, seq-1)` returns the same message, and `reconcileDecision` (syncLogic.ts:20-22) is `if (hasClientMsgIdRow) return 'update'; if (hasSeqRow) return 'skip';`. `hasSeqRow` is true — the row was inserted milliseconds earlier by the `applyServerMessage` on the line above. `hasClientMsgIdRow` can never be true for a peer's message: there is no client_msg_id on the wire, so the insert synthesises `srv_<conversationId>_<seq>` while the REST row carries the sender's real id. The decision is always 'skip', so content_plain is never written and the whole block is dead code for exactly the case its comment names. Every later catch-up funnels through the same decision, so the comment 'content syncs on next catch-up' is also untrue. (b) EVEN IF (a) IS FIXED, NOTHING RE-RENDERS. `observeMessages` is `.observeWithColumns(['state'])`, and WatermelonDB only emits when the matched-record SET changes or a NAMED column changes — a content_plain-only update on an already-matched row emits nothing.",
-      "notes": "Found by a code-level audit after the live session. Fix needs both halves: let the fill update a row matched by seq (e.g. treat a seq row with empty content as 'update'), and name `content_plain` in observeMessages' column list.",
-      "jira": "VC-64"
+      "notes": "Found by a code-level audit after the live session. Fix needs both halves: let the fill update a row matched by seq (e.g. treat a seq row with empty content as 'update'), and name `content_plain` in observeMessages' column list.\n\nFIX, both halves — either alone still leaves a blank bubble.\n\n(a) THE FILL CAN NOW LAND. `reconcileDecision` takes a new `seqRowMissingBody` input: a seq row we already hold WITHOUT a body reconciles as `update` instead of `skip`. It stays narrow on purpose — only a MISSING body earns a write, so an ordinary duplicate is still free, and a message that legitimately has no text (an attachment with no caption) offers none either and still skips. `applyServerMessages` computes it as `offersBody && bySeq.length > 0 && bySeq.every(r => !hasBody(r.contentPlain))`, resolves the update target as `byClient[0] ?? bySeq[0]` (a peer's message can never take the `client_msg_id` branch — there is none on the wire and the insert synthesises `srv_<conv>_<seq>`), and re-bumps the chat-list preview the bodiless frame had written as empty. The bump passes `byClient.length > 0 || own` rather than a flat `true`, so a refill corrects the preview without being counted as a second unread arrival.\n\n(b) THE LIST NOW RE-RENDERS. `observeMessages` names `content_plain` in a new exported `MESSAGE_OBSERVED_COLUMNS`, kept beside the subscription so the two cannot drift. `observeWithColumns` emits only for the columns it is NAMED (or a change in the matched-record set), so before this the refill wrote the text into the database and nothing woke: the message was there, the text was there, and the user kept the empty bubble until they left the chat and came back.\n\nThe column test asserts the LIST rather than an emission, and that is deliberate: WatermelonDB observables do not emit under the Loki adapter Jest uses, so an emission-based test would fail identically whether the bug is present or not and would prove nothing.",
+      "jira": "VC-64",
+      "fixedIn": "dev branch, 2026-09-19"
     },
     {
       "id": "VC-064",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": ["VC-053"],
-      "testIds": [],
+      "testIds": [
+        "conversationSwitch.test.tsx: opening another chat from a notification",
+        "conversationSwitch.test.tsx: a re-render that is not a conversation switch"
+      ],
       "title": "Opening a chat from a notification while another chat is on screen keeps the unsent draft — one tap can send it to the wrong person",
       "severity": "P1",
       "priority": "P1",
@@ -2168,16 +2181,17 @@
       "actual": "The screen is REUSED, not remounted: the deep link dispatches a NAVIGATE to `Chat`, and with no `getId` configured on the Chat screen the stack router reuses the current route's key and only swaps `route.params`. `useMessages`, `useConversationIdentity` and `useChatHeaderPresence` all re-run on the new conversationId, but every `useState` in ChatScreen survives — so the composer still holds A's text while `send` is now bound to B. One tap sends A's private message to B.",
       "user_impact": "A private message can be delivered to the wrong person with a single tap and no warning. That is a confidentiality failure, not just a UX slip. Lesser symptoms from the same cause: the first keystroke after the switch emits a typing signal to B while the field shows A's words; `offsetRef` carries over, so if the user had scrolled up in A's chat the auto-follow is silently disabled in B's until they scroll once; the jump-to-latest button can appear for a chat already at the bottom.",
       "suspected_cause": "ChatScreen holds `text`, `offsetRef`, `showJump`/`showJumpRef` and `newestIdRef` in component state and nothing resets them when `conversationId` changes. Fix: either give the Chat screen a `getId: ({ params }) => params.conversationId` so the deep link remounts it, or reset every piece of local state in an effect keyed on conversationId.",
-      "notes": "Found by a code-level audit. VC-053 fixed the TITLE on this exact entry point, which confirms the param-update path is real and exercised; the state carry-over was not addressed then.",
-      "jira": "VC-65"
+      "notes": "Found by a code-level audit. VC-053 fixed the TITLE on this exact entry point, which confirms the param-update path is real and exercised; the state carry-over was not addressed then.\n\nFIX — and NOT the `getId` this entry proposed. `navigation/RootNavigator.tsx` is UNCHANGED: the Chat screen still has no `getId`, and the deep link still reuses the route and swaps `route.params`. What changed is entirely in `ChatScreen.tsx`: it is now a shell that reads `route.params` and renders the real screen — the old body, renamed `ChatThread` — as `<ChatThread key={conversationId} … />`. The key IS the reset. React tears the old thread down and builds a new one, so `text`, `offsetRef`, `showJump`/`showJumpRef` and `newestIdRef` cannot cross over, and whatever state `ChatThread` grows later is covered by construction instead of by somebody remembering to add it to a reset effect.\n\n`getId` was considered and rejected for two reasons recorded in the file's doc comment. It remounts by PUSHING a second Chat route (StackRouter reuses a route only when the id matches) and native-stack keeps every route beneath the top mounted — so one live thread per notification tap, each holding a DB subscription and a FlashList, on the 3 GB reference device (§R5). And the route popped back to would sit on screen with NO active conversation, because the effect that claims it keys on the id rather than on focus and so never re-runs — re-opening VC-062. Remounting inside the route leaves the stack exactly as it is.\n\nCovered by `conversationSwitch.test.tsx` (5 tests): the draft does not carry over, the previous chat's words cannot be sent to the new peer, the new conversation lands at the bottom rather than where the old one was left, the header still gets the conversation it was sent, and — the guard against over-correcting — an ordinary re-render that is NOT a conversation switch leaves a half-typed message alone.",
+      "jira": "VC-65",
+      "fixedIn": "dev branch, 2026-09-19"
     },
     {
       "id": "VC-065",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
-      "testIds": [],
+      "testIds": ["presenceLifecycle.test.ts: a chat closed while its presence is still resolving"],
       "title": "Backing out of a chat mid-resolve strands a 20s presence timer, and can permanently disable the only code that clears it",
       "severity": "P2",
       "priority": "P2",
@@ -2199,12 +2213,13 @@
       "actual": "activatePresence registers its map entry and starts its interval AFTER two awaits, and no cancellation token reaches it. The screen cleanup runs deactivatePresence first, so the map is empty and clearPeerPresenceTimer has nothing to clear; the promise then resumes and starts a 20 s setInterval for a chat that is closed. Its own guard makes every tick a no-op, so it is an invisible timer waking the JS thread every 20 s until the next chat is opened, a background suspend, or engine stop — and when push is unavailable scheduleSuspend returns early, so it ticks all night. Worse, if the back happens during the SHORTER await (a WatermelonDB find, which blocks behind any in-flight write such as an inbound message batch), deactivatePresence deletes nothing and the entry is written afterwards: activePresencePeers then holds a permanent ghost, its size can never reach 0 again, and clearPeerPresenceTimer inside deactivatePresence becomes dead code for the rest of the session. From then on, closing ANY chat stops clearing its presence poll.",
       "user_impact": "Battery and wakeups on the 3 GB reference device, exactly what the overnight-background contract M13 forbids. Silent, and a later chat open masks it because startPeerPresencePolling clears the timer first — which is why live testing never catches it.",
       "suspected_cause": "State is registered after awaits with no cancellation. Fix: capture a generation token before the first await and bail if deactivatePresence has run since, or register the map entry BEFORE the awaits so deactivate can always see it.",
-      "notes": "Found by a code-level audit after the live two-device session.",
-      "jira": "VC-66"
+      "notes": "Found by a code-level audit after the live two-device session.\n\nFIX: a `presenceEpoch` counter on the engine. `deactivatePresence` bumps it BEFORE the map delete — before, so an activate still awaiting sees the move rather than racing the delete — and the two paths that clear `activePresencePeers` wholesale, `stop()` and `onSessionCleared()`, bump it too. `activatePresence` captures the epoch before its first await and bails at three points: after the stored-peer lookup (`peerIdFor`), after the members fallback, and again after `refreshPeerPresence`.\n\nThe FIRST check is what kills the permanent ghost — everything past it writes to `activePresencePeers`, and it was that late write landing after the close's delete that made the map's size unable to reach 0 again and turned `clearPeerPresenceTimer` into dead code for the rest of the session. The LAST also undoes its own registration (`activePresencePeers.delete(conversationId)`, then `clearPeerPresenceTimer()` if it was the last chat), because by that point it has already registered and the network round trip is the widest window of the three.\n\nCovered by `presenceLifecycle.test.ts`, written RED first and driving both windows with hand-resolved deferred promises so the race is deterministic rather than hoped for. Before the fix, `setInterval(fn, 20000)` was provably called for a chat that was already closed — the §M7/§M13 violation this entry describes, reproduced in a test rather than argued about.",
+      "jira": "VC-66",
+      "fixedIn": "dev branch, 2026-09-19"
     },
     {
       "id": "VC-066",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": ["VC-033", "VC-057"],
@@ -2230,12 +2245,13 @@
       "actual": "Each of the five maps — lines, counts, lastSeq, muted, avatars — is ONE SharedPreferences string holding every conversation, read whole and written back whole. Two threads that read before either writes will have the later write clobber the earlier. If the FCM thread wins, B's six lines survive its cancellation and the next message in B rebuilds the thread with every line the user already read — the VC-057 symptom, resurrected as a race rather than a missing call. If the other side wins, A's new line is lost and the notification shows only older lines for the message that just arrived. The same shape on counts either re-establishes a count the user just dismissed or drops a bump, and those counts feed the group summary total.",
       "user_impact": "Notifications intermittently re-show read messages, drop the message that just arrived, or report a total that matches nothing. Non-deterministic, so it reads to the user as the app being unreliable.",
       "suspected_cause": "The class doc claims every accessor is safe from any thread because SharedPreferences is internally synchronised. That is true for a single getString or putString and false for the read-then-write pairs used throughout. Three writers in one process: VelChatMessagingService on FCM's delivery thread, PushActionReceiver on the main thread, VelChatPushModule on the RN native-modules thread. Fix: one synchronized lock around every read-modify-write in the class; all callers share a single SharedPreferences instance in a single process, so that is sufficient.",
-      "notes": "Distinct from VC-033, which is about the pending-event queue. This is the other five maps. Found by a code-level audit after the live two-device session.",
-      "jira": "VC-67"
+      "notes": "Distinct from VC-033, which is about the pending-event queue. This is the other five maps. Found by a code-level audit after the live two-device session.\n\nFIX: one `synchronized(WRITE_LOCK)` monitor wrapping every read-modify-write in the class — `appendLine`, `clearLines`, `clearAllLines`, `bumpCount`, `clearCount`, `clearAllCounts`, `setLastSeq`, `setMuted`, `putNames` (both name maps) and `putPersonAvatar`, plus `enqueueEvent`/`takeEvents` on the pending-event queue this entry split off from VC-033.\n\nThe monitor is on the COMPANION object, and that is load-bearing rather than a style choice: `PushStore(context)` is constructed FRESH at each entry point — the FCM service, the broadcast receiver, the RN module — so an instance monitor would have been three separate locks guarding one file, which is no lock at all. Android hands every instance the same `SharedPreferences` object for a given file in a given process, so one process-wide monitor is exactly the scope of the contention.\n\nDeliberately OUTSIDE the lock: the blind `commit()` writes (`setCredentials`, `clearSession`, `setActiveConversation`) and the pure single reads. Those have nothing to read first, so there is no read-modify-write to protect, and `commit()` blocks on a disk sync — nothing here is worth holding a monitor across one. `clearAllCounts`/`clearAllLines` are blind too but still take it, because a `bumpCount` that read the map before them and writes after would otherwise put back a count the user just cleared.\n\nThe class doc is corrected in place: its claim that every accessor was thread-safe \"because SharedPreferences is internally synchronised\" is true of a single `getString`/`putString` and false of every pair this class actually uses, which is why the comment is now the explanation of the race instead of the reason nobody looked for it.\n\nNO AUTOMATED TEST: this project has no Kotlin test source set at all — `android/app/src` holds only `main`, `dev` and `prod` — so nothing in the push package is reachable from Jest. Verified by code review against the report; the live repro still needs re-running on a device. A lost-update race across three native threads is not reachable from the JS test harness in any case.",
+      "jira": "VC-67",
+      "fixedIn": "dev branch, 2026-09-19"
     },
     {
       "id": "VC-067",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": ["VC-057"],
@@ -2262,16 +2278,17 @@
       "actual": "The dismiss branch clears only the count and returns. The stored lines survive, so appendLine returns all four and the rebuilt MessagingStyle re-lists the three messages the user deliberately dismissed, while setNumber says 1.",
       "user_impact": "Dismissing a notification does not actually dismiss its contents. The user reads four new messages for one new arrival, and the dismissal gesture stops meaning anything.",
       "suspected_cause": "A separate receiver branch that the VC-057 fix did not reach; it needs the same clearLines the cancel path has. SECONDARY, same area: postSummary builds the group summary with setGroupSummary true and NO delete intent, unlike every per-conversation notification — so dismissing the bundle runs none of our clearing for the summary, and on any OEM build that does not deliver child delete intents on a group dismissal the counts survive wholesale and the next single message re-posts a summary counting messages already swept away.",
-      "notes": "Found by a code-level audit after the live two-device session. Deterministic, unlike the race in the sibling PushStore report.",
-      "jira": "VC-68"
+      "notes": "Found by a code-level audit after the live two-device session. Deterministic, unlike the race in the sibling PushStore report.\n\nFIX: the `ACTION_DISMISS` branch now calls `store.clearLines(conversationId)` alongside `clearCount`, matching `PushNotifications.cancel`, which has always dropped both halves.\n\nThe SECONDARY half of this report is fixed too, because a backstop that does half of what it backs up just relocates the bug to the group path. `postSummary` gained `setDeleteIntent(summaryDismissIntent(context))`, carrying a new `ACTION_DISMISS_SUMMARY` that `PushActionReceiver.onReceive` answers BEFORE the conversation-id extra is demanded — the summary belongs to no single conversation, so it carries no id and the existing `getStringExtra(...) ?: return` would have swallowed it silently. That branch clears counts AND lines wholesale (`clearAllCounts` + `clearAllLines`). It is idempotent on builds where the children's delete intents do arrive, and it is the only clearing that happens on the OEM builds where they do not.\n\nNO AUTOMATED TEST: this project has no Kotlin test source set at all — `android/app/src` holds only `main`, `dev` and `prod` — so nothing in the push package is reachable from Jest. Verified by code review against the report; the live repro still needs re-running on a device.",
+      "jira": "VC-68",
+      "fixedIn": "dev branch, 2026-09-19"
     },
     {
       "id": "VC-068",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
-      "testIds": [],
+      "testIds": ["chatOpenEffects.test.tsx: paging through history is not re-opening the chat"],
       "title": "Every load-older page re-runs the open-the-chat side effects, briefly un-suppressing notifications for the chat on screen",
       "severity": "P3",
       "priority": "P3",
@@ -2293,16 +2310,17 @@
       "actual": "The effect is keyed on conversationId, meId and limit, but only observeMessages depends on limit. Each loadOlder therefore tears the effect down and re-runs ALL of it: a receipts GET, a read receipt frame, a clearConversation bridge call, and the pair setActiveConversationForPush(null) then setActiveConversationForPush(conversationId). Those two are async bridge calls, so for the length of one native round trip the native side believes NO chat is on screen — and a push landing in that window posts a heads-up notification for the chat the user is staring at, the exact failure the active-conversation mechanism exists to prevent. Ten pages of scrollback is ten such windows.",
       "user_impact": "Redundant network on every page of scrollback, and an occasional notification for the conversation that is currently open. The engine's own window is zero-width because setActiveConversation is synchronous; only the native mirror is exposed.",
       "suspected_cause": "One effect doing two jobs. Split it: keep the observeMessages subscription keyed on limit, and move the open-the-chat actions plus the AppState listener into an effect keyed on conversationId alone.",
-      "notes": "Found by a code-level audit after the live two-device session.",
-      "jira": "VC-69"
+      "notes": "Found by a code-level audit after the live two-device session.\n\nFIX: the `useMessages` effect was split in two, exactly as this entry proposed. The open-the-chat work — `clearUnread` plus the read frame, the receipts GET, `syncEngine.setActiveConversation`, `setActiveConversationForPush`, the `clearConversationNotification` bridge call and the AppState listener — now sits in an effect keyed on `conversationId` ALONE, with its teardown (`appStateSub.remove()` and both active-conversation withdrawals) moved across with it. A second effect keyed on `[conversationId, limit]` does the only thing a wider window actually changes: subscribe `observeMessages` and release the narrower subscription.\n\n`meId` came out of both dependency arrays. Neither half ever read it — it is a stable account id — so keeping it there only ever meant more ways to re-run all of the above.\n\nThe consequence that matters: `loadOlder` no longer tears down and re-runs the `setActiveConversationForPush(null)` → `…(conversationId)` pair. That hop is an async bridge call, so each page of scrollback opened a window in which the native side believed NO chat was on screen and a push landing inside it posted a heads-up notification for the chat the user was reading.\n\nCovered by `chatOpenEffects.test.tsx` (4 tests): a wider window re-subscribes and releases the old subscription; the open-the-chat side effects do NOT re-run per page; the push layer is never told that no chat is on screen while one is; and — the guard against over-correcting — a DIFFERENT conversation still re-opens, and unmount still lets go.",
+      "jira": "VC-69",
+      "fixedIn": "dev branch, 2026-09-19"
     },
     {
       "id": "VC-069",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": ["VC-051", "VC-062"],
-      "testIds": [],
+      "testIds": ["contiguousSeq.test.ts: maxContiguousSeqForConversation"],
       "title": "The read watermark is sent at the local MAX seq, so it covers messages the device does not hold — the sender gets a blue tick for a message that was never received",
       "severity": "P1",
       "priority": "P1",
@@ -2324,8 +2342,36 @@
       "actual": "Receipts are cumulative watermarks — one frame carries upToSeq and covers every message at or below it — and every emitter derives that number from the local MAX seq, not the highest CONTIGUOUS seq. markConversationRead runs on every chat open and on the notification read and reply actions, and uses maxSeqForConversation; read-on-arrival uses the incoming seq itself, so the very frame that OPENS a hole immediately reports read up to its own seq; the backfill loop does the same with its highest page seq. A native path acknowledges read straight over REST from a process with no database open at all. Nothing anywhere checks that a row exists for the seq being acknowledged, and mergeWatermark is monotonic, so an over-advanced read is permanent for the life of the install.",
       "user_impact": "Read receipts stop meaning anything in exactly the situation where they matter most. A sender is told a message was read when the recipient never received it and never will — which is how the VC-051 message loss stayed invisible to both sides. It also clears the recipient's unread badge for messages they have never seen.",
       "suspected_cause": "CONFIRMED in code. Fix: replace the maxSeqForConversation used for RECEIPTS with a highest-contiguous-seq query (highest seq with no hole beneath it, relative to the conversation's known floor so that trimmed history and deleted messages are not mistaken for holes), and clamp the read-on-arrival seq to that value so the frame that opens a hole reports only up to the previous localMax. The same clamp applies to the delivered watermark fed from push. Deliberately NOT bundled with the VC-051 backfill fix: it changes tick semantics on every path and needs its own tests, and getting the floor wrong would under-report reads, which is a worse bug than the one being fixed.",
-      "notes": "Split out of VC-051 during that investigation. VC-062 (a backgrounded-but-mounted chat marking arrivals read) widened the window and is fixed; this is the independent, underlying defect.",
-      "jira": "VC-70"
+      "notes": "Split out of VC-051 during that investigation. VC-062 (a backgrounded-but-mounted chat marking arrivals read) widened the window and is fixed; this is the independent, underlying defect.\n\nFIX: a new `maxContiguousSeqForConversation` in `infra/db/messages.ts` — the highest seq with no KNOWN hole beneath it — over a bounded `CONTIGUITY_SCAN = 500` row scan (`seq > 0`, seq DESC, then sorted ascending).\n\n\"Known\" is the load-bearing word, and the two design choices under it are the two ways this fix could have been worse than the bug. It starts from the OLDEST row held rather than from seq 1, because the device keeps a bounded window and a conversation whose oldest local row is seq 900 is normal, not a gap — reading it as one would pin every receipt at 0 and leave every sender on a single grey tick forever. And it walks UP from there so it stops at the LOWEST hole; stopping at the highest would still acknowledge every deeper one. A deleted message still counts as held, because a tombstone keeps its row and stalling the watermark behind one is the same under-reporting failure by another route.\n\n`markConversationRead` now uses it in place of `maxSeqForConversation`. `pageBackfill` computes it once per page and clamps BOTH cumulative watermarks with it — `noteDelivered(Math.min(highestInbound, contiguous))` and `noteRead(Math.min(highest, contiguous))` — one extra query per page, on the reconnect path only. Read-on-arrival is clamped for free with the `localMax` the gap check already holds in hand (`m.seq <= localMax + 1 ? m.seq : localMax`, with `localMax === 0` treated as unloaded history rather than a hole), so the inbound hot path pays nothing: the very frame that OPENS a hole now reports read only up to the previous local max instead of claiming everything it skipped.\n\nCovered by `contiguousSeq.test.ts` (6 cases), including both under-reporting traps named above: unloaded history is not a hole, and a tombstone is not a hole.\n\nRESIDUAL, NOT FIXED HERE: the NATIVE ack path this report also named. `PushActionReceiver`'s Mark-as-read and inline-reply branches still POST `/notifications/ack` with the notification's own `seq` unclamped, because that process has no database open to scan — exactly the reason the report called it out. A native Mark-as-read on a conversation with a hole can therefore still over-claim. Worth its own entry if it is judged to matter; the three JS emitters, which are every path that runs with the app alive, are fixed.",
+      "jira": "VC-70",
+      "fixedIn": "dev branch, 2026-09-19"
+    },
+    {
+      "id": "VC-070",
+      "status": "Open",
+      "regression": false,
+      "evidence": [],
+      "refs": ["VC-047"],
+      "testIds": [],
+      "title": "A conversation with no resolved name shows as a bare em-dash in the chat list, with no way to tell who it is",
+      "severity": "P3",
+      "priority": "P3",
+      "layer": "CLIENT",
+      "feature": "Chat list — unresolved contact",
+      "component": "apps/mobile/src/features/chat/ui/ChatsList.tsx:140 (and the avatar initial at :82, the accessibility label at :93)",
+      "environment": "Production build, live backend",
+      "device": "OPPO CPH2643 (Android 16)",
+      "os": "Android",
+      "frequency": "Every conversation whose peer name has not been resolved",
+      "reproducibility": "Observed live on the real device; deterministic once a row has no name.",
+      "preconditions": "A conversation whose peer identity the inbox sync has not resolved and which is not in the address book.",
+      "steps": ["Open the Chats tab.", "Look at any row whose peer name has not resolved."],
+      "expected": "The row identifies the conversation somehow — the peer's phone number is what WhatsApp shows, or failing that an explicit localised label the user can understand.",
+      "actual": "The title renders as a bare em-dash from `{name ?? '—'}`, beside a generic placeholder avatar. The row is completely unidentifiable: the only clue is the message preview. The accessibility label degrades to the literal word 'Chat', so a screen-reader user gets even less, and the avatar initial falls back to '?'.",
+      "user_impact": "A conversation in the user's inbox that they cannot identify at all. Observed live with a real row reading '—' and a preview of 'Gd'. Minor in isolation, but it is on the app's home screen and reads as an unfinished state rather than a deliberate one.",
+      "suspected_cause": "`{name ?? '—'}` is a placeholder that was never replaced. The row carries `peerId`, but that is an account id and not something to show a user, so the fix needs either the peer's phone number on the row or an explicit localised string — it is not a one-character change, which is presumably why the dash is still there.",
+      "notes": "Found during the live two-device session while checking the chat list; filed after confirming the source. Related to VC-047, which was about the WRONG name being shown; this is about NO name.",
+      "jira": "VC-71"
     }
   ]
 }

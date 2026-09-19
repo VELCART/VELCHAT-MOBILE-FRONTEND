@@ -82,6 +82,7 @@ export {
   markMessageFailed,
   markMessageSending,
   maxSeqForConversation,
+  maxContiguousSeqForConversation,
   minSeqForConversation,
   countMessages,
   MESSAGE_PAGE,
