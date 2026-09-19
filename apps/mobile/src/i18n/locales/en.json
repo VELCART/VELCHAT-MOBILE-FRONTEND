@@ -65,6 +65,8 @@
     "emptyTitle": "No chats yet",
     "emptySub": "Tap the compose button to start your first conversation.",
     "newChat": "New chat",
+    "unknownContact": "Unknown contact",
+    "unnamedChat": "Unnamed chat",
     "call": "Voice call",
     "videoCall": "Video call",
     "more": "More options",

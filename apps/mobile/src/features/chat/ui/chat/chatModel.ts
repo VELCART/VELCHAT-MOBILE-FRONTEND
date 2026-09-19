@@ -125,3 +125,42 @@ export function chatTitle(
   if (fromRow) return fromRow;
   return fallback;
 }
+
+/** What a chat-list row shows for itself. `initial` absent → the avatar draws its person glyph. */
+export interface ConversationRowIdentity {
+  readonly title: string;
+  readonly initial: string | undefined;
+}
+
+/**
+ * What the chat LIST calls a conversation, and the avatar initial that must agree with it
+ * (VC-070). Lives beside {@link chatTitle} because the list and the header are the same
+ * decision on two surfaces, and a user who taps a row must not be shown a different answer.
+ *
+ * The row used to decide this three times over — `name ?? '—'` for the title, `?? 'Chat'` for
+ * the accessibility label, `?? '?'` for the initial — so an unresolved conversation rendered as
+ * a bare em-dash beside a generic avatar (seen live, with a two-character preview as the only
+ * clue to who it was), while a screen reader was told the untranslated word "Chat". Deriving all
+ * of it here is what keeps the eye and the screen reader on the same answer.
+ *
+ * WHY NOT THE PEER'S PHONE NUMBER, which is what WhatsApp puts here: this device does not have
+ * it. The conversation row denormalises `peer_id` and the photo, not a number; the members
+ * endpoint returns bare account ids and the peer profile carries no phone at all — contact
+ * discovery is OPRF precisely so a number can never be looked up from an account. The one
+ * number↔account map we do hold is the discovered address book, and a peer found there already
+ * resolves to a name, because the device reader falls back to the number itself for an entry
+ * saved without one. So a row that reaches this fallback is, by construction, one whose number
+ * could only come from a request — and the render path may not make one (§M0 rule 2).
+ *
+ * `initial` is `undefined` rather than the old '?' sentinel: only a REAL name may colour an
+ * avatar disc, since a lone letter from a generic label reads as a person who is not there. The
+ * sentinel also meant a name genuinely starting with '?' was demoted to the generic avatar.
+ */
+export function conversationRowIdentity(
+  name: string | undefined,
+  fallback: string,
+): ConversationRowIdentity {
+  const resolved = name?.trim();
+  if (!resolved) return { title: fallback, initial: undefined };
+  return { title: resolved, initial: resolved.charAt(0).toUpperCase() };
+}

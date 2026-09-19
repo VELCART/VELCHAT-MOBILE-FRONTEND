@@ -22,7 +22,11 @@ import {
   useChatHeaderPresence,
   type PresenceEntry,
 } from '../../hooks/useChatHeaderPresence';
-import { chatTitle, presenceTimeLabel } from './chatModel';
+import {
+  chatTitle,
+  conversationRowIdentity,
+  presenceTimeLabel,
+} from './chatModel';
 
 const AVATAR = 40;
 
@@ -108,11 +112,15 @@ export function ChatHeader({
   // undefined on that entry point and the header used to read "Chats" — the tab label — while
   // the avatar and presence line beside it were right (VC-053). The row already observed here
   // knows the peer; prefer it over the generic label.
-  // `''` as the fallback means "nothing names this conversation yet", which is what the avatar
-  // needs to know: it must fall back to the person glyph, not to the initial of a tab label.
-  const resolvedName = chatTitle(name, rowName, '');
-  const title = resolvedName || tr('tabs.chats');
-  const initial = resolvedName.charAt(0).toUpperCase();
+  // A conversation nothing names is called what it IS, not what tab it came from. The fallback
+  // here used to be `tabs.chats`, so an unidentified chat's header read "Chats" — a label, in
+  // the slot where the person's name goes. That was the best available string when VC-053 was
+  // written; the chat list has since needed the same answer and `chat.unknownContact` exists
+  // for it (VC-070), so both surfaces say the same thing now.
+  const { title, initial } = conversationRowIdentity(
+    chatTitle(name, rowName, ''),
+    tr('chat.unknownContact'),
+  );
   const presenceLine = derivePresenceLine(typing, presence, tr);
   return (
     <View

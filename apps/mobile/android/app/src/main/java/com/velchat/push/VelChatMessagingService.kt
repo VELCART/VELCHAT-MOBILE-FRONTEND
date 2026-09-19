@@ -100,7 +100,17 @@ class VelChatMessagingService : FirebaseMessagingService() {
     val onScreen =
         PushBridge.isAppResumed(this) && store.activeConversationId() == conversationId
     if (onScreen) Log.i(TAG, "notification skipped: this chat is on screen")
-    if (!onScreen) {
+
+    // FCM is at-least-once, so the same message really does arrive twice — and a second copy
+    // used to append a second identical line and bump the count, so one message read as two
+    // (VC-032). Recorded BEFORE the on-screen check, so a duplicate of something the user
+    // already watched arrive in the open chat cannot notify later either. Everything below this
+    // still runs for a duplicate: acknowledging twice is idempotent, and handing it to a live JS
+    // runtime is a free chance to catch up.
+    val firstCopy = store.markSeen(conversationId, seq)
+    if (!firstCopy) Log.i(TAG, "notification skipped: duplicate push for a seq already shown")
+
+    if (!onScreen && firstCopy) {
       // Isolated on purpose. The ack below is the ONLY thing that can produce a second tick for
       // a closed app, and it runs after this — so anything that can throw while drawing a
       // notification (an OEM's NotificationManager refusing `activeNotifications`, a resource

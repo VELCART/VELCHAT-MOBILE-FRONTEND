@@ -104,6 +104,7 @@ internal class PushStore(context: Context) {
         .remove(KEY_ACTIVE_CONVO)
         .remove(KEY_AVATARS)
         .remove(KEY_LAST_SEQ)
+        .remove(KEY_SEEN)
         .commit()
   }
 
@@ -185,6 +186,39 @@ internal class PushStore(context: Context) {
    */
   fun lastSeq(conversationId: String): Long =
       readJson(KEY_LAST_SEQ).optLong(conversationId, 0L)
+
+  /**
+   * Record that a notification is about to be built for this (conversation, seq), and say
+   * whether it is NEW. `false` means we have already notified about this exact message.
+   *
+   * FCM is at-least-once, so the same data message genuinely arrives twice — and without this
+   * the second copy appended a second identical line to the thread and bumped the count, so one
+   * message read as two (VC-032).
+   *
+   * A high-water mark is the obvious way to do this and it is WRONG here. FCM gives no ordering
+   * guarantee, so a genuinely new message with a LOWER seq than one already delivered is
+   * ordinary — the whole reason notification lines are sorted by seq rather than by arrival
+   * (VC-056). A watermark would silently swallow that message's notification entirely, which is
+   * a far worse failure than showing a duplicate. So this remembers the actual seqs.
+   *
+   * A seq of 0 means the push carried none: nothing to compare, so it always counts as new.
+   */
+  fun markSeen(conversationId: String, seq: Long): Boolean {
+    if (conversationId.isBlank() || seq <= 0L) return true
+    synchronized(WRITE_LOCK) {
+      val all = readJson(KEY_SEEN)
+      val seen = all.optJSONArray(conversationId) ?: JSONArray()
+      for (i in 0 until seen.length()) {
+        if (seen.optLong(i, 0L) == seq) return false
+      }
+      seen.put(seq)
+      while (seen.length() > MAX_SEEN_PER_CONV) seen.remove(0)
+      all.put(conversationId, seen)
+      trimOldest(all, MAX_NAMES)
+      prefs.edit().putString(KEY_SEEN, all.toString()).apply()
+      return true
+    }
+  }
 
   fun setLastSeq(conversationId: String, seq: Long) {
     if (conversationId.isBlank() || seq <= 0L) return
@@ -569,12 +603,21 @@ internal class PushStore(context: Context) {
     // A new key retires them without needing a migration.
     private const val KEY_AVATARS = "avatars.v2"
     private const val KEY_LAST_SEQ = "lastSeq"
+    private const val KEY_SEEN = "seenSeqs"
 
     private const val MAX_NAMES = 300
     private const val MAX_PENDING = 64
 
     /** Android collapses a MessagingStyle to the last few lines anyway; keeping more is waste. */
     private const val MAX_LINES = 6
+
+    /**
+     * How many recent seqs per conversation are remembered for duplicate suppression.
+     *
+     * Only has to outlast FCM's own retry window, so it is deliberately small — the map is
+     * rewritten whole on every message and a long tail would cost more than the duplicates do.
+     */
+    private const val MAX_SEEN_PER_CONV = 20
     private const val MAX_LINE_CONVOS = 20
   }
 }

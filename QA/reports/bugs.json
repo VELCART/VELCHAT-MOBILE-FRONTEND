@@ -1084,7 +1084,7 @@
       "title": "No duplicate-notification suppression, though the monotonic watermark to do it already exists",
       "severity": "P1",
       "priority": "P1",
-      "status": "Open",
+      "status": "Fixed",
       "layer": "CLIENT",
       "feature": "Push / Notifications",
       "component": "android/app/src/main/java/com/velchat/push/PushNotifications.kt:200-240",
@@ -1110,15 +1110,16 @@
         "android/app/src/main/java/com/velchat/push/PushStore.kt:172-182"
       ],
       "regression": false,
-      "notes": "The fix is one line: `if (seq > 0 && seq <= store.lastSeq(conversationId)) return false`.",
-      "jira": "VC-32"
+      "notes": "The fix is one line: `if (seq > 0 && seq <= store.lastSeq(conversationId)) return false`.\n\nFIXED, but NOT the way this entry proposed, and the difference matters. The entry says the monotonic watermark to do this already exists (PushStore.lastSeq). Suppressing on a high-water mark would be wrong here: FCM gives no ordering guarantee, and this session PROVED it out of order on a real device — the notification thread came back with KILL2 above KILL1, which is what VC-056 exists to sort. Against a watermark, a genuinely new message arriving with a LOWER seq than one already delivered would have its notification silently swallowed entirely — a far worse failure than showing a duplicate. So suppression is by EXACT identity instead: new PushStore.markSeen(conversationId, seq) records the seq and returns whether it was new, keeping the last 20 seqs per conversation (bounded, and only has to outlast FCM retries), atomic under the same WRITE_LOCK. handleMessage calls it BEFORE the on-screen check, so a duplicate of a message the user already watched arrive in an open chat cannot notify later either. Everything after it still runs for a duplicate on purpose: the delivered ack is idempotent and re-acking guarantees the sender their tick, and handing the push to a live JS runtime is a free chance to catch up. Cleared on sign-out with the rest of the session state. Verified by compileProdReleaseKotlin; no Kotlin test source set exists, and an FCM redelivery cannot be forced on demand, so this is code-review-verified.",
+      "jira": "VC-32",
+      "fixedIn": "dev branch, 2026-09-19"
     },
     {
       "id": "VC-033",
       "title": "Native pending-event queue is a lock-free read-modify-write that can wipe a reply enqueued mid-drain",
       "severity": "P1",
       "priority": "P1",
-      "status": "Open",
+      "status": "Fixed",
       "layer": "CLIENT",
       "feature": "Push / Notification actions",
       "component": "android/app/src/main/java/com/velchat/push/PushStore.kt:394-407",
@@ -1145,8 +1146,9 @@
         "apps/mobile/src/infra/push/pushService.ts:190-191"
       ],
       "regression": false,
-      "notes": "No JVM test source set exists — android/app/src contains only `main`. PushStore is plain-JVM-testable.",
-      "jira": "VC-33"
+      "notes": "No JVM test source set exists — android/app/src contains only `main`. PushStore is plain-JVM-testable.\n\nFIXED as part of VC-066. The pending-event queue is one of the read-modify-write pairs that the new companion-object WRITE_LOCK now covers: enqueueEvent reads the array, appends, trims and writes it back, and takeEvents reads it and removes the key, both entirely inside the monitor. The drain case this entry described — an action queued on the receiver thread between the read and the removal, silently dropped — can no longer interleave, and the code now carries a comment saying exactly that. The monitor is on the COMPANION object rather than the instance, which is load-bearing: PushStore is constructed fresh at each entry point (VelChatMessagingService on FCM delivery, PushActionReceiver on main, VelChatPushModule on the RN native-modules thread), so an instance monitor would have been three separate locks guarding one shared SharedPreferences file. Verified by code review plus a clean compileProdReleaseKotlin; there is no Kotlin test source set in this project, so this is code-review-verified only.",
+      "jira": "VC-33",
+      "fixedIn": "dev branch, 2026-09-19"
     },
     {
       "id": "VC-034",
@@ -2348,11 +2350,15 @@
     },
     {
       "id": "VC-070",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": ["VC-047"],
-      "testIds": [],
+      "testIds": [
+        "conversationRowIdentity.test.ts: the identity a conversation row shows",
+        "chatsList.test.tsx: ConversationRow names a DM whose peer never resolved",
+        "chatTitle.test.ts: the header title for a conversation nothing names"
+      ],
       "title": "A conversation with no resolved name shows as a bare em-dash in the chat list, with no way to tell who it is",
       "severity": "P3",
       "priority": "P3",
@@ -2370,8 +2376,9 @@
       "actual": "The title renders as a bare em-dash from `{name ?? '—'}`, beside a generic placeholder avatar. The row is completely unidentifiable: the only clue is the message preview. The accessibility label degrades to the literal word 'Chat', so a screen-reader user gets even less, and the avatar initial falls back to '?'.",
       "user_impact": "A conversation in the user's inbox that they cannot identify at all. Observed live with a real row reading '—' and a preview of 'Gd'. Minor in isolation, but it is on the app's home screen and reads as an unfinished state rather than a deliberate one.",
       "suspected_cause": "`{name ?? '—'}` is a placeholder that was never replaced. The row carries `peerId`, but that is an account id and not something to show a user, so the fix needs either the peer's phone number on the row or an explicit localised string — it is not a one-character change, which is presumably why the dash is still there.",
-      "notes": "Found during the live two-device session while checking the chat list; filed after confirming the source. Related to VC-047, which was about the WRONG name being shown; this is about NO name.",
-      "jira": "VC-71"
+      "notes": "Found during the live two-device session while checking the chat list; filed after confirming the source. Related to VC-047, which was about the WRONG name being shown; this is about NO name.\n\nFIX: a new pure conversationRowIdentity(name, fallback) in ui/chat/chatModel.ts returns both the title and the avatar initial from ONE decision, so the three places the placeholder used to leak — the visible name, the accessibilityLabel and the avatar initial — can no longer disagree. The label is localised and picked by kind: chat.unknownContact for a DM, chat.unnamedChat for a group, added to all three locales (en, hi, ar) so no locale falls back to English. The avatar is now gated on the initial being absent rather than on a ? sentinel, so an unidentified row draws the same person glyph it always did.\n\nWHY NOT THE PHONE NUMBER, checked in source rather than assumed: the conversations table denormalises peer_id and the avatar but no number; the members endpoint returns bare account ids and the peer profile shape has no phone field at all (contact discovery is OPRF precisely so a number cannot be derived from an account); and the one local number-to-account map cannot reach this case, because the device-contacts reader already falls back to the first NUMBER as the name, so an address-book entry saved without a name arrives with the number AS its name and peerDisplayName returns it. A row that reaches this fallback is by construction one whose peer is not in the address book — nothing on the device holds their number. Resolving one per row would also be a network call on the render path (M0 rule 2) in a list that must recycle at 55+ FPS (R4).\n\nSAME FIX APPLIED TO THE CHAT HEADER in the same pass: an unidentified chat header read \"Chats\", the bottom-tab label, in the slot where the person name goes. That was the best string available when VC-053 landed; now that chat.unknownContact exists both surfaces say the same thing, and the avatar there is gated the same way. No visual change anywhere — same text slot, font, size, weight, layout and palette.",
+      "jira": "VC-71",
+      "fixedIn": "dev branch, 2026-09-19"
     },
     {
       "id": "VC-071",

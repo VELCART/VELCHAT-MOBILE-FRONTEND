@@ -24,6 +24,7 @@ import {
   useConversations,
   type ConversationRowVM,
 } from '../hooks/useConversations';
+import { conversationRowIdentity } from './chat/chatModel';
 
 const AVATAR = 54;
 
@@ -79,7 +80,17 @@ function ConversationRowBase({
 }: ConversationRowProps): React.JSX.Element {
   const t = useTheme();
   const { t: tr } = useTranslation();
-  const initial = (name ?? '?').trim().charAt(0).toUpperCase();
+  // ONE answer for the three slots that each used to invent their own placeholder (VC-070): the
+  // visible title, what a screen reader announces, and whether the avatar may draw an initial.
+  // The label is chosen by kind because replacing a missing answer with a wrong one — calling a
+  // group "Unknown contact" — would be worse than the em-dash it replaces.
+  const { title, initial } = conversationRowIdentity(
+    name,
+    tr(isDm ? 'chat.unknownContact' : 'chat.unnamedChat'),
+  );
+  // `onOpen` below still carries the RESOLVED `name`, never `title`: the header ranks a navigated
+  // name above the row it observes (VC-053), so handing it this placeholder would outrank a real
+  // name that has since landed on the row, and pin the placeholder to the open chat.
   const unread = unreadCount > 0;
   // Typing wins over the last-message preview for this conversation (§C4, ephemeral store).
   const typing = useTypingUser(id) !== null;
@@ -90,7 +101,7 @@ function ConversationRowBase({
   return (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={name ?? 'Chat'}
+      accessibilityLabel={title}
       onPress={() => onOpen(id, name)}
       style={({ pressed }) => ({
         flexDirection: 'row',
@@ -106,10 +117,7 @@ function ConversationRowBase({
           width: AVATAR,
           height: AVATAR,
           borderRadius: AVATAR / 2,
-          backgroundColor:
-            initial && initial !== '?'
-              ? avatarColor(name ?? '')
-              : t.colors.bgSubtle,
+          backgroundColor: initial ? avatarColor(title) : t.colors.bgSubtle,
           alignItems: 'center',
           justifyContent: 'center',
           overflow: 'hidden',
@@ -121,7 +129,7 @@ function ConversationRowBase({
             style={{ width: AVATAR, height: AVATAR }}
             resizeMode="cover"
           />
-        ) : initial && initial !== '?' ? (
+        ) : initial ? (
           <Text variant="title" style={{ color: '#fff' }}>
             {initial}
           </Text>
@@ -137,7 +145,7 @@ function ConversationRowBase({
             numberOfLines={1}
             style={{ flex: 1, fontSize: 17, color: t.colors.textPrimary }}
           >
-            {name ?? '—'}
+            {title}
           </Text>
           <Text
             variant="caption"
