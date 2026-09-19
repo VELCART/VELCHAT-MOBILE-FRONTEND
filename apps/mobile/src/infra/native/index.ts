@@ -15,6 +15,11 @@ export {
 export type { NotificationPermission } from './notifications';
 export { hapticTick, hapticSelection } from './haptics';
 export {
+  secureStoreKey,
+  secureStoreKeyCommitted,
+  commitSecureStoreKey,
+} from './secureStore';
+export {
   requestCameraPermission,
   requestMicrophonePermission,
   requestContactsPermission,

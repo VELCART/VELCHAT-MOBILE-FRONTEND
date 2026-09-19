@@ -7,6 +7,7 @@ import com.facebook.react.ReactHost
 import com.facebook.react.ReactNativeApplicationEntryPoint.loadReactNative
 import com.facebook.react.defaults.DefaultReactHost.getDefaultReactHost
 import com.velchat.push.VelChatPushPackage
+import com.velchat.securestore.VelChatSecureStorePackage
 
 class MainApplication : Application(), ReactApplication {
 
@@ -19,6 +20,9 @@ class MainApplication : Application(), ReactApplication {
           // autolinking to find — it is registered by hand (ADR 0008). The package creates its
           // module lazily, so this line costs nothing at startup.
           add(VelChatPushPackage())
+          // The encrypted KV store asks this for its key at module scope, before any effect
+          // runs, so it is registered eagerly (VC-016).
+          add(VelChatSecureStorePackage())
         },
     )
   }

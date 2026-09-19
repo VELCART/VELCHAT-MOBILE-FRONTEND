@@ -2,32 +2,73 @@
  * Encrypted MMKV key-value store (§M10, §M1). Fast, synchronous, encrypted.
  * The ONLY sanctioned small-KV store — AsyncStorage is lint-banned.
  *
- * TODO(MP1): derive `encryptionKey` from a Keychain/Keystore secret
- * (react-native-keychain) instead of this build-time placeholder.
+ * The encryption key comes from the OS keystore, not from this file (VC-016). It used to be a
+ * constant right here, which meant it shipped inside every APK: unzip, read the bundle, and you
+ * hold the key to the auth tokens and to the Ed25519 device private key kept below under
+ * `devicePrivKey`. That one cannot be re-derived, so its disclosure is not something signing out
+ * can undo.
+ *
+ * Built at module scope, so it exists before anything can read a token from it — which is why
+ * the keystore calls are synchronous.
  */
 import { MMKV, useMMKVString } from 'react-native-mmkv';
+import {
+  commitSecureStoreKey,
+  secureStoreKey,
+  secureStoreKeyCommitted,
+} from '../native/secureStore';
+import { LEGACY_ENCRYPTION_KEY, resolveStoreKey } from './storeKey';
 
-const ENCRYPTION_KEY =
-  'velchat-mp0-placeholder-key-derive-from-keychain-in-mp1';
+/**
+ * Open the store, re-encrypting it on the way if this install is still on the legacy key.
+ *
+ * The order is the whole point. An install that upgraded has its store encrypted with the old
+ * constant, so it MUST be opened with that constant first — opening it with the new key reads an
+ * empty store, which would sign the user out and destroy the device key. `recrypt` then rewrites
+ * it in place, and only once that returns does native record the key as committed. A process
+ * that dies in between comes back uncommitted and simply tries again.
+ */
+function openStore(): MMKV {
+  const plan = resolveStoreKey({
+    nativeKey: secureStoreKey(),
+    committed: secureStoreKeyCommitted(),
+  });
+  if (plan.kind === 'native') {
+    return new MMKV({ id: 'velchat', encryptionKey: plan.key });
+  }
+  const store = new MMKV({
+    id: 'velchat',
+    encryptionKey: LEGACY_ENCRYPTION_KEY,
+  });
+  if (plan.kind === 'legacy') return store;
+  try {
+    store.recrypt(plan.key);
+    commitSecureStoreKey();
+  } catch {
+    // Left on the legacy key, which is exactly where it already was — no worse than the build
+    // before this one, and the migration runs again next launch. Deliberately silent: anything
+    // logged here would be one bit away from describing the key (§M19).
+  }
+  return store;
+}
 
-export const storage = new MMKV({
-  id: 'velchat',
-  encryptionKey: ENCRYPTION_KEY,
-});
+export const storage = openStore();
 
 /** Stable, typed key names (avoid stringly-typed access across the app). */
 export const KVKeys = {
   themeMode: 'settings.themeMode',
   language: 'settings.language',
   featureFlagsCache: 'config.featureFlags',
-  // auth session (MP1 replaces the MMKV encryption key with a Keychain-derived one)
+  // auth session — encrypted at rest under the keystore-backed key above (VC-016)
   accessToken: 'auth.accessToken',
   refreshToken: 'auth.refreshToken',
   cnfJkt: 'auth.cnfJkt',
   deviceId: 'auth.deviceId',
   accountId: 'auth.accountId',
   tenantId: 'auth.tenantId',
-  // device identity keypair (§L14; harden to hardware-backed StrongBox/Enclave later)
+  // Device identity keypair (§L14). The store's own key is now keystore-sealed (VC-016), so
+  // this is no longer readable from an unpacked APK; moving the private key itself INTO the
+  // keystore, so it can be used without ever being in JS memory, is the next step.
   devicePrivKey: 'auth.devicePrivKey',
   phone: 'auth.phone',
   // ISO timestamp of the last successful sign-in (shown on the Profile page)

@@ -541,7 +541,7 @@
       "title": "MMKV's encryption key is a hardcoded bundle constant, and the Ed25519 device private key is stored inside it",
       "severity": "P0",
       "priority": "P0",
-      "status": "Open",
+      "status": "Fixed",
       "layer": "CLIENT",
       "feature": "Security / Key storage",
       "component": "apps/mobile/src/infra/kv/mmkv.ts:10-16",
@@ -560,16 +560,17 @@
       "actual": "ENCRYPTION_KEY is the literal string 'velchat-mp0-placeholder-key-derive-from-keychain-in-mp1', compiled into every build. The store holds the access token, refresh token, cnfJkt, phone number and — via deviceKey.ts:44 — the raw Ed25519 private key as hex. That private key is exactly what POST /auth/login/device-key accepts as proof of possession.",
       "user_impact": "Anyone who can read the app's data directory obtains a permanent credential for the account: the device identity itself, which grants tokens on demand and survives a password or session reset.",
       "suspected_cause": "Deliberate MP0 placeholder — both files carry honest TODO(MP1) notes.",
-      "rootCause": "Confirmed by code reading.",
-      "testIds": ["VC-SEC-101"],
+      "rootCause": "The MMKV encryption key was a string literal in infra/kv/mmkv.ts, so it shipped inside every APK. Unzip, read the bundle, and you hold the key to everything the app persists at rest: the access and refresh tokens, the cnfJkt binding, and the Ed25519 device private key under auth.devicePrivKey. The last of those is the one that matters most, because it authenticates this install to the backend and cannot be re-derived — its disclosure is not something signing out can undo.",
+      "testIds": ["storeKey.test.ts: resolveStoreKey"],
       "evidence": ["QA/_audit/auth-network-push-audit.md#s1"],
       "refs": [
         "apps/mobile/src/infra/kv/mmkv.ts:10-16",
         "apps/mobile/src/infra/crypto/deviceKey.ts:44"
       ],
       "regression": false,
-      "notes": "Known and tracked as MP1 work, but it is the single highest-severity item in the client and should gate any release.",
-      "jira": "VC-8"
+      "notes": "Known and tracked as MP1 work, but it is the single highest-severity item in the client and should gate any release.\n\nFIX. A new in-app native module (com.velchat.securestore) generates 32 random bytes once per install and seals them with an AES-GCM key created in the AndroidKeyStore, which never leaves it — TEE-backed on most devices. Only the sealed blob reaches disk, so an attacker with the APK now has nothing and an attacker with the file has ciphertext. The wrapping key is deliberately NOT bound to user authentication: the store has to be readable for a push to be acknowledged behind a locked screen (M13), and a lockscreen-bound key would also be invalidated the next time the user changes their PIN, taking the device identity with it.\n\nTHE MIGRATION is the dangerous part and is what most of the design is about. An install that upgrades has its store encrypted with the old constant; opening it with the new key reads an EMPTY store, which would sign the user out and destroy the device key. So the order is: open with the legacy key, MMKV recrypt() in place, and only then does native record the key as committed. The commit is written after javascript reports success, never when the key is generated, so a process that dies mid-migration comes back uncommitted and simply tries again — opening with the new key at that point would find nothing. The decision is a pure function (resolveStoreKey) with four cases covered by tests, including that retry, because a keystore call cannot be unit-tested on this machine and getting this wrong is unrecoverable.\n\nFAILURE IS SAFE BY DESIGN: the native side answers an empty string rather than throwing when the keystore is unusable, and javascript then stays on the legacy key. A store the app cannot open looks to a user exactly like a wiped account, which is far worse than remaining on the key the previous build already used. Nothing in either file logs a key, a blob or a fragment (M19) — only which step failed, by exception class name.\n\nThe bridge methods are synchronous on purpose: the MMKV instance is built at module scope, so the key must exist before javascript reaches its first await, or there is a legacy-encrypted window on every launch. Cost is three SharedPreferences reads and one AES-GCM operation over 32 bytes at startup.\n\nVERIFIED ON BOTH DEVICES with real signed-in sessions, which is the only test that matters here. Emulator: migrate path — session, chats, avatars, previews and unread badges all intact after the re-encrypt; then a second cold start on the committed native key, still intact (1855 ms). Real device (OPPO CPH2643, arm64, real TEE): same, cold start 553 ms, and no keystore-fallback warning in logcat on either device, so the keystore path genuinely ran rather than silently falling back. 588/588 jest, tsc clean, eslint 0 errors, Kotlin compiles.\n\nSTILL OPEN, deliberately and recorded rather than quietly skipped: (a) iOS has no native half — the TS wrapper degrades to the legacy key there, and nothing about iOS is claimed as verified since it cannot be built on this machine. (b) The Ed25519 private key is now protected at rest but still passes through JS memory when it signs. Moving the key itself INTO the keystore, so signing happens natively and the private bytes never enter the bundle heap, is the stronger fix and is its own piece of work. (c) No new dependency was added, so no ADR was required under M1.",
+      "jira": "VC-8",
+      "fixedIn": "dev branch, 2026-09-19"
     },
     {
       "id": "VC-017",
