@@ -257,6 +257,11 @@ export function ChatScreen(): React.JSX.Element {
   //  - `onContentSizeChange` fires once the new rows are actually laid out, so index 0 has a real
   //    layout to scroll to instead of the stale one it would have in the same commit.
   //
+  // NOT animated. A message you just sent should already BE at the bottom, the way WhatsApp
+  // behaves — watching it slide up afterwards reads as the app catching up with you. An
+  // un-animated scroll also settles faster (FlashList holds its offset correction for 200ms
+  // instead of 300ms), so the retry below lands sooner.
+  //
   // Twice, ~180ms apart. FlashList's correction does not move the scroll directly: it nudges an
   // invisible ScrollAnchor, which is a STATE update, so the shift lands a render or two after
   // this callback. One scroll here is enough on an emulator and loses the race on a real
@@ -276,11 +281,11 @@ export function ChatScreen(): React.JSX.Element {
   const onContentSizeChange = useCallback(() => {
     if (!followPendingRef.current) return;
     followPendingRef.current = false;
-    listRef.current?.scrollToIndex({ index: 0, animated: true });
+    listRef.current?.scrollToIndex({ index: 0, animated: false });
     clearFollowTimer();
     followTimerRef.current = setTimeout(() => {
       followTimerRef.current = null;
-      listRef.current?.scrollToIndex({ index: 0, animated: true });
+      listRef.current?.scrollToIndex({ index: 0, animated: false });
     }, FOLLOW_SETTLE_MS);
   }, [clearFollowTimer]);
 

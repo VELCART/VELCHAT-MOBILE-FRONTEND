@@ -1359,3 +1359,91 @@ describe('backfill into the conversation on screen', () => {
     });
   });
 });
+
+// ── a hole below the newest message must be repairable ───────────────────────
+
+/**
+ * VC-051. Two messages were sent, the recipient was woken by push for one of them, and it never
+ * reached the chat — permanently, across cold starts, while the sender showed blue read ticks.
+ *
+ * The client cannot heal a hole because every backfill cursor it has is MAX(seq): once anything
+ * newer lands, the missing seq is below the cursor and no `afterSeq` request can ever reach it
+ * again. `onInboundMessage` already does the hard part — it reads `localMax` BEFORE applying, and
+ * `shouldProbeGap` correctly proves a hole exists — and then asks the wrong question: it calls the
+ * ordinary backfill, which re-reads MAX *after* the new message has been applied and therefore
+ * fetches from ABOVE the hole it just detected.
+ *
+ * Each test brings the socket up while the device is ALREADY caught up, so the reconnect backfill
+ * has nothing to fetch and cannot heal the hole on the gap probe's behalf — otherwise these pass
+ * for the wrong reason (they did, on the first writing).
+ */
+describe('a message dropped by fan-out', () => {
+  const conv = 'gap_conv';
+
+  /** Caught up at seq 3 on both sides, socket live, nothing left for the reconnect backfill. */
+  async function caughtUpAtThree(): Promise<MockSocket> {
+    serverHistory.set(
+      conv,
+      [1, 2, 3].map(s => serverMsg(conv, s)),
+    );
+    await applyServerMessages([1, 2, 3].map(s => serverMsg(conv, s)));
+    const socket = await bootConnected();
+    await settle();
+    mockFetchAfter.mockClear();
+    return socket;
+  }
+
+  beforeEach(async () => {
+    await upsertConversation(conv, { type: 'dm', name: 'Peer' });
+  });
+
+  it('is recovered when a later message reveals the hole', async () => {
+    const socket = await caughtUpAtThree();
+    // 4, 5 and 6 are written server-side; 4 and 5 are dropped by best-effort fan-out and only
+    // seq 6 is delivered over the socket.
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4, 5, 6].map(s => serverMsg(conv, s)),
+    );
+    socket.cb.onMessage?.(serverMsg(conv, 6));
+
+    await until(
+      async () => (await messagesOf(conv)).length === 6,
+      'the hole to be repaired',
+    );
+    expect((await rowsBySeq(conv)).map(m => m.seq)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('asks the server from the LOWER edge of the hole, not from the newest message', async () => {
+    const socket = await caughtUpAtThree();
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4, 5, 6].map(s => serverMsg(conv, s)),
+    );
+    socket.cb.onMessage?.(serverMsg(conv, 6));
+
+    await until(
+      async () => (await messagesOf(conv)).length === 6,
+      'the hole to be repaired',
+    );
+    // The cursor is the whole bug: asking from 6 — the seq that REVEALED the hole — can only
+    // ever return nothing, however many times it is retried.
+    const cursors = mockFetchAfter.mock.calls.map(c => c[1] as number);
+    expect(cursors.length).toBeGreaterThan(0);
+    expect(Math.min(...cursors)).toBeLessThan(6);
+  });
+
+  it('leaves a contiguous conversation alone — no hole, no extra fetch', async () => {
+    const socket = await caughtUpAtThree();
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4].map(s => serverMsg(conv, s)),
+    );
+    socket.cb.onMessage?.(serverMsg(conv, 4));
+    await settle();
+
+    expect((await rowsBySeq(conv)).map(m => m.seq)).toEqual([1, 2, 3, 4]);
+    // seq 4 follows seq 3 with nothing missing, so the gap probe must not fire at all.
+    expect(mockFetchAfter).not.toHaveBeenCalled();
+  });
+});

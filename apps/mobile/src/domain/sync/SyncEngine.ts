@@ -770,9 +770,12 @@ class SyncEngine {
    * 8-hour absence from a busy group used to restore the oldest 100 missed messages and leave the
    * newest hundreds invisible until several more reconnect cycles happened to fill them in.
    */
-  private async backfillConversation(conversationId: string): Promise<void> {
+  private async backfillConversation(
+    conversationId: string,
+    fromSeq?: number,
+  ): Promise<void> {
     try {
-      await this.pageBackfill(conversationId);
+      await this.pageBackfill(conversationId, fromSeq);
     } finally {
       // AFTER the messages, and on every exit path.
       //
@@ -785,9 +788,21 @@ class SyncEngine {
     }
   }
 
-  /** The paging half of {@link backfillConversation}. */
-  private async pageBackfill(conversationId: string): Promise<void> {
-    let cursor = await maxSeqForConversation(conversationId);
+  /**
+   * The paging half of {@link backfillConversation}.
+   *
+   * `fromSeq` is what makes a HOLE repairable (VC-051). Every cursor this client has is
+   * MAX(seq), so the moment anything newer lands, a message missing below it is beneath the
+   * cursor and no `afterSeq` request can ever reach it again — which is why a dropped message
+   * stayed missing across cold starts and reconnects forever. The gap probe knows the lower
+   * edge of the hole (the `localMax` read BEFORE the new message was applied); passing it here
+   * is the difference between detecting the hole and actually asking the server for it.
+   */
+  private async pageBackfill(
+    conversationId: string,
+    fromSeq?: number,
+  ): Promise<void> {
+    let cursor = fromSeq ?? (await maxSeqForConversation(conversationId));
     for (let page = 0; page < MAX_BACKFILL_PAGES; page++) {
       if (this.stopped) return;
       const batch = await fetchMessagesAfter(
@@ -1032,7 +1047,12 @@ class SyncEngine {
       ) {
         this.gapProbedFrom.set(m.conversationId, localMax);
         try {
-          await this.backfillConversation(m.conversationId);
+          // From `localMax`, NOT from wherever the conversation now sits. `applyServerMessage`
+          // above has just moved MAX(seq) up to the message that REVEALED the hole, so the
+          // ordinary backfill would ask `afterSeq = m.seq` — above the gap — and come back
+          // empty however many times it ran. Re-fetching the rows we already hold between
+          // `localMax` and `m.seq` is free: `applyServerMessages` dedups on (conversation, seq).
+          await this.backfillConversation(m.conversationId, localMax);
         } catch (e) {
           log.warn('gap backfill failed', {
             conversationId: m.conversationId,
