@@ -257,7 +257,7 @@
       "title": "warmBackend() cannot warm the services it targets on the Render topology",
       "severity": "P2",
       "priority": "P2",
-      "status": "Open",
+      "status": "Fixed",
       "layer": "CLIENT",
       "feature": "Networking / Cold start",
       "component": "apps/mobile/src/infra/network/client.ts:33-62",
@@ -277,12 +277,13 @@
       "user_impact": "The first real request after an idle period still eats a 30-50s cold start, which the 60s axios timeout barely covers — the exact failure warmBackend() was written to prevent.",
       "suspected_cause": "The warm-up list is built from the single gateway origin, which does not match the dev deployment's per-service Render topology.",
       "rootCause": "Confirmed by measurement: gateway-proxied requests do not wake upstream Render services.",
-      "testIds": ["VC-ENV-002"],
+      "testIds": ["warmup.test.ts: warmTargets"],
       "evidence": ["QA/evidence/api/api-2026-09-11.jsonl"],
       "refs": ["apps/mobile/src/infra/network/client.ts:33-62"],
       "regression": false,
-      "notes": "INVESTIGATED — BLOCKED on information the client does not have. warmBackend() can only ping hosts it knows, and the only per-service origins in config are API_BASE_URL (velchat-edge-gateway-2aje.onrender.com) and WS_URL (velchat-realtime-service-2aje.onrender.com). identity/messaging/content/platform have no hostname anywhere in the repo, so there is nothing to warm them WITH. They appear to share a Render instance suffix (-2aje), which makes a pattern like velchat-identity-service-2aje.onrender.com plausible — but deliberately NOT guessed and baked into a shipping app: a wrong host is at best a wasted request on every cold start and at worst traffic aimed at somebody elses service. To fix, add the real per-service origins to .env.dev/.env.prod (e.g. WARM_ORIGINS as a comma-separated list) and have warmBackend fan its health pings across them; the function already fires them fire-and-forget off the render path, so only the list is missing. Needs the actual Render hostnames from the owner.",
-      "jira": "VC-14"
+      "notes": "INVESTIGATED — BLOCKED on information the client does not have. warmBackend() can only ping hosts it knows, and the only per-service origins in config are API_BASE_URL (velchat-edge-gateway-2aje.onrender.com) and WS_URL (velchat-realtime-service-2aje.onrender.com). identity/messaging/content/platform have no hostname anywhere in the repo, so there is nothing to warm them WITH. They appear to share a Render instance suffix (-2aje), which makes a pattern like velchat-identity-service-2aje.onrender.com plausible — but deliberately NOT guessed and baked into a shipping app: a wrong host is at best a wasted request on every cold start and at worst traffic aimed at somebody elses service. To fix, add the real per-service origins to .env.dev/.env.prod (e.g. WARM_ORIGINS as a comma-separated list) and have warmBackend fan its health pings across them; the function already fires them fire-and-forget off the render path, so only the list is missing. Needs the actual Render hostnames from the owner.\n\nFIXED, and the entry itself turned out to be incomplete. THE TOPOLOGY CONTRADICTION IS RESOLVED and .env.prod is right: RUNBOOK 0b (which both env files cite by name) says production is topology mono — every feature group in ONE process behind one URL on the Azure VM — while dev is axis6, six Render services that sleep after ~15 min. backend-integration-reference 3/8 is STALE: it is dated 2026-07-11 and flags the prod origin as unconfirmed at the time, which it no longer is. env.ts already carried the same statement in-repo.\n\nCONSEQUENCE: this entry proposed fanning out to per-service hosts, and that fix is now WRONG — a production build has nothing per-service to warm, ever. The fan-out was only ever a dev concern.\n\nTWO DEFECTS THE ENTRY DID NOT RECORD, both found while verifying: (1) the /.well-known/jwks.json ping was commented auth-service (login path) but is gateway-proxied, so it 502s on dev without identity ever being reached and warmed nothing the /health ping one line above had not — that label is exactly what made the function read to a reviewer as if the login path were covered; (2) in a PRODUCTION build the old code fired THREE requests at an always-awake host, because prod REST and WS share one origin so the ws-derived URL collapses onto the same string. Every prod cold start paid for three pings that could not wake anything. The pre-fix test captured that verbatim.\n\nFIX: a pure warmTargets(env) decision with two invariants — a wake request goes only to a host that actually SLEEPS (Render), and only to an origin appEnv already names, which is the same set the certificate-pinning config is kept in step with. It reuses endpointHost from transportSecurity rather than a second parser so the warm-up and the pinning policy can never disagree about which host a URL names, and it takes a structural {apiBaseUrl, wsUrl} rather than AppEnv so it CANNOT read appEnv.name — VC-035 proved the name can lie while the URL is true. Each surviving ping got an AbortController and a 10s deadline; the old ones were unbounded fetches with no owner on the launch path (M20.3), and RN OkHttp ships with no default read timeout. Net: production and the local dev loop now send ZERO warm requests; the dev Render flavor sends two bounded ones to hosts it was already configured against.\n\nSTILL BLOCKED, and no longer on hostnames: warming the other four dev services needs (a) the backend owner to provide a stable alias per service, because RUNBOOK 0b says the Render -2aje suffix must never be copied into config — a service recreated under a new suffix would aim five launch requests at whoever holds those names next; and (b) a domain-config per extra host in the Android network-security config in the same commit, or those hosts ship SILENTLY UNPINNED. It is also not worth unblocking while VC-007 is open, since the dev deployment 502s on every proxied route anyway, and a VC-007 fix may wake the upstreams itself and make the fan-out moot.\n\nSECONDARY, for whoever owns the backend docs: RUNBOOK 0b lists the dev WebSocket as wss://velchat-edge-gateway-2aje.onrender.com/ws, but .env.dev says the edge gateway has no /ws route and no upgrade handler. One of the two is wrong.",
+      "jira": "VC-14",
+      "fixedIn": "dev branch, 2026-09-25"
     },
     {
       "id": "VC-009",
@@ -597,11 +598,11 @@
       "user_impact": "Message content readable from device storage after the notification is dismissed.",
       "suspected_cause": "The storage decision was made for the token and extended to content without re-evaluation.",
       "rootCause": "Confirmed by code reading.",
-      "testIds": ["VC-SEC-102"],
+      "testIds": [],
       "evidence": ["QA/_audit/auth-network-push-audit.md#s4"],
       "refs": ["android/app/src/main/java/com/velchat/push/PushStore.kt:28-31"],
       "regression": false,
-      "notes": "Needs an ADR or, at minimum, a scrub-on-cancel.\n\nFIX: the notification store now seals its CONTENT entries at rest with the same AndroidKeyStore-wrapped key introduced for VC-016. Five entries are protected — the MessagingStyle message bodies, the pending-event queue (which holds the reply the user typed into a notification while the app was dead), the conversation and person display names, and the avatar map, because those carry URLs and on-disk paths tied to a person. Counts, seq watermarks, mute-untils, seen-seqs and the active conversation id stay plain on purpose: they are numbers and opaque ids, and sealing them would put an AES operation on the notification hot path for nothing (activeConversationId alone is read on every inbound push).\n\nThe upgrade needs no migration pass and no flag: a sealed value carries a v1: prefix, so a value without one is recognised as a legacy plaintext entry, returned as-is, and re-sealed the next time that entry is written. Sealing that fails stores the plaintext rather than dropping it — losing a queued reply is worse than storing it the way the previous build already did — and an unseal that fails returns empty, which every caller already treats as a corrupt entry rather than wedging notifications. Nothing logs a key, a blob or a fragment (M19).\n\nVerified: Kotlin compiles clean, 588/588 jest, tsc clean, eslint 0 errors. NOT yet re-verified on a device end-to-end after the seal landed, so the live notification path under sealed storage is still owed a two-device run.",
+      "notes": "Needs an ADR or, at minimum, a scrub-on-cancel.\n\nFIX: the notification store now seals its CONTENT entries at rest with the same AndroidKeyStore-wrapped key introduced for VC-016. Five entries are protected — the MessagingStyle message bodies, the pending-event queue (which holds the reply the user typed into a notification while the app was dead), the conversation and person display names, and the avatar map, because those carry URLs and on-disk paths tied to a person. Counts, seq watermarks, mute-untils, seen-seqs and the active conversation id stay plain on purpose: they are numbers and opaque ids, and sealing them would put an AES operation on the notification hot path for nothing (activeConversationId alone is read on every inbound push).\n\nThe upgrade needs no migration pass and no flag: a sealed value carries a v1: prefix, so a value without one is recognised as a legacy plaintext entry, returned as-is, and re-sealed the next time that entry is written. Sealing that fails stores the plaintext rather than dropping it — losing a queued reply is worse than storing it the way the previous build already did — and an unseal that fails returns empty, which every caller already treats as a corrupt entry rather than wedging notifications. Nothing logs a key, a blob or a fragment (M19).\n\nVerified: Kotlin compiles clean, 588/588 jest, tsc clean, eslint 0 errors. NOT yet re-verified on a device end-to-end after the seal landed, so the live notification path under sealed storage is still owed a two-device run.\n\nTEST-ID CORRECTION: this entry named VC-SEC-102, which does not exist anywhere in the repo. Removed rather than left standing — a testId that names nothing is worse than an empty one, because it reads as coverage. This project has no Kotlin test source set at all, so this entry is code-review-verified only.",
       "jira": "VC-19",
       "fixedIn": "dev branch, 2026-09-25"
     },
@@ -1107,14 +1108,14 @@
       "user_impact": "Duplicate notification lines and an inflated unread badge.",
       "suspected_cause": "The guard was never added; the watermark is maintained but not read on this path.",
       "rootCause": "Confirmed by code reading.",
-      "testIds": ["VC-UNIT-213"],
+      "testIds": [],
       "evidence": ["QA/_audit/auth-network-push-audit.md#d7"],
       "refs": [
         "android/app/src/main/java/com/velchat/push/PushNotifications.kt:200-240",
         "android/app/src/main/java/com/velchat/push/PushStore.kt:172-182"
       ],
       "regression": false,
-      "notes": "The fix is one line: `if (seq > 0 && seq <= store.lastSeq(conversationId)) return false`.\n\nFIXED, but NOT the way this entry proposed, and the difference matters. The entry says the monotonic watermark to do this already exists (PushStore.lastSeq). Suppressing on a high-water mark would be wrong here: FCM gives no ordering guarantee, and this session PROVED it out of order on a real device — the notification thread came back with KILL2 above KILL1, which is what VC-056 exists to sort. Against a watermark, a genuinely new message arriving with a LOWER seq than one already delivered would have its notification silently swallowed entirely — a far worse failure than showing a duplicate. So suppression is by EXACT identity instead: new PushStore.markSeen(conversationId, seq) records the seq and returns whether it was new, keeping the last 20 seqs per conversation (bounded, and only has to outlast FCM retries), atomic under the same WRITE_LOCK. handleMessage calls it BEFORE the on-screen check, so a duplicate of a message the user already watched arrive in an open chat cannot notify later either. Everything after it still runs for a duplicate on purpose: the delivered ack is idempotent and re-acking guarantees the sender their tick, and handing the push to a live JS runtime is a free chance to catch up. Cleared on sign-out with the rest of the session state. Verified by compileProdReleaseKotlin; no Kotlin test source set exists, and an FCM redelivery cannot be forced on demand, so this is code-review-verified.",
+      "notes": "The fix is one line: `if (seq > 0 && seq <= store.lastSeq(conversationId)) return false`.\n\nFIXED, but NOT the way this entry proposed, and the difference matters. The entry says the monotonic watermark to do this already exists (PushStore.lastSeq). Suppressing on a high-water mark would be wrong here: FCM gives no ordering guarantee, and this session PROVED it out of order on a real device — the notification thread came back with KILL2 above KILL1, which is what VC-056 exists to sort. Against a watermark, a genuinely new message arriving with a LOWER seq than one already delivered would have its notification silently swallowed entirely — a far worse failure than showing a duplicate. So suppression is by EXACT identity instead: new PushStore.markSeen(conversationId, seq) records the seq and returns whether it was new, keeping the last 20 seqs per conversation (bounded, and only has to outlast FCM retries), atomic under the same WRITE_LOCK. handleMessage calls it BEFORE the on-screen check, so a duplicate of a message the user already watched arrive in an open chat cannot notify later either. Everything after it still runs for a duplicate on purpose: the delivered ack is idempotent and re-acking guarantees the sender their tick, and handing the push to a live JS runtime is a free chance to catch up. Cleared on sign-out with the rest of the session state. Verified by compileProdReleaseKotlin; no Kotlin test source set exists, and an FCM redelivery cannot be forced on demand, so this is code-review-verified.\n\nTEST-ID CORRECTION: this entry named VC-UNIT-213, which does not exist anywhere in the repo. Removed rather than left standing — a testId that names nothing is worse than an empty one, because it reads as coverage. This project has no Kotlin test source set at all, so this entry is code-review-verified only.",
       "jira": "VC-32",
       "fixedIn": "dev branch, 2026-09-19"
     },
@@ -1143,14 +1144,14 @@
       "user_impact": "A reply typed from a notification can silently vanish.",
       "suspected_cause": "No synchronization and a whole-key delete instead of a prefix removal.",
       "rootCause": "Confirmed by code reading.",
-      "testIds": ["VC-UNIT-214"],
+      "testIds": [],
       "evidence": ["QA/_audit/auth-network-push-audit.md#d8"],
       "refs": [
         "android/app/src/main/java/com/velchat/push/PushStore.kt:394-407",
         "apps/mobile/src/infra/push/pushService.ts:190-191"
       ],
       "regression": false,
-      "notes": "No JVM test source set exists — android/app/src contains only `main`. PushStore is plain-JVM-testable.\n\nFIXED as part of VC-066. The pending-event queue is one of the read-modify-write pairs that the new companion-object WRITE_LOCK now covers: enqueueEvent reads the array, appends, trims and writes it back, and takeEvents reads it and removes the key, both entirely inside the monitor. The drain case this entry described — an action queued on the receiver thread between the read and the removal, silently dropped — can no longer interleave, and the code now carries a comment saying exactly that. The monitor is on the COMPANION object rather than the instance, which is load-bearing: PushStore is constructed fresh at each entry point (VelChatMessagingService on FCM delivery, PushActionReceiver on main, VelChatPushModule on the RN native-modules thread), so an instance monitor would have been three separate locks guarding one shared SharedPreferences file. Verified by code review plus a clean compileProdReleaseKotlin; there is no Kotlin test source set in this project, so this is code-review-verified only.",
+      "notes": "No JVM test source set exists — android/app/src contains only `main`. PushStore is plain-JVM-testable.\n\nFIXED as part of VC-066. The pending-event queue is one of the read-modify-write pairs that the new companion-object WRITE_LOCK now covers: enqueueEvent reads the array, appends, trims and writes it back, and takeEvents reads it and removes the key, both entirely inside the monitor. The drain case this entry described — an action queued on the receiver thread between the read and the removal, silently dropped — can no longer interleave, and the code now carries a comment saying exactly that. The monitor is on the COMPANION object rather than the instance, which is load-bearing: PushStore is constructed fresh at each entry point (VelChatMessagingService on FCM delivery, PushActionReceiver on main, VelChatPushModule on the RN native-modules thread), so an instance monitor would have been three separate locks guarding one shared SharedPreferences file. Verified by code review plus a clean compileProdReleaseKotlin; there is no Kotlin test source set in this project, so this is code-review-verified only.\n\nTEST-ID CORRECTION: this entry named VC-UNIT-214, which does not exist anywhere in the repo. Removed rather than left standing — a testId that names nothing is worse than an empty one, because it reads as coverage. This project has no Kotlin test source set at all, so this entry is code-review-verified only.",
       "jira": "VC-33",
       "fixedIn": "dev branch, 2026-09-19"
     },
@@ -1256,7 +1257,7 @@
       "title": "The access token travels in the WebSocket query string",
       "severity": "P2",
       "priority": "P2",
-      "status": "Open",
+      "status": "Fixed",
       "layer": "CLIENT",
       "feature": "Security / Transport",
       "component": "apps/mobile/src/infra/realtime/socket.ts:104-108",
@@ -1272,15 +1273,19 @@
       "user_impact": "Access tokens accumulate in server access logs.",
       "suspected_cause": "A platform limitation that no longer holds.",
       "rootCause": "Confirmed by code reading.",
-      "testIds": ["VC-SEC-105"],
+      "testIds": [
+        "socket.test.ts: hands the token to the transport as an Authorization header",
+        "socket.test.ts: leaves the connect URL byte-identical to the configured one"
+      ],
       "evidence": ["QA/_audit/auth-network-push-audit.md#s5"],
       "refs": [
         "apps/mobile/src/infra/realtime/socket.ts:104-108",
         "docs/backend-integration-reference.md §4"
       ],
       "regression": false,
-      "notes": "The one leak-into-logs path in the client itself is already mitigated by redact.ts's JWT pattern.",
-      "jira": "VC-37"
+      "notes": "The one leak-into-logs path in the client itself is already mitigated by redact.ts's JWT pattern.\n\nFIXED. The token now rides Authorization: Bearer and the URL is left byte-identical to the configured one. The old justification in the file — RN WebSocket cannot set headers reliably — was simply wrong: RN takes a third options argument with headers on both platforms, and the gateway has read req.headers.authorization since /ws first shipped (verified in D:/Velchat libs/feature-realtime/src/fabric/ws-fabric.ts and its spec, which has a case titled accepts the token from an Authorization header as well as the query string). NO ?token= fallback is kept: a hedge that is sent on every connect is not a fallback, it IS the leak, and there is no older deployment to hedge against since the gateway read the header first all along. The one failure mode this leaves — a runtime that drops the headers argument — surfaces as a 4001, which the engine already survives with refresh-and-reconnect. Seven socket tests cover the header, the clean URL, a base URL that already has query params, and that a RECONNECT authenticates with the token it is handed rather than the one it first saw. DEVICE CONNECT TEST STILL OWED: this needs one real connect against the live gateway, which the session owner runs.",
+      "jira": "VC-37",
+      "fixedIn": "dev branch, 2026-09-25"
     },
     {
       "id": "VC-038",
@@ -2453,7 +2458,7 @@
     },
     {
       "id": "VC-073",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": ["VC-069", "VC-051"],
@@ -2480,8 +2485,9 @@
       "actual": "The receiver posts the notification's own seq to POST /notifications/ack directly. Receipts are cumulative, so that covers the missing message. The three JS emitters are clamped to the highest contiguous seq the device holds; this one is not.",
       "user_impact": "The narrow remainder of VC-069: a sender can still be told a message was read when the recipient never received it, but only via a notification action on an already-holed conversation.",
       "suspected_cause": "By design, not oversight — the broadcast receiver runs in a process with no WatermelonDB open, so it cannot compute the contiguous watermark the JS path uses. Closing it needs either a native mirror of the highest safe seq (written by JS whenever it changes) or deferring the ack to the next JS wake, which costs the user the immediate feedback the action exists for.",
-      "notes": "Split out of VC-069 while verifying that fix. Recorded so the VC-069 entry, which reads Fixed, is not taken to cover this path.",
-      "jira": "VC-74"
+      "notes": "Split out of VC-069 while verifying that fix. Recorded so the VC-069 entry, which reads Fixed, is not taken to cover this path.\n\nFIXED by mirroring the answer instead of trying to compute it where it cannot be computed. The entry itself said the broadcast receiver runs in a process with no WatermelonDB open, so it cannot work out the highest contiguous seq — so javascript, which already computes exactly that for its own receipts (honestWatermark), now pushes it into the native store as safeReadSeq whenever it marks a conversation read. PushActionReceiver clamps its Mark-as-read and Reply acks to min(notificationSeq, safeReadSeq). A conversation native was never told about clamps to nothing rather than to zero, deliberately: a device that has not synced since this build landed must still be able to mark a chat read. The JS binding no-ops on an older native half, so the behaviour there is exactly what shipped before — never worse. NO AUTOMATED TEST: this project has no Kotlin test source set, and the JS half is a one-line mirror; verified by Kotlin compile and code review only.\n\nAUDIT FOUND A HOLE IN THE FIRST VERSION, now closed. The native clamp falls back to the notification own seq when it has never been told a safe watermark (deliberately — a device that has not synced must still be able to mark a chat read), and the watermark was mirrored ONLY from markConversationRead. So a conversation never opened in-app since this build landed was still unclamped, which is the original defect verbatim. The watermark is now mirrored on EVERY inbound message too, using the same clampToHeld the live read path uses, so native policy matches javascript policy instead of approximating it. What remains is only the case javascript itself treats as not-a-hole: a conversation whose first ever message arrives while the app is dead, where the device holds nothing and the skipped range is unloaded history rather than a gap.",
+      "jira": "VC-74",
+      "fixedIn": "dev branch, 2026-09-25"
     },
     {
       "id": "VC-074",

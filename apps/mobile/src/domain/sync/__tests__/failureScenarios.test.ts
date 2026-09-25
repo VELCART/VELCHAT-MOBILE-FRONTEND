@@ -1148,6 +1148,31 @@ describe('receipt reassertion after a reconnect with many owed conversations', (
     expect(receiptFramesSent(socket)).toBeGreaterThan(0);
   });
 
+  it('spaces the chunks, even when a shorter flush was already armed', async () => {
+    // The cap is only half of VC-025; the SPACING is what keeps the burst inside the gateway's
+    // inbound window. `scheduleReceiptFlush` normally lets an already-armed timer win, which is
+    // the point of coalescing — but the over-budget continuation asks for a LONGER delay, and
+    // deferring to a pending 250ms timer collapsed chunk two to a quarter second behind chunk
+    // one. Forty frames in 250ms is at the gateway's limit, where the excess is dropped
+    // silently while the ledger records them as sent: the original defect, reintroduced by the
+    // scheduler rather than by the sender.
+    //
+    // Timed rather than counted, because the count alone is identical either way.
+    const socket = await bootConnected();
+    const afterFirstChunk = receiptFramesSent(socket);
+    expect(afterFirstChunk).toBeLessThan(COUNT);
+
+    await settle(500);
+    // Well past the 250ms coalescing delay, nowhere near the 1100ms chunk delay.
+    expect(receiptFramesSent(socket)).toBe(afterFirstChunk);
+
+    await until(
+      () => receiptFramesSent(socket) > afterFirstChunk,
+      'the spaced continuation to land',
+      4_000,
+    );
+  });
+
   it('eventually sends every owed receipt across later chunks — nothing is silently dropped', async () => {
     const socket = await bootConnected();
 

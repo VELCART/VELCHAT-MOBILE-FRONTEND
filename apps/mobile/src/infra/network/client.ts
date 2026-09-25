@@ -24,6 +24,7 @@ import {
   type SessionTokens,
 } from './tokens';
 import { cnfJktThumbprint } from '../crypto/deviceKey';
+import { warmTargets } from './warmup';
 
 const CLIENT_VERSION = '0.0.1';
 // 60s tolerates Render free-tier cold-starts (a sleeping service takes ~40-50s to
@@ -32,32 +33,56 @@ const DEFAULT_TIMEOUT = 60000;
 const MAX_RETRIES = 2;
 
 /**
- * Wake the backend the moment the app launches (§ops). Render free-tier services
- * HIBERNATE after ~15 min idle, so the first real request eats a 30-50s cold start and
- * can time out. Firing these cheap, fire-and-forget health pings up front gives the
- * login path (gateway + auth) — and the realtime host — a head start, so by the time
- * the user taps "send code" it's already warm. Best-effort: failures are swallowed and
- * it never blocks the UI. (Complements a server-side keep-warm cron for 24/7 uptime.)
+ * How long a wake request is allowed to own a socket.
+ *
+ * A warm-up only has to ARRIVE — Render's router is always up and starts the sleeping instance
+ * on receipt, so waiting for the reply buys nothing we read. Without a bound this waits for it
+ * anyway: React Native's OkHttp client ships with no default read timeout, so each of these
+ * would hold a connection for the full 30-50s wake on the launch path of the reference device,
+ * unowned and undisposable (§M20.3). Generous enough that a slow handshake still gets the
+ * request onto the wire, which is the part that matters.
+ */
+const WARM_DEADLINE_MS = 10_000;
+
+/**
+ * Wake the backend at launch — where there is in fact something asleep to wake (§ops, VC-008).
+ *
+ * This used to fire three fixed pings at every launch in every flavor on the theory that it was
+ * warming "gateway + auth" and the realtime host. It was not. `warmTargets` holds the whole of
+ * the reasoning and the evidence; the short version is that only the dev Render flavor has
+ * anything that hibernates, production is one always-running process behind one origin, and the
+ * `/.well-known/jwks.json` ping that carried the "login path" label never reached identity at
+ * all. On a production build this now sends nothing, which is the correct number of requests.
+ *
+ * Best-effort throughout: nothing here is awaited, every failure is swallowed, and sign-in and
+ * the first render neither wait on it nor learn whether it happened.
  */
 export function warmBackend(): void {
-  // Diagnostic: prints the baked base URL so you can SEE which backend the build
-  // actually targets (a stale/cached .env bakes the wrong host → every call times out).
+  // Diagnostic, and the reason this is still called unconditionally: `apiBaseUrl` is the one
+  // launch fact the logger's base fields do not carry, and a stale or mis-baked .env pointing a
+  // build at the wrong backend is otherwise invisible until every call times out (VC-035).
   log.info('backend base', { env: appEnv.name, apiBaseUrl: appEnv.apiBaseUrl });
   if (isFlightMode()) return;
-  const base = appEnv.apiBaseUrl.replace(/\/+$/, '');
-  const urls = [
-    `${base}/health`, // gateway
-    `${base}/.well-known/jwks.json`, // auth-service (login path)
-  ];
-  // The realtime gateway is a separate host — derive its /health from the ws URL.
-  const wsHealth = appEnv.wsUrl
-    .replace(/^ws/, 'http')
-    .replace(/\/ws\/?$/, '/health');
-  if (/^https?:\/\//.test(wsHealth)) urls.push(wsHealth);
 
-  for (const url of urls) {
-    // No await — fire-and-forget. A cold instance still wakes; we ignore the result.
-    void fetch(url, { method: 'GET' }).catch(() => undefined);
+  for (const url of warmTargets(appEnv)) {
+    // Fire-and-forget, but not unowned: the abort is what disposes of the socket, and clearing
+    // the timer on settle keeps a woken-fast instance from leaving a pending timer behind.
+    const controller = new AbortController();
+    const deadline: ReturnType<typeof setTimeout> = setTimeout(
+      () => controller.abort(),
+      WARM_DEADLINE_MS,
+    );
+    void fetch(url, {
+      method: 'GET',
+      // `@types/node` reaches this workspace through a transitive dependency and its
+      // `AbortController` global wins over the one React Native declares, so `controller.signal`
+      // is typed as Node's `AbortSignal` while RN's `fetch` asks for RN's. At runtime there is
+      // one object and RN provides both halves of it; only the .d.ts disagree. One narrow cast
+      // is a smaller change than editing tsconfig `types` for a §M1 locked stack.
+      signal: controller.signal as unknown as RequestInit['signal'],
+    })
+      .catch(() => undefined)
+      .finally(() => clearTimeout(deadline));
   }
 }
 
@@ -233,13 +258,21 @@ export const api: AxiosInstance = axios.create({
 api.interceptors.request.use(
   config => {
     // Flight mode: don't touch the network at all — fail fast with a clean offline error.
+    //
+    // THROWN, not returned as a rejected Promise. In a `synchronous: true` interceptor axios
+    // does not await the return value — it takes whatever comes back AS THE CONFIG and hands it
+    // straight to `dispatchRequest` (see axios `lib/core/Axios.js`, the synchronous branch). A
+    // returned rejection therefore became the request config: the caller got
+    // `TypeError: Cannot read properties of undefined (reading 'toUpperCase')`, which
+    // `normalizeError` cannot recognise as an AxiosError, so it degraded to a non-retryable
+    // `unknown` and the outbox marked every queued message PERMANENTLY failed — a red bubble
+    // where the user should have seen a pending clock. Only a throw reaches the interceptor's
+    // own rejection path.
     if (isFlightMode()) {
-      return Promise.reject(
-        new AppError(
-          'network',
-          "You're offline (flight mode). Turn it off to reconnect.",
-          { retryable: true },
-        ),
+      throw new AppError(
+        'network',
+        "You're offline (flight mode). Turn it off to reconnect.",
+        { retryable: true },
       );
     }
     const token = getAccessToken();
@@ -253,8 +286,8 @@ api.interceptors.request.use(
     return config;
   },
   undefined,
-  // VC-010: this body is synchronous top to bottom (the one Promise it can return is a REJECTION,
-  // which axios handles the same way either way). Without `synchronous:true` axios defers even a
+  // VC-010: this body is synchronous top to bottom — it returns a config or THROWS, never a
+  // Promise (see the flight-mode branch for what returning one cost). Without `synchronous:true` axios defers even a
   // fully synchronous interceptor into a microtask — so a caller that fires an authenticated
   // request and then synchronously clears the session on the very next line (sign-out's
   // best-effort revoke calls, issued "while the token is still valid") has that token deleted

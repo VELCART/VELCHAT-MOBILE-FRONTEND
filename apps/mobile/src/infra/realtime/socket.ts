@@ -2,8 +2,8 @@
  * RealtimeSocket (§M8/§L4) — owns exactly ONE WebSocket to the realtime-gateway `/ws`.
  *
  * Contract (docs/backend-integration-reference.md §4):
- *   - URL: `ws://<host>/ws?token=<access>`. RN's WebSocket can't set headers reliably, so
- *     the access token rides the query string. Missing account_id/device_id → server 4001.
+ *   - URL: `ws://<host>/ws`, with the access JWT in an `Authorization: Bearer` header and
+ *     NEVER in the query string (VC-037). Missing account_id/device_id → server 4001.
  *   - Frame envelope both directions: `{ kind, type, data }` (JSON). `event_id`/`seq`/
  *     `conversation_id` live INSIDE `data`.
  *   - Client→server control: `ping`(→pong), `sync {cursor}`, `delivered/read {…}`,
@@ -51,9 +51,29 @@ interface AppWebSocket {
   onclose: ((ev: { code?: number; reason?: string }) => void) | null;
 }
 
-/** Runtime WebSocket constructor (global), typed to produce our structural instance. */
+/**
+ * Runtime WebSocket constructor (global), typed to produce our structural instance.
+ *
+ * The third argument is not a web-only affordance that RN merely tolerates — it is plumbed the
+ * whole way down on both platforms: `WebSocket.js` destructures `{headers}` out of it and hands
+ * it to `NativeWebSocketModule.connect`, Android's `WebSocketModule.kt` replays each entry
+ * through OkHttp's `Request.Builder.addHeader`, and iOS's `RCTWebSocketModule.mm` does the same
+ * via `addValue:forHTTPHeaderField:`. The dev-mode `WebSocketInterceptor` forwards `arguments`
+ * untouched, so a debug build behaves the same.
+ *
+ * It follows that a runtime which IGNORES the argument — a DOM-spec polyfill, whose signature is
+ * `(url, protocols)` and which drops extras in silence — would send an unauthenticated upgrade
+ * and earn a 4001 on every attempt. That failure is bounded (the engine refreshes once, then
+ * stays disconnected; it never signs the user out) but it is invisible from here, because
+ * nothing reports back whether the native side applied the header. Only a real connect proves
+ * it; the suite can only prove what we handed over.
+ */
 const WebSocketCtor = WebSocket as unknown as {
-  new (url: string): AppWebSocket;
+  new (
+    url: string,
+    protocols: string[] | undefined,
+    options: { headers: Record<string, string> },
+  ): AppWebSocket;
 };
 
 /** Typed callbacks — all optional; `data` is the parsed frame `data` (engine normalises). */
@@ -101,18 +121,35 @@ export class RealtimeSocket {
     );
   }
 
-  /** Open the socket. `token` is the access JWT — appended as `?token=` (RN header limits). */
+  /**
+   * Open the socket. `token` is the access JWT, carried in `Authorization: Bearer` and never in
+   * the URL (VC-037). A query string is not a private channel: the request line is what every
+   * proxy on the path writes to its access log, and this deployment's own edge states the
+   * asymmetry outright — `deploy/shared/Caddyfile` logs with `format console`, which prints the
+   * URI, under a comment that `Authorization` must never be logged because it carries access
+   * tokens. Same secret, same request; only the placement decides whether it survives on disk.
+   *
+   * No `?token=` fallback is kept alongside it. The gateway's `extractToken` has read the header
+   * first and the query string only as a fallback since `/ws` first shipped, so there is no
+   * older deployment to hedge against — and a hedge that is sent on every connect is not a
+   * fallback, it is the leak. The one failure mode this leaves (a runtime that drops the headers
+   * argument — see `WebSocketCtor`) is a 4001, which the engine already survives.
+   */
   connect(token: string, baseWsUrl: string): void {
     if (this.ws) return; // one socket per instance
-    const sep = baseWsUrl.includes('?') ? '&' : '?';
-    const url = `${baseWsUrl}${sep}token=${encodeURIComponent(token)}`;
     this.reported = false;
     this.lastRxAt = Date.now();
     let ws: AppWebSocket;
     try {
-      ws = new WebSocketCtor(url);
+      // `protocols` stays undefined: the fabric negotiates no subprotocol, and RN normalises a
+      // non-array to null before it reaches the native side.
+      ws = new WebSocketCtor(baseWsUrl, undefined, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
     } catch (e) {
-      // Constructing can throw synchronously on a malformed URL — report as a close.
+      // Constructing can throw synchronously on a malformed URL — report as a close. Stringifying
+      // the error is safe now that the URL holds no credential (and redact.ts scrubs JWT/Bearer
+      // shapes anyway); the headers themselves are never logged.
       log.warn('ws construct failed', { reason: String(e) });
       this.cb.onClose?.(WS_CODE_DEAD, 'construct-failed');
       return;

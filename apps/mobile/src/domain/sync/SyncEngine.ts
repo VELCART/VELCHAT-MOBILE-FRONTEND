@@ -31,6 +31,7 @@ import {
   getAccountId,
   getDeviceId,
   getConversationMembers,
+  setNativeSafeReadSeq,
   maxContiguousSeqForConversation,
   getPresence,
   subscribePresence,
@@ -244,6 +245,9 @@ class SyncEngine {
    */
   private presenceEpoch = 0;
 
+  /** When the last receipt chunk actually went out — see `flushReceipts` (VC-025). */
+  private lastReceiptChunkAt = 0;
+
   /**
    * Per conversation, the seq up to which the SERVER has been asked and has answered — so any
    * hole below it is proven legitimate rather than merely missing.
@@ -416,6 +420,7 @@ class SyncEngine {
     this.gapProbedFrom.clear();
     this.loadingOlder.clear();
     this.namedPeers.clear();
+    this.lastReceiptChunkAt = 0; // a new run must not inherit the old one's chunk window
     this.presenceEpoch += 1; // an activate still in flight must not repopulate this
     this.presenceOwner.clear();
     this.activePresencePeers.clear();
@@ -506,6 +511,7 @@ class SyncEngine {
     this.activeConversationId = null;
     this.gapProbedFrom.clear();
     this.namedPeers.clear();
+    this.lastReceiptChunkAt = 0; // a new run must not inherit the old one's chunk window
     this.presenceEpoch += 1; // an activate still in flight must not repopulate this
     this.presenceOwner.clear();
     this.activePresencePeers.clear();
@@ -990,8 +996,29 @@ class SyncEngine {
     }
   }
 
-  private scheduleReceiptFlush(delayMs: number = RECEIPT_FLUSH_DELAY_MS): void {
-    if (this.stopped || this.suspended || this.receiptTimer !== null) return;
+  /**
+   * Arm the receipt flush.
+   *
+   * `atLeast` is what keeps the chunked continuation honest. An already-armed timer normally
+   * wins — that is the whole point of the coalescing — but the over-budget path asks for a
+   * LONGER delay on purpose, because the spacing between chunks is the half of VC-025 that
+   * actually keeps the burst inside the gateway's inbound window. Deferring to whatever short
+   * timer happened to be armed collapsed chunk two to ~250ms behind chunk one, putting 40
+   * frames inside a quarter second — at the gateway's limit, where the excess is dropped
+   * silently while `noteSent` records them as delivered. That is the exact failure this bug
+   * was filed for, reintroduced by the scheduler rather than by the sender.
+   */
+  private scheduleReceiptFlush(
+    delayMs: number = RECEIPT_FLUSH_DELAY_MS,
+    atLeast = false,
+  ): void {
+    if (this.stopped || this.suspended) return;
+    if (this.receiptTimer !== null) {
+      if (!atLeast) return;
+      // Re-arm at the longer delay: the pending timer is too soon for a continuation.
+      clearTimeout(this.receiptTimer);
+      this.receiptTimer = null;
+    }
     this.receiptTimer = setTimeout(() => {
       this.receiptTimer = null;
       void this.flushReceipts();
@@ -1017,6 +1044,23 @@ class SyncEngine {
    */
   private flushReceipts(): void {
     if (this.stopped) return;
+    // A chunk that has just gone out owns the next RECEIPT_FLUSH_CHUNK_DELAY_MS, whoever asks.
+    //
+    // The cap is only half of VC-025; the SPACING is what keeps the burst inside the gateway's
+    // inbound window, and the cap alone does not provide it — `onConnected` calls
+    // `reassertReceipts()` and then `flushReceipts()` directly, and the reconnect catch-up calls
+    // it again per wave. Two direct calls in one tick therefore put 40 frames on the wire inside
+    // a quarter second, at the gateway's limit, where the excess is dropped silently while
+    // `noteSent` records it as delivered. The timer alone could not fix that, because these
+    // callers bypass the timer entirely.
+    const sinceLastChunk = Date.now() - this.lastReceiptChunkAt;
+    if (sinceLastChunk < RECEIPT_FLUSH_CHUNK_DELAY_MS) {
+      this.scheduleReceiptFlush(
+        RECEIPT_FLUSH_CHUNK_DELAY_MS - sinceLastChunk,
+        true,
+      );
+      return;
+    }
     const ids = takeDirty();
     if (ids.length === 0) return;
     let sentFrames = 0;
@@ -1048,7 +1092,10 @@ class SyncEngine {
         }
       }
     }
-    if (overBudget) this.scheduleReceiptFlush(RECEIPT_FLUSH_CHUNK_DELAY_MS);
+    if (sentFrames > 0) this.lastReceiptChunkAt = Date.now();
+    if (overBudget) {
+      this.scheduleReceiptFlush(RECEIPT_FLUSH_CHUNK_DELAY_MS, true);
+    }
   }
 
   /**
@@ -1135,6 +1182,16 @@ class SyncEngine {
       recordLatency('recv.apply', Date.now() - arrivedAt);
       if (m.senderId !== getAccountId()) {
         void this.nameStubConversation(m.conversationId, m.senderId);
+        // Mirror on EVERY inbound message, not only when a chat is opened (VC-073). The
+        // notification's own Mark-as-read runs with no database, so it falls back to the seq the
+        // push carried when it has never been told a safe one — and a conversation the user has
+        // not opened since this build landed is exactly the case where that fallback could
+        // acknowledge across a hole. This is the same clamp the read below uses, so native's
+        // policy now matches javascript's instead of approximating it.
+        setNativeSafeReadSeq(
+          m.conversationId,
+          this.clampToHeld(m.seq, localMax),
+        );
         // Clamped like the read below it, and for the same reason: `delivered` is cumulative
         // too, so the frame that SKIPS ahead of what we hold would claim a second grey tick for
         // every message it skipped (VC-069). `localMax` is already in hand from the gap check.
@@ -1498,6 +1555,10 @@ class SyncEngine {
       // message at or below its seq — so sending the local maximum across a hole told the
       // sender their message had been read when this device never received it (VC-069).
       const seq = await this.honestWatermark(conversationId);
+      // Hand the same answer to native: the notification's own Mark-as-read runs in a process
+      // with no database, so without this it can only ack the seq the push happened to carry
+      // and would cover a message we do not hold (VC-073).
+      setNativeSafeReadSeq(conversationId, seq);
       // Record it even with the socket down: the ledger is durable, so opening a chat offline
       // still turns the sender's ticks blue as soon as we reconnect.
       if (seq > 0) this.noteRead(conversationId, seq);

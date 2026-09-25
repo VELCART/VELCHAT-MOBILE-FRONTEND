@@ -43,10 +43,13 @@ const PILL_ICON_STYLE: ViewStyle = {
 function PillIconButton({
   label,
   children,
+  hidden,
 }: {
   label: string;
   children: React.ReactNode;
-}): React.JSX.Element {
+  hidden?: boolean;
+}): React.JSX.Element | null {
+  if (hidden) return null;
   return (
     <Pressable
       accessibilityRole="button"
@@ -101,11 +104,7 @@ export function Composer({
         paddingBottom: keyboardUp
           ? t.spacing.huge
           : Math.max(insets.bottom, t.spacing.xs),
-        backgroundColor: t.colors.surface,
-        // The separator the style has always declared: `borderTopWidth: 0` meant the colour
-        // beside it never drew anything, so the thread bled straight into the composer.
-        borderTopWidth: 1,
-        borderTopColor: t.colors.hairline,
+        backgroundColor: 'transparent',
       }}
     >
       <View
@@ -147,7 +146,7 @@ export function Composer({
             strokeWidth={2}
           />
         </PillIconButton>
-        <PillIconButton label={tr('chat.camera')}>
+        <PillIconButton label={tr('chat.camera')} hidden={hasText}>
           <CameraIcon size={22} color={t.colors.textTertiary} strokeWidth={2} />
         </PillIconButton>
       </View>

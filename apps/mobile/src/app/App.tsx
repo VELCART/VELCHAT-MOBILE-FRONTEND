@@ -57,8 +57,11 @@ function Gate(): React.JSX.Element {
 export default function App(): React.JSX.Element {
   useEffect(() => {
     bootstrap();
-    // Wake the (free-tier, hibernating) backend up front so the login path is warm by
-    // the time the user reaches it — no 30-50s cold-start timeout on the first request.
+    // Logs which backend this build actually targets, and — only on a flavor whose origins
+    // hibernate, which today means the Render dev deployment — fires a bounded health ping at
+    // each so the first real request does not pay the 30-50s wake (VC-008). Synchronous, sends
+    // nothing in a production build, and awaited by nothing: this effect runs after the first
+    // commit and neither the splash nor sign-in observes it.
     warmBackend();
     // Give the sync engine a way to name a DM that arrives from someone new (§M3: the domain
     // layer cannot reach into features, so the lookup is injected here).

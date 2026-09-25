@@ -165,6 +165,11 @@ export interface NativePushBinding {
 
   /** Keep the native mute in step with a pref the user set inside the app. 0 clears it. */
   setMuted(conversationId: string, untilMillis: number): Promise<void>;
+  /**
+   * Mirror the highest seq this device may honestly acknowledge as read, so a notification
+   * action — which runs with no database open — cannot ack past a hole (VC-073).
+   */
+  setSafeReadSeq(conversationId: string, seq: number): Promise<void>;
 
   /** The user opened this chat — its notification is stale the moment they are looking at it. */
   clearConversationNotification(conversationId: string): Promise<void>;

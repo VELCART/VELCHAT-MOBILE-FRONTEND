@@ -283,6 +283,22 @@ export function syncPersonAvatars(
 }
 
 /** Keep the native mute in step with a pref set inside the app. `0` clears it. */
+/**
+ * Mirror the highest seq this device may honestly acknowledge as read (VC-073).
+ *
+ * The notification's own Mark-as-read and Reply run in a broadcast receiver with no database
+ * open, so they cannot work out for themselves that a `read` receipt — which is cumulative —
+ * would cover a message this device never received. This is the answer the sync engine already
+ * computes, pushed out so that process can clamp to it.
+ */
+export function setNativeSafeReadSeq(
+  conversationId: string,
+  seq: number,
+): void {
+  if (!conversationId || seq <= 0) return;
+  void nativePush.setSafeReadSeq(conversationId, seq);
+}
+
 export function setNativeMute(
   conversationId: string,
   untilMillis: number,

@@ -22,59 +22,48 @@ import { LEGACY_ENCRYPTION_KEY, resolveStoreKey } from './storeKey';
 /**
  * Open the store, re-encrypting it on the way if this install is still on the legacy key.
  *
- * Which key opens it is decided by ASKING THE STORE, not by a flag, and that is the whole
- * lesson of the first version of this function. That one trusted a native "have I migrated yet"
- * flag, and the flag can disagree with reality: if the keystore entry is regenerated — an
- * emulator cold boot, a partial data reset, a restore — native reports "no key, never migrated",
- * javascript opens a store that IS encrypted with the old keystore key using the LEGACY key
- * instead, MMKV reports it as empty, and the app happily writes a fresh session over the top.
- * That signed a test device out and took its device key with it. A flag cannot be trusted
- * because it does not share fate with the data it describes.
+ * LEGACY KEY FIRST, ALWAYS, and then `recrypt` in place — because the store can only ever be
+ * opened ONCE per process. MMKV caches native instances by mmapID and returns the cached one on
+ * a second `new MMKV({id})`, DROPPING the crypt key it was handed
+ * (`MMKV/Core/MMKV_Android.cpp` — the `g_instanceDic` hit returns before `checkReSetCryptKey`).
+ * So "open with the keystore key, and if it reads nothing fall back to the legacy one" cannot
+ * work: the second construction is the same object with the same key, reads empty too, and the
+ * code then concludes "fresh install" and commits the new key over a store it never actually
+ * opened. That was written here as a safety improvement and was the opposite — it would have
+ * destroyed `auth.devicePrivKey`, the one secret that cannot be re-derived. Do not reintroduce
+ * a probe; there is nothing to probe with.
  *
- * So: try the keystore key, and only if that store is EMPTY look at the legacy one. MMKV cannot
- * report a wrong key — it simply reads nothing — so "empty" is exactly the signal that this is
- * not the key the data was written with. Constructing an MMKV instance is cheap; being wrong
- * about which key to use is not.
+ * The order below is therefore the only one available, and it is also the correct one: open
+ * with the key the data was last written under, rewrite it in place, and only then let native
+ * record the new key as committed — after `recrypt` returns, never when the key is generated,
+ * so a process that dies mid-migration comes back uncommitted and simply tries again.
  *
- * The one case nothing can rescue is a keystore key that is lost after the data was encrypted
- * with it: the bytes are unreadable by anyone, including us. That now costs a sign-in rather
- * than a silent overwrite, and it is the same thing every keystore-backed app does on a restore.
+ * The one case nothing can rescue is a keystore key lost AFTER the data was encrypted with it:
+ * those bytes are unreadable by anyone. That costs a sign-in, which is what every
+ * keystore-backed app does on a restore.
  */
 function openStore(): MMKV {
-  const nativeKey = secureStoreKey();
   const plan = resolveStoreKey({
-    nativeKey,
+    nativeKey: secureStoreKey(),
     committed: secureStoreKeyCommitted(),
   });
-  if (plan.kind === 'legacy') {
-    return new MMKV({ id: 'velchat', encryptionKey: LEGACY_ENCRYPTION_KEY });
+  if (plan.kind === 'native') {
+    return new MMKV({ id: 'velchat', encryptionKey: plan.key });
   }
-
-  const sealed = new MMKV({ id: 'velchat', encryptionKey: plan.key });
-  // Anything at all means this key reads the data, whatever a flag claims.
-  if (sealed.getAllKeys().length > 0) {
-    if (plan.kind === 'migrate') commitSecureStoreKey();
-    return sealed;
-  }
-
-  const legacy = new MMKV({
+  const store = new MMKV({
     id: 'velchat',
     encryptionKey: LEGACY_ENCRYPTION_KEY,
   });
-  if (legacy.getAllKeys().length === 0) {
-    // Both empty: a fresh install. Start on the keystore key so it is never written in the clear.
-    commitSecureStoreKey();
-    return sealed;
-  }
+  if (plan.kind === 'legacy') return store;
   try {
-    legacy.recrypt(plan.key);
+    store.recrypt(plan.key);
     commitSecureStoreKey();
   } catch {
     // Still on the legacy key, exactly where it already was — no worse than the build before
     // this one, and the migration runs again next launch. Deliberately silent: anything logged
     // here would be one bit away from describing the key (§M19).
   }
-  return legacy;
+  return store;
 }
 
 export const storage = openStore();

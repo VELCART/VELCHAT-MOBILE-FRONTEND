@@ -195,6 +195,7 @@ export {
   syncPersonNames,
   syncPersonAvatars,
   setNativeMute,
+  setNativeSafeReadSeq,
   clearConversationNotification,
   setActiveConversationForPush,
   getPushBlocker,

@@ -44,6 +44,7 @@ interface VelChatPushNativeModule {
   setPersonAvatars(avatars: Record<string, string>): Promise<void>;
   setActiveConversation(conversationId: string | null): Promise<void>;
   setMuted(conversationId: string, untilMillis: number): Promise<void>;
+  setSafeReadSeq(conversationId: string, seq: number): Promise<void>;
   takePendingEvents(): Promise<unknown>;
   areMessageNotificationsBlocked(): Promise<boolean>;
   isIgnoringBatteryOptimizations(): Promise<boolean>;
@@ -128,6 +129,7 @@ const unsupportedBinding: NativePushBinding = {
   setPersonAvatars: () => Promise.resolve(),
   setActiveConversation: () => Promise.resolve(),
   setMuted: () => Promise.resolve(),
+  setSafeReadSeq: () => Promise.resolve(),
   clearConversationNotification: () => Promise.resolve(),
   onPendingEvents: () => () => undefined,
   takePendingEvents: () => Promise.resolve([]),
@@ -257,6 +259,15 @@ const androidBinding = (mod: VelChatPushNativeModule): NativePushBinding => ({
       await mod.setMuted(conversationId, untilMillis);
     } catch {
       // The server-side pref is authoritative; this is the local fast path.
+    }
+  },
+
+  async setSafeReadSeq(conversationId, seq) {
+    try {
+      await mod.setSafeReadSeq(conversationId, seq);
+    } catch {
+      // An older native half has no such method. The receiver then clamps to nothing, which is
+      // exactly the behaviour that shipped before this — never worse.
     }
   },
 

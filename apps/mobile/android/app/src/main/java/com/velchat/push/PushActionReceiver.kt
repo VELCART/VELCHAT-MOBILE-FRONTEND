@@ -83,7 +83,7 @@ internal class PushActionReceiver : BroadcastReceiver() {
                 .put("conversationId", conversationId)
                 .put("upToSeq", seq),
         )
-        ackInBackground(store, conversationId, seq, PushAckClient.State.READ)
+        ackInBackground(store, conversationId, honestSeq(store, conversationId, seq), PushAckClient.State.READ)
         return
       }
 
@@ -109,7 +109,7 @@ internal class PushActionReceiver : BroadcastReceiver() {
         )
         // Replying is proof of reading. Send the read receipt from here too, so the sender's tick
         // turns blue at the moment of the reply and not when the app is next opened.
-        ackInBackground(store, conversationId, seq, PushAckClient.State.READ)
+        ackInBackground(store, conversationId, honestSeq(store, conversationId, seq), PushAckClient.State.READ)
         return
       }
     }
@@ -139,6 +139,20 @@ internal class PushActionReceiver : BroadcastReceiver() {
    * `goAsync()` to hold the process open. The 10 s budget the system allows is well inside the
    * ack client's own timeouts.
    */
+  /**
+   * Hold a read acknowledgement to what javascript says this device honestly holds (VC-073).
+   *
+   * Receipts are cumulative, so acking the seq this notification happens to carry would cover
+   * every message beneath it — including one that never arrived (VC-069). This process has no
+   * database to check that for itself, so it uses the watermark javascript mirrored out. A
+   * conversation it was never told about clamps to nothing, because a device that has not
+   * synced since this build landed must still be able to mark a chat read.
+   */
+  private fun honestSeq(store: PushStore, conversationId: String, seq: Long): Long {
+    val safe = store.safeReadSeq(conversationId)
+    return if (safe <= 0L) seq else minOf(seq, safe)
+  }
+
   private fun ackInBackground(
       store: PushStore,
       conversationId: String,

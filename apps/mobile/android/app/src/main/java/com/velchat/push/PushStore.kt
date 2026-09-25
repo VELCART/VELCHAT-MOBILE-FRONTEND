@@ -106,6 +106,7 @@ internal class PushStore(context: Context) {
         .remove(KEY_AVATARS)
         .remove(KEY_LAST_SEQ)
         .remove(KEY_SEEN)
+        .remove(KEY_SAFE_READ)
         .commit()
   }
 
@@ -204,6 +205,33 @@ internal class PushStore(context: Context) {
    *
    * A seq of 0 means the push carried none: nothing to compare, so it always counts as new.
    */
+  /**
+   * The highest seq javascript says this device may HONESTLY acknowledge as read (VC-073).
+   *
+   * A `read` receipt is cumulative — it covers every message at or below its seq — so
+   * acknowledging past a hole tells the sender a message was read that this device never
+   * received (VC-069). Javascript clamps its own receipts to the highest contiguous seq it
+   * actually holds, but the notification actions run in a broadcast receiver with no database
+   * open, so they cannot compute that for themselves. This is javascript mirroring the answer
+   * out so the receiver can use it.
+   *
+   * `0` means "never told", which the caller treats as no clamp rather than as zero — a device
+   * that has not synced since this build landed must still be able to mark a chat read.
+   */
+  fun safeReadSeq(conversationId: String): Long =
+      readJson(KEY_SAFE_READ).optLong(conversationId, 0L)
+
+  fun setSafeReadSeq(conversationId: String, seq: Long) {
+    if (conversationId.isBlank() || seq <= 0L) return
+    synchronized(WRITE_LOCK) {
+      val all = readJson(KEY_SAFE_READ)
+      if (all.optLong(conversationId, 0L) >= seq) return // watermarks only move forward
+      all.put(conversationId, seq)
+      trimOldest(all, MAX_NAMES)
+      prefs.edit().putString(KEY_SAFE_READ, all.toString()).apply()
+    }
+  }
+
   fun markSeen(conversationId: String, seq: Long): Boolean {
     if (conversationId.isBlank() || seq <= 0L) return true
     synchronized(WRITE_LOCK) {
@@ -628,6 +656,7 @@ internal class PushStore(context: Context) {
     private const val KEY_AVATARS = "avatars.v2"
     private const val KEY_LAST_SEQ = "lastSeq"
     private const val KEY_SEEN = "seenSeqs"
+    private const val KEY_SAFE_READ = "safeReadSeq"
 
     /**
      * The entries sealed at rest (VC-017).

@@ -24,10 +24,10 @@ import {
 } from '../../../../design-system';
 import { DateChip } from './DateChip';
 
-const BUBBLE_MAX_WIDTH = '78%';
-const TAIL_RADIUS = 6;
-const GAP_WITHIN_RUN = 3;
-const GAP_BETWEEN_RUNS = 12;
+const BUBBLE_MAX_WIDTH = '80%';
+const TAIL_RADIUS = 4;
+const GAP_WITHIN_RUN = 2;
+const GAP_BETWEEN_RUNS = 10;
 
 /**
  * Per-state send indicator for MY messages: a clock while sending, one check when sent,
@@ -127,10 +127,9 @@ function MessageBubbleBase({
         <View
           style={{
             maxWidth: BUBBLE_MAX_WIDTH,
-            paddingHorizontal: 12,
-            // Horizontal padding is what stops the text touching the edge; vertical padding
-            // just makes the bubble tall. Keep the former, spend less on the latter.
-            paddingVertical: 5,
+            paddingHorizontal: 14,
+            paddingTop: 8,
+            paddingBottom: 6,
             borderRadius: R,
             borderTopRightRadius: mine && firstOfRun ? TAIL_RADIUS : R,
             borderTopLeftRadius: !mine && firstOfRun ? TAIL_RADIUS : R,
@@ -154,8 +153,8 @@ function MessageBubbleBase({
           <Text
             variant="body"
             style={{
-              fontSize: 15,
-              lineHeight: 19,
+              fontSize: 15.5,
+              lineHeight: 21,
               color: mine ? t.colors.actionFg : t.colors.textPrimary,
             }}
           >
@@ -165,19 +164,18 @@ function MessageBubbleBase({
             style={{
               flexDirection: 'row',
               alignItems: 'center',
-              gap: 4,
+              gap: 3,
               alignSelf: 'flex-end',
-              // The meta row sits tight under the text — it is a footnote, not a second
-              // paragraph, and the gap here was a visible chunk of each bubble's height.
-              marginTop: 0,
+              marginTop: 2,
             }}
           >
             <Text
               variant="caption"
               style={{
-                fontSize: 11,
+                fontSize: 10.5,
+                lineHeight: 14,
                 color: mine ? t.colors.actionFg : t.colors.textTertiary,
-                opacity: mine ? 0.75 : 1,
+                opacity: mine ? 0.7 : 0.8,
               }}
             >
               {time}

@@ -204,6 +204,16 @@ class VelChatPushModule(private val reactContext: ReactApplicationContext) :
     promise.resolve(null)
   }
 
+  /**
+   * Mirror the highest seq javascript may honestly acknowledge, so the notification actions —
+   * which run with no database open — cannot ack past a hole (VC-073).
+   */
+  @ReactMethod
+  fun setSafeReadSeq(conversationId: String, seq: Double, promise: Promise) {
+    store.setSafeReadSeq(conversationId, seq.toLong())
+    promise.resolve(null)
+  }
+
   /** Called when the user opens a chat: its notification is stale the moment they are looking. */
   @ReactMethod
   fun clearConversation(conversationId: String, promise: Promise) {
