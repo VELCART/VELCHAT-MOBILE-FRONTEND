@@ -87,6 +87,23 @@ export function countMessages(conversationId: string): Promise<number> {
 }
 
 /** Lowest seq we hold — the cursor a fetch of OLDER history has to reach back before. */
+/**
+ * How many rows this conversation holds that carry a server seq.
+ *
+ * Paired with the min and max seq it gives a contiguity check by ARITHMETIC — count equal to
+ * span means nothing is missing — which is what lets the receipt clamp decide whether a scan is
+ * needed at all without one (VC-069). Rows still awaiting an ack carry seq 0 and are excluded,
+ * the same way every other seq query here does.
+ */
+export async function countMessagesWithSeq(
+  conversationId: string,
+): Promise<number> {
+  return getDatabase()
+    .get<Message>('messages')
+    .query(Q.where('conversation_id', conversationId), Q.where('seq', Q.gt(0)))
+    .fetchCount();
+}
+
 export async function minSeqForConversation(
   conversationId: string,
 ): Promise<number> {

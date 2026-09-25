@@ -33,6 +33,7 @@ import {
   getConversationMembers,
   setNativeSafeReadSeq,
   maxContiguousSeqForConversation,
+  countMessagesWithSeq,
   getPresence,
   subscribePresence,
   presenceOnline,
@@ -1544,7 +1545,22 @@ class SyncEngine {
     conversationId: string,
     candidate: number,
   ): Promise<number> {
-    if (!this.gapProbedFrom.has(conversationId)) return candidate;
+    // The gate used to be `gapProbedFrom.has(...)` — "no probe has fired, so there is no known
+    // hole". That premise is false across a process restart: the probe map is in memory and is
+    // cleared on stop, so a device holding 1-49 and 51-60 comes back from a kill with an empty
+    // map, and the reconnect backfill then emits an UNCLAMPED watermark covering the seq it
+    // never received. `mergeWatermark` is monotonic, so that lie is permanent — and it would
+    // override the correct value `markConversationRead` had already sent.
+    //
+    // A cheap, restart-proof stand-in for "could this conversation have a hole": compare what we
+    // hold against the span we hold it over. A conversation whose row count matches its seq
+    // range is contiguous by arithmetic, needs no scan, and is the overwhelmingly common case.
+    const [max, min, held] = await Promise.all([
+      maxSeqForConversation(conversationId),
+      minSeqForConversation(conversationId),
+      countMessagesWithSeq(conversationId),
+    ]);
+    if (max === 0 || held >= max - min + 1) return candidate;
     return Math.min(candidate, await this.honestWatermark(conversationId));
   }
 

@@ -27,6 +27,7 @@ export {
   markMessageFailed,
   markMessageSending,
   maxSeqForConversation,
+  countMessagesWithSeq,
   maxContiguousSeqForConversation,
   minSeqForConversation,
   countMessages,
