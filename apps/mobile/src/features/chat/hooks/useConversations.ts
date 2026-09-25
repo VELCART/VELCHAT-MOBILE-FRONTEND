@@ -12,10 +12,16 @@
  * documents.
  */
 import { useEffect, useState } from 'react';
-import { observeConversations, Conversation } from '../../../infra';
+import {
+  observeConversations,
+  subscribeAppState,
+  Conversation,
+} from '../../../infra';
 import {
   discoveredContacts,
   peerDisplayName,
+  requestContactsRefresh,
+  subscribeDiscoveredContacts,
   type VelchatContact,
 } from '../../contacts';
 
@@ -106,26 +112,62 @@ export function toConversationRow(
 export function useConversations(): ConversationsState {
   const [state, setState] = useState<ConversationsState>(INITIAL);
   useEffect(() => {
+    // The newest DB emission, held for the two things that can re-title these rows WITHOUT the
+    // DB saying anything: a contacts sweep landing, and the user coming back from the app where
+    // they saved the contact. A DM's title lives in the phone's address book, so no server
+    // write will ever re-emit the row to correct it and nothing else would re-render the list
+    // (VC-044).
+    let latest: Conversation[] | null = null;
+
+    // One `now` per emission so every row is bucketed against the same instant. The address
+    // book is read once per emission too — it is a cache read, and resolving it per row
+    // would re-read it for every chat in the list.
+    const publish = (models: Conversation[]): void => {
+      const now = Date.now();
+      const contacts = discoveredContacts();
+      setState({
+        rows: models.map(m => toConversationRow(m, now, contacts)),
+        loaded: true,
+      });
+    };
+
     let sub: { unsubscribe: () => void } | undefined;
     try {
       // getDatabase() throws if the native module isn't in the binary yet (pre-rebuild) —
       // degrade to an empty list instead of crashing the tab.
       sub = observeConversations().subscribe(models => {
-        // One `now` per emission so every row is bucketed against the same instant. The address
-        // book is read once per emission too — it is a cache read, and resolving it per row
-        // would re-read it for every chat in the list.
-        const now = Date.now();
-        const contacts = discoveredContacts();
-        setState({
-          rows: models.map(m => toConversationRow(m, now, contacts)),
-          loaded: true,
-        });
+        latest = models;
+        publish(models);
       });
     } catch {
       // Loaded-but-empty: the empty state is the correct, final answer here.
       setState({ rows: [], loaded: true });
     }
-    return () => sub?.unsubscribe();
+
+    // Re-titling costs a full re-map (the timestamp labels are ICU calls, which is why they are
+    // snapshotted per emission at all), so this only fires when a name a DM could show actually
+    // changed — the snapshot gates its own notification.
+    const unsubscribeContacts = subscribeDiscoveredContacts(() => {
+      if (latest) publish(latest);
+    });
+
+    // Returning from another app is the moment the address book may have changed under us — it
+    // is where the contact was just saved. Asking HERE, rather than on every screen focus, is
+    // what keeps the sweep off the §R4/§R5 hot paths; `requestContactsRefresh` drops it outright
+    // unless one of these rows is a peer we cannot already name.
+    const unsubscribeAppState = subscribeAppState(s => {
+      if (s !== 'active' || !latest) return;
+      requestContactsRefresh(
+        latest.map(m => m.peerId),
+        'app-returned',
+      );
+    });
+
+    return () => {
+      sub?.unsubscribe();
+      unsubscribeContacts();
+      unsubscribeAppState();
+    };
   }, []);
   return state;
 }

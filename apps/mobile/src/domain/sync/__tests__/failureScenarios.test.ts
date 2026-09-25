@@ -105,6 +105,33 @@ jest.mock('../../../infra/network/chat', () => {
 });
 
 /**
+ * The presence REST surface. Faked for the same reason the chat calls are: `activatePresence`
+ * and the poll behind it are pure network, and the whole point of these cases is to count what
+ * the engine ASKS the server, not what a server would answer.
+ */
+const mockGetPresence: jest.Mock = jest.fn(() =>
+  Promise.resolve({ status: 'online', lastSeen: null }),
+);
+const mockSubscribePresence: jest.Mock = jest.fn(() => Promise.resolve());
+
+jest.mock('../../../infra/network/presence', () => {
+  const actual: Record<string, unknown> = jest.requireActual(
+    '../../../infra/network/presence',
+  );
+  return {
+    ...actual,
+    getPresence: (...a: unknown[]) => mockGetPresence(...a) as unknown,
+    subscribePresence: (...a: unknown[]) =>
+      mockSubscribePresence(...a) as unknown,
+    // Our OWN presence is not what these cases are about; stubbed so the engine's keepalive
+    // never reaches a real axios adapter and fills the run with connection failures.
+    presenceOnline: () => Promise.resolve(),
+    presenceOffline: () => Promise.resolve(),
+    presenceHeartbeat: () => Promise.resolve(),
+  };
+});
+
+/**
  * What the DURABLE receipt store holds, per conversation — the answer a client gets when it asks
  * the server instead of waiting for a socket frame that may never come.
  */
@@ -112,6 +139,23 @@ const mockServerReceipts = new Map<
   string,
   { userId: string; state: 'delivered' | 'read'; upToSeq: number }[]
 >();
+
+/**
+ * The app's foreground/background seam. Faked rather than reached through `react-native`,
+ * because §M3 forbids the domain layer — tests included — from importing it: `subscribeAppState`
+ * is the typed wrapper the engine consumes, so this is the honest seam anyway.
+ */
+const mockAppStateListeners = new Set<(s: string) => void>();
+
+jest.mock('../../../infra/native/appState', () => ({
+  getAppState: () => 'active',
+  subscribeAppState: (cb: (s: string) => void): (() => void) => {
+    mockAppStateListeners.add(cb);
+    return () => {
+      mockAppStateListeners.delete(cb);
+    };
+  },
+}));
 
 interface NetSnapshot {
   isConnected: boolean;
@@ -197,6 +241,11 @@ function setNetwork(connected: boolean): void {
   }
 }
 
+/** Drive the app's foreground/background transitions the way the OS would. */
+function setAppState(state: 'active' | 'background'): void {
+  for (const listener of [...mockAppStateListeners]) listener(state);
+}
+
 function latestSocket(): MockSocket {
   const s = mockSockets[mockSockets.length - 1];
   if (!s) throw new Error('no socket was opened');
@@ -270,6 +319,9 @@ beforeEach(async () => {
       Promise.resolve(serveAfter(conversationId, afterSeq, limit)),
   );
   mockSendChat.mockReset();
+  // `mockClear`, not `mockReset`: these two keep their default answers for every case.
+  mockGetPresence.mockClear();
+  mockSubscribePresence.mockClear();
   mockNet.connected = true;
   mockNet.listeners.clear();
 
@@ -1658,5 +1710,101 @@ describe('a hole the server will never fill', () => {
     await syncEngine.markConversationRead(conv);
     await settle(400);
     expect(highestReadSeq(socket)).toBeLessThan(5);
+  });
+});
+
+// ── 8. presence: the open chat's poll has to survive an interruption ─────────
+
+/**
+ * VC-046. The presence line was reported as "updates with a noticeable delay"; the architectural
+ * half of that is real and backend-bound (the realtime gateway's FanoutConsumer subscribes to
+ * message/receipt/caption and never to `presence.changed`, so there is NO live presence frame and
+ * the client can only poll a REST snapshot). But under that ceiling the client had a defect of its
+ * own: the poll is torn down by every path that releases the link — a network drop and the §M13
+ * background suspend both call `clearPeerPresenceTimer` — and NOTHING ever started it again. The
+ * only caller of `activatePresence` is the chat header's mount effect, and neither coming back
+ * from a tunnel nor coming back from the home screen remounts a screen. So one interruption froze
+ * the presence line at its last value for as long as the user stayed in that chat: not a delay, a
+ * stop.
+ *
+ * Driven here through the engine's real transitions — the NetInfo seam these tests already own,
+ * and the app's own AppState listener — because that ordering is the whole bug.
+ */
+describe('the open chat keeps reading its peer after an interruption', () => {
+  const conv = 'presence_conv';
+
+  beforeEach(async () => {
+    // The peer is stored on the row, so `activatePresence` resolves it without a members call.
+    await upsertConversation(conv, { type: 'dm', name: 'Peer', peerId: PEER });
+  });
+
+  /** Open the chat the way the screen does: active id + presence activation. */
+  async function openChat(): Promise<void> {
+    syncEngine.setActiveConversation(conv);
+    await syncEngine.activatePresence(conv);
+  }
+
+  it('re-arms the poll when the link comes back', async () => {
+    await bootConnected();
+    await openChat();
+    expect(syncEngine.getDiagnostics().peerPresencePollActive).toBe(true);
+    const readsBefore = mockGetPresence.mock.calls.length;
+
+    // Into a tunnel. Dropping the poll here is CORRECT — polling a link that is gone is pure
+    // battery — so this half is asserted, not changed.
+    setNetwork(false);
+    await settle();
+    expect(syncEngine.getDiagnostics().peerPresencePollActive).toBe(false);
+
+    // Out of the tunnel, still sitting in the same chat.
+    setNetwork(true);
+    await until(
+      () => syncEngine.getDiagnostics().peerPresencePollActive,
+      'the presence poll to be re-armed when the link returns',
+    );
+    // And it must not wait a whole interval to say something: the value on screen has been
+    // wrong for the length of the outage.
+    expect(mockGetPresence.mock.calls.length).toBeGreaterThan(readsBefore);
+  });
+
+  it('re-reads the peer the moment the app comes back to the foreground', async () => {
+    await bootConnected();
+    await openChat();
+    const readsBefore = mockGetPresence.mock.calls.length;
+
+    // The chat screen withdraws its active id on background and re-asserts it on return, and it
+    // registers its AppState listener AFTER the engine's — so when the engine handles 'active'
+    // the active id is still null. Reproduced exactly, because a resume keyed on that id would
+    // pass here for the wrong reason.
+    setAppState('background');
+    syncEngine.setActiveConversation(null);
+    await settle();
+
+    setAppState('active');
+    await until(
+      () => mockGetPresence.mock.calls.length > readsBefore,
+      "the peer's presence to be re-read on return to the foreground",
+    );
+    expect(syncEngine.getDiagnostics().peerPresencePollActive).toBe(true);
+  });
+
+  it('does not resume a poll for a chat the user has closed', async () => {
+    await bootConnected();
+    await openChat();
+    syncEngine.deactivatePresence(conv);
+    syncEngine.setActiveConversation(null);
+    const readsBefore = mockGetPresence.mock.calls.length;
+
+    setNetwork(false);
+    await settle();
+    setNetwork(true);
+    setAppState('background');
+    setAppState('active');
+    await settle(200);
+
+    // Nothing is on screen, so nothing may be polled — this is the §M13/§M20.3 half that the
+    // resume must not undo (VC-065).
+    expect(mockGetPresence.mock.calls.length).toBe(readsBefore);
+    expect(syncEngine.getDiagnostics().peerPresencePollActive).toBe(false);
   });
 });

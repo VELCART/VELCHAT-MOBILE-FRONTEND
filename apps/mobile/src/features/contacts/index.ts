@@ -11,7 +11,10 @@ export {
   prewarmContacts,
   clearContactsDiscoveryCache,
   discoveredContacts,
+  subscribeDiscoveredContacts,
+  requestContactsRefresh,
 } from './hooks/useDeviceContacts';
+export type { ContactsRefreshTrigger } from './hooks/useDeviceContacts';
 export { peerDisplayName } from './model/peerDisplayName';
 export type { DeviceContactsStatus } from './hooks/useDeviceContacts';
 export type { VelchatContact, InviteContact } from './model/contactLists';

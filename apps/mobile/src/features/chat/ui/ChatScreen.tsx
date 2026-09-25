@@ -243,6 +243,22 @@ function ChatThread({
     };
   }, []);
 
+  // Keep the newest message visible when the keyboard changes the viewport.
+  //
+  // FlashList's follow (`autoscrollToBottomThreshold`) arms itself from SCROLL events, and a
+  // keyboard opening produces none — it shrinks the list's height from underneath. So the newest
+  // bubble slid under the fold, nothing re-armed the flag, and every message sent afterwards was
+  // left below it. That is the "new message chhup jata hai" report in its last hiding place: the
+  // thread follows correctly with the keyboard down and stopped following the moment the user
+  // started typing, which is exactly when they are watching.
+  //
+  // Only when the reader was already at the bottom — `showJumpRef` is the live answer to that,
+  // and someone scrolled up into history must not be yanked down by their own keyboard.
+  useEffect(() => {
+    if (showJumpRef.current) return;
+    listRef.current?.scrollToEnd({ animated: false });
+  }, [kbHeight]);
+
   const onSend = useCallback(() => {
     if (!text.trim()) return;
     send(text);

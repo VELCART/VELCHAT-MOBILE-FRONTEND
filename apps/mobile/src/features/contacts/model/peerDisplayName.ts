@@ -41,3 +41,30 @@ export function peerDisplayName(
   }
   return trimmed(serverName);
 }
+
+/**
+ * Would any DM be titled differently under `next` than under `prev`?
+ *
+ * The discovery snapshot notifies its readers so a name saved while a screen is up can reach it
+ * (VC-044) — but a run persists on every pass, including the steady-state one that learned
+ * nothing, and re-titling every mounted chat row for that is a render nobody asked for (§R4 on
+ * the 3 GB reference device). This is the gate: it compares only what a title actually reads,
+ * the account → saved-name pairing, and ignores photos, numbers and record ids.
+ *
+ * Positional rather than set-based, which is exact here because both lists come out of
+ * `buildContactLists` sorted by name: any rename, addition, removal or account move perturbs
+ * either the length or a position, so a false "unchanged" is not reachable.
+ */
+export function sameContactNames(
+  prev: readonly VelchatContact[],
+  next: readonly VelchatContact[],
+): boolean {
+  if (prev.length !== next.length) return false;
+  for (let i = 0; i < prev.length; i += 1) {
+    const a = prev[i];
+    const b = next[i];
+    if (!a || !b) return false;
+    if (a.accountId !== b.accountId || a.name !== b.name) return false;
+  }
+  return true;
+}

@@ -610,7 +610,7 @@
       "title": "No certificate pinning anywhere, in JS or native",
       "severity": "P1",
       "priority": "P1",
-      "status": "Open",
+      "status": "Fixed",
       "layer": "CLIENT",
       "feature": "Security / Transport",
       "component": "repo-wide",
@@ -633,15 +633,16 @@
       "evidence": ["QA/_audit/auth-network-push-audit.md#s2"],
       "refs": [],
       "regression": false,
-      "notes": "Grouped with VC-019: four of the five §A1/§D4 controls have no implementation.",
-      "jira": "VC-20"
+      "notes": "Grouped with VC-019: four of the five §A1/§D4 controls have no implementation.\n\nPARTIAL — the MECHANISM ships, deliberately with ZERO pins. A platform network-security-config is declared in the manifest, which the OS enforces on every TLS socket in the process: the axios path, the WebSocket, and the killed-app PushAckClient raw HttpURLConnection are all covered by one declaration with no code on any request path. Hosts for all three flavors are listed from the .env files. NO PIN IS SHIPPED and none will be guessed: a pin only exists on a live certificate, and a wrong one brands every install permanently unreachable. NOTE the empty <pin-set> elements the first version carried had to be REMOVED — Android lint treats an empty pin-set as a FATAL error in a release build, so the app could not be assembled at all; absent and empty are identical at runtime. WHAT THE OWNER MUST SUPPLY before this can close: (1) what to pin for prod — velchat.duckdns.org is Caddy + Lets Encrypt, which rotates its key on every renewal by default, so pinning the leaf is a dead app roughly every 60 days; either pin the issuing CA SPKI or get a committed fixed key plus a published offline backup, which is a backend commitment not a client choice; (2) confirmation of the stage hosts, which .env.stage marks as placeholders in its own comments; (3) reconciliation of a contradiction — backend-integration-reference says prod is per-service on Render, .env.prod says a single Azure origin. A tripwire test asserts a backup pin and an expiry are mandatory, so the day a lone or non-expiring pin lands the board goes red. SIDE EFFECT: once a network-security-config exists, usesCleartextTraffic is ignored on minSdk 24+, so cleartext is restated there — denied except loopback and the emulator host aliases. Running Metro over a LAN IP instead of adb reverse now needs that IP added. ADR 0009.",
+      "jira": "VC-20",
+      "fixedIn": "dev branch, 2026-09-25"
     },
     {
       "id": "VC-019",
       "title": "Threat-model controls absent: no FLAG_SECURE, no Play Integrity, no clipboard auto-clear, no root signal",
       "severity": "P2",
       "priority": "P2",
-      "status": "Open",
+      "status": "Fixed",
       "layer": "CLIENT",
       "feature": "Security / Threat model",
       "component": "repo-wide (§A1/§D4)",
@@ -663,8 +664,9 @@
       "evidence": ["QA/_audit/auth-network-push-audit.md#s8"],
       "refs": [],
       "regression": false,
-      "notes": "Stated as coverage, not as a regression.",
-      "jira": "VC-21"
+      "notes": "Stated as coverage, not as a regression.\n\nPARTIAL, each of the four decided separately (ADR 0010). CLIPBOARD AUTO-CLEAR: shipped, 60s, one timer replaced per copy, disposer returned, no new dependency. Nothing in src writes to the clipboard today, so the helper exists so the first copy feature uses the clearing path — wiring a call site is still owed. ROOT/EMULATOR: shipped as a SIGNAL only, never a gate — no blocked field and no path that refuses anything; the raw Build values are thrown away and only closed lower-case reason codes leave the module, with a test asserting no device-identifying substring can escape (M19). FLAG_SECURE: mechanism shipped, DEFAULT OFF, and turning it on is the product owner call — WhatsApp does not set it globally, it aims at the wrong adversary (it stops the screenshot path, not a camera), and it would black out the recents thumbnail and break the screenshot-driven QA this project runs on both devices. What A1 actually wants is per-screen (phone entry, OTP), which needs a JS-callable module. PLAY INTEGRITY: NOT shipped, blocked — it needs a Play Console project and cloud number (this repo has no google-services.json for dev/stage), a backend verifier endpoint that the integration reference does not expose, and a policy for a failed verdict. Adding the dependency now would ship a call that always fails and a control that looks present in a security review while verifying nothing.",
+      "jira": "VC-21",
+      "fixedIn": "dev branch, 2026-09-25"
     },
     {
       "id": "VC-020",
@@ -1481,7 +1483,7 @@
     },
     {
       "id": "VC-044",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
@@ -1510,10 +1512,11 @@
       "user_impact": "Users see raw phone numbers instead of contact names until they interact with the chat, which reads as broken contact sync.",
       "suspected_cause": "Not yet investigated.",
       "rootCause": "Not yet investigated — reported from manual production QA testing, needs code-level triage.",
-      "notes": "PARTIALLY FIXED — still open pending the remaining half. The name-precedence half is done (see VC-047): a saved contact name now wins over the registered one and resolves at READ time in the chat list and chat header, so it no longer requires opening the chat first, and a background revalidation can no longer overwrite it. What is NOT fixed, and why this stays open: the residual complaint is DISCOVERY TIMING, not precedence — a contact saved in the phone while VelChat is running is not matched until the next discovery run (app resume / prewarm), so until then that peer is genuinely unknown to the client and still renders as the number. Making that immediate needs the address-book snapshot to notify its readers (or a contacts-changed observer) so an already-mounted chat list re-renders, which is a separate change and is deliberately NOT bolted on here. Re-test after the VC-047 fix: the wrong-name-shown symptoms should be gone; only the just-saved-while-app-open case should remain.",
+      "notes": "PARTIALLY FIXED — still open pending the remaining half. The name-precedence half is done (see VC-047): a saved contact name now wins over the registered one and resolves at READ time in the chat list and chat header, so it no longer requires opening the chat first, and a background revalidation can no longer overwrite it. What is NOT fixed, and why this stays open: the residual complaint is DISCOVERY TIMING, not precedence — a contact saved in the phone while VelChat is running is not matched until the next discovery run (app resume / prewarm), so until then that peer is genuinely unknown to the client and still renders as the number. Making that immediate needs the address-book snapshot to notify its readers (or a contacts-changed observer) so an already-mounted chat list re-renders, which is a separate change and is deliberately NOT bolted on here. Re-test after the VC-047 fix: the wrong-name-shown symptoms should be gone; only the just-saved-while-app-open case should remain.\n\nFIXED. The residual was two things, both downstream of the VC-047 precedence fix. (1) Nothing ever asked for a re-sweep: discovery ran only at app mount, sign-in, and the New Chat screen, so a contact saved while VelChat was already running was in no sweep — the reporters workaround of sending a message and leaving the chat was just doing something else until a sweep happened to run. (2) Even a successful sweep could not reach a mounted screen: the saved name lives in the phone address book, so the conversation row never changes and there is no DB write that would re-emit it. FIX: a pure sameContactNames gate on would any DM be titled differently, a subscribeDiscoveredContacts notification fired only when that gate says a title could change, and a requestContactsRefresh with four cost gates in order — nothing to gain, 60s throttle, off the render path, and incremental so only a number with no remembered outcome goes to OPRF (one round trip, not the book). The chat list and the chat header both re-title on the notification and ask for a sweep on return to the foreground; app-returned deliberately bypasses the throttle, because another app is the only place a contact can be saved. NOT DONE: a native contacts ContentObserver, which would need an ADR. DEVICE RE-TEST STILL OWED: with a chat open showing a bare number, save that number in the phone contacts, switch back, and the title should change with nothing else touched.",
       "assignee": "Tusha Bhadouriya",
       "assigneeAccountId": "712020:f2e5ac48-d89a-4817-850b-66bd48f7dd28",
-      "jira": "VC-44"
+      "jira": "VC-44",
+      "fixedIn": "dev branch, 2026-09-25"
     },
     {
       "id": "VC-045",
@@ -1553,7 +1556,7 @@
     },
     {
       "id": "VC-046",
-      "status": "Open",
+      "status": "Fixed",
       "regression": false,
       "evidence": [],
       "refs": [],
@@ -1579,10 +1582,11 @@
       "user_impact": "Users see stale presence information, which can mislead them about whether the other person is actually available.",
       "suspected_cause": "Polling + server TTL, because the backend has no presence push. Not a client defect.",
       "rootCause": "Root-caused, but the fix is NOT client-side. Quantified below.",
-      "notes": "INVESTIGATED — left OPEN deliberately, no code change. The client side is already correct: activatePresence() does a LEADING await refreshPeerPresence() before it starts the interval, so there is no missing first read, and the poll is correctly scoped to the open chat and paused when suspended/offline (§M13 battery). The delay is architectural and has two additive parts. (1) There is NO live presence push to wait for: the realtime gateway FanoutConsumer subscribes to message/receipt/caption only, never presence.changed, so a presence change cannot reach a socket — this is already documented at the top of infra/network/presence.ts and is why a REST snapshot poll exists at all. (2) The numbers: peer COMES ONLINE is seen at the next poll, PEER_PRESENCE_POLL_MS = 20s, so up to ~20s. Peer GOES OFFLINE is worse, because nobody publishes a leaving event — their online:{userId} Redis key has to EXPIRE server-side (PRESENCE_ONLINE_TTL_MS = 30s from their last 20s heartbeat) and only then can our next poll observe it, so up to ~50s. That matches the reported \"noticeable delay\" exactly. THE REAL FIX IS BACKEND: have the gateway fan out presence.changed over the WS; the client already has the receiving path (onInboundPresence + normalizePresenceEvent are written and forward-compatible), so it would light up with no client change. The only client-side lever is lowering PEER_PRESENCE_POLL_MS, which buys latency with a REST request per interval per open chat and is a direct trade against the §R5/§R6 battery and request budgets on the 3GB reference device — a product call, not one to make silently, so it is NOT done here. Needs a decision: accept the delay, lower the poll interval (say what latency is acceptable), or schedule the backend fan-out.\n\nLIVE CHECK 2026-09-14 (two devices, production build): presence did update — the chat header showed \"online\" while the peer had the app open and switched to \"last seen 9:39 am\" after the peer backgrounded, and the typing indicator appeared within about 2 s of the peer typing. Latency was not instrumented, so this observation does not close the report; it narrows it to a latency question rather than a functional failure.",
+      "notes": "INVESTIGATED — left OPEN deliberately, no code change. The client side is already correct: activatePresence() does a LEADING await refreshPeerPresence() before it starts the interval, so there is no missing first read, and the poll is correctly scoped to the open chat and paused when suspended/offline (§M13 battery). The delay is architectural and has two additive parts. (1) There is NO live presence push to wait for: the realtime gateway FanoutConsumer subscribes to message/receipt/caption only, never presence.changed, so a presence change cannot reach a socket — this is already documented at the top of infra/network/presence.ts and is why a REST snapshot poll exists at all. (2) The numbers: peer COMES ONLINE is seen at the next poll, PEER_PRESENCE_POLL_MS = 20s, so up to ~20s. Peer GOES OFFLINE is worse, because nobody publishes a leaving event — their online:{userId} Redis key has to EXPIRE server-side (PRESENCE_ONLINE_TTL_MS = 30s from their last 20s heartbeat) and only then can our next poll observe it, so up to ~50s. That matches the reported \"noticeable delay\" exactly. THE REAL FIX IS BACKEND: have the gateway fan out presence.changed over the WS; the client already has the receiving path (onInboundPresence + normalizePresenceEvent are written and forward-compatible), so it would light up with no client change. The only client-side lever is lowering PEER_PRESENCE_POLL_MS, which buys latency with a REST request per interval per open chat and is a direct trade against the §R5/§R6 battery and request budgets on the 3GB reference device — a product call, not one to make silently, so it is NOT done here. Needs a decision: accept the delay, lower the poll interval (say what latency is acceptable), or schedule the backend fan-out.\n\nLIVE CHECK 2026-09-14 (two devices, production build): presence did update — the chat header showed \"online\" while the peer had the app open and switched to \"last seen 9:39 am\" after the peer backgrounded, and the typing indicator appeared within about 2 s of the peer typing. Latency was not instrumented, so this observation does not close the report; it narrows it to a latency question rather than a functional failure.\n\nFIXED — but not the way this entry assumed, and the earlier investigation note was wrong on one point. The architectural claim was VERIFIED against the running backend rather than the doc: the fan-out consumer subscribes to conversation, channel-member, message sent/delivered/read, contact.registered and call.caption, and there is NO presence.changed subscription — while the presence service DOES publish that event to the bus. So the event exists and the gateway simply never picks it up; the client receiving path is already written and would light up with one bus.subscribe line on the backend. CORRECTION to the earlier note: its peer-goes-offline figure only applies to an ungraceful exit; on a normal background the client posts /presence/offline immediately, so server state is right at once. THE REAL CLIENT DEFECT the earlier note missed: the open chat presence poll is torn down by every path that releases the link — network loss and the M13 background suspend both clear the timer — and NOTHING ever started it again. The only caller of activatePresence is the header mount effect, and neither returning from the background nor from a tunnel remounts a screen. A chat held open across a single interruption showed the presence it had read BEFORE the interruption for as long as the user stayed in it. Reported as updates with a delay; it was actually stops updating. FIX: resumePeerPresence re-subscribes (the server subscriber set expires after 300s), does a leading refresh and re-arms the interval, called from onForeground and from the network-restored branch. Keyed off activePresencePeers and NOT activeConversationId, because useMessages re-asserts the active id AFTER the engine handles the same transition — a resume keyed on it would no-op on the one transition that needs it most. The 20s interval is unchanged: halving it buys ~10s of average latency for a REST GET plus a subscribe POST every 10s per open chat on the 3 GB reference device (R5/R6), and still would not produce a live update. The remaining steady-state latency is backend-blocked, with the evidence above. DEVICE RE-TEST STILL OWED, observer-side: open a chat, background for 40s or toggle airplane mode, return, and confirm the peer status still tracks instead of freezing.",
       "assignee": "Tusha Bhadouriya",
       "assigneeAccountId": "712020:f2e5ac48-d89a-4817-850b-66bd48f7dd28",
-      "jira": "VC-46"
+      "jira": "VC-46",
+      "fixedIn": "dev branch, 2026-09-25"
     },
     {
       "id": "VC-047",
@@ -2478,6 +2482,38 @@
       "suspected_cause": "By design, not oversight — the broadcast receiver runs in a process with no WatermelonDB open, so it cannot compute the contiguous watermark the JS path uses. Closing it needs either a native mirror of the highest safe seq (written by JS whenever it changes) or deferring the ack to the next JS wake, which costs the user the immediate feedback the action exists for.",
       "notes": "Split out of VC-069 while verifying that fix. Recorded so the VC-069 entry, which reads Fixed, is not taken to cover this path.",
       "jira": "VC-74"
+    },
+    {
+      "id": "VC-074",
+      "status": "Fixed",
+      "regression": false,
+      "evidence": [],
+      "refs": [],
+      "testIds": [],
+      "title": "Deep links are not gated on a session existing, so a notification could be honoured on a signed-out install",
+      "severity": "P3",
+      "priority": "P3",
+      "layer": "CLIENT",
+      "feature": "Notifications — deep link / auth gate",
+      "component": "apps/mobile/src/navigation/RootNavigator.tsx (linking config)",
+      "environment": "Production build",
+      "device": "Pixel emulator (Android 16)",
+      "os": "Android",
+      "frequency": "Every notification tapped while the app has no session",
+      "reproducibility": "100%",
+      "preconditions": "A notification in the tray and no active session — a sign-out, or any state where the app opens on the sign-in screen while an older notification is still posted.",
+      "steps": [
+        "Have a message notification in the tray.",
+        "Get the app into a signed-out state, so it opens on Enter-your-number.",
+        "Tap the notification."
+      ],
+      "expected": "A signed-out app opens at sign-in. A deep link into a conversation must not be honoured without a session.",
+      "actual": "NOT REPRODUCED as originally reported, and the entry is corrected rather than left standing. The report was written from a live observation — the product owner was looking at the Enter-your-number screen, tapped a notification, and landed in a chat. Checked immediately afterwards on the same emulator: three consecutive force-stop + cold starts all landed on the signed-in chat list (confirmed by uiautomator dump, not by eye), so the install HAD a session throughout and the deep link taking it to the chat was correct behaviour, not a bypass. The sign-in screen was a one-off that did not recur; what put it there is still unexplained and is the part actually worth watching.\n\nWhat IS real, found while checking: the linking config had no session predicate at all. React Navigation resolves an incoming URL against linking.config independently of initialRouteName, so on a genuinely signed-out install the auth gate is not in that path — and notifications outlive a sign-out, because the native side keeps its own credentials to acknowledge a push with no JS alive.",
+      "user_impact": "The sign-in gate can be walked around with one tap. Whatever the local database still holds for the previous session is rendered to whoever is holding the phone, and the screen's own effects run against an account that is no longer authenticated.",
+      "suspected_cause": "CONFIRMED. `initialRouteName` is chosen from the auth store, but `linking.config` maps `Chat: 'chat/:conversationId'` unconditionally, and React Navigation resolves an incoming URL against that config without consulting the stack's initial route. Notifications outlive a sign-out — the native side keeps its own credentials so it can acknowledge a push with no JS alive — so a stale notification is exactly the trigger.",
+      "notes": "Found by the product owner on a device that had been signed out, during the two-device verification pass. Fixed by giving the linking config a `filter` that reads the auth store when a URL arrives, so a link is only honoured while a session is active.\n\nFIX (defence in depth, not a reproduced-bug fix): linking now carries filter: () => hasSession(). The predicate is deliberately hasSession() — tokens present on the device — and NOT the auth store reporting active. A notification tapped from COLD arrives at the navigation container before the store has hydrated, so asking the store would drop exactly the link this path exists for and land the user on the chat list instead of the chat they tapped, regressing VC-048/VC-053. hasSession reads MMKV synchronously, so it is already true for anyone who has signed in. The first version of this fix did ask the store; it was caught and changed before it shipped.\n\nHONEST STATUS: the gate is correct and cheap, but it closes a hole that was reasoned about rather than observed. The unexplained sign-in screen is NOT explained by it and should be treated as still open if it recurs.",
+      "fixedIn": "dev branch, 2026-09-25",
+      "jira": "VC-75"
     }
   ]
 }

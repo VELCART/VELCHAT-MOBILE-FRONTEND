@@ -22,34 +22,59 @@ import { LEGACY_ENCRYPTION_KEY, resolveStoreKey } from './storeKey';
 /**
  * Open the store, re-encrypting it on the way if this install is still on the legacy key.
  *
- * The order is the whole point. An install that upgraded has its store encrypted with the old
- * constant, so it MUST be opened with that constant first — opening it with the new key reads an
- * empty store, which would sign the user out and destroy the device key. `recrypt` then rewrites
- * it in place, and only once that returns does native record the key as committed. A process
- * that dies in between comes back uncommitted and simply tries again.
+ * Which key opens it is decided by ASKING THE STORE, not by a flag, and that is the whole
+ * lesson of the first version of this function. That one trusted a native "have I migrated yet"
+ * flag, and the flag can disagree with reality: if the keystore entry is regenerated — an
+ * emulator cold boot, a partial data reset, a restore — native reports "no key, never migrated",
+ * javascript opens a store that IS encrypted with the old keystore key using the LEGACY key
+ * instead, MMKV reports it as empty, and the app happily writes a fresh session over the top.
+ * That signed a test device out and took its device key with it. A flag cannot be trusted
+ * because it does not share fate with the data it describes.
+ *
+ * So: try the keystore key, and only if that store is EMPTY look at the legacy one. MMKV cannot
+ * report a wrong key — it simply reads nothing — so "empty" is exactly the signal that this is
+ * not the key the data was written with. Constructing an MMKV instance is cheap; being wrong
+ * about which key to use is not.
+ *
+ * The one case nothing can rescue is a keystore key that is lost after the data was encrypted
+ * with it: the bytes are unreadable by anyone, including us. That now costs a sign-in rather
+ * than a silent overwrite, and it is the same thing every keystore-backed app does on a restore.
  */
 function openStore(): MMKV {
+  const nativeKey = secureStoreKey();
   const plan = resolveStoreKey({
-    nativeKey: secureStoreKey(),
+    nativeKey,
     committed: secureStoreKeyCommitted(),
   });
-  if (plan.kind === 'native') {
-    return new MMKV({ id: 'velchat', encryptionKey: plan.key });
+  if (plan.kind === 'legacy') {
+    return new MMKV({ id: 'velchat', encryptionKey: LEGACY_ENCRYPTION_KEY });
   }
-  const store = new MMKV({
+
+  const sealed = new MMKV({ id: 'velchat', encryptionKey: plan.key });
+  // Anything at all means this key reads the data, whatever a flag claims.
+  if (sealed.getAllKeys().length > 0) {
+    if (plan.kind === 'migrate') commitSecureStoreKey();
+    return sealed;
+  }
+
+  const legacy = new MMKV({
     id: 'velchat',
     encryptionKey: LEGACY_ENCRYPTION_KEY,
   });
-  if (plan.kind === 'legacy') return store;
+  if (legacy.getAllKeys().length === 0) {
+    // Both empty: a fresh install. Start on the keystore key so it is never written in the clear.
+    commitSecureStoreKey();
+    return sealed;
+  }
   try {
-    store.recrypt(plan.key);
+    legacy.recrypt(plan.key);
     commitSecureStoreKey();
   } catch {
-    // Left on the legacy key, which is exactly where it already was — no worse than the build
-    // before this one, and the migration runs again next launch. Deliberately silent: anything
-    // logged here would be one bit away from describing the key (§M19).
+    // Still on the legacy key, exactly where it already was — no worse than the build before
+    // this one, and the migration runs again next launch. Deliberately silent: anything logged
+    // here would be one bit away from describing the key (§M19).
   }
-  return store;
+  return legacy;
 }
 
 export const storage = openStore();

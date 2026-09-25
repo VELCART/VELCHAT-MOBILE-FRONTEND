@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  VelChat transport security policy (VC-018, §A1/§D4). ADR: docs/adr/0009-certificate-pinning.md
+
+  This file is the WHOLE pinning mechanism on Android. The platform enforces it for every TLS
+  socket the process opens, which is why it was chosen over an OkHttp CertificatePinner: it also
+  covers the raw HttpURLConnection that `push/PushAckClient.kt` uses to send a delivery receipt
+  with no React context alive, which a CertificatePinner installed into React Native's OkHttp
+  client would never see.
+
+  ** THE PIN-SETS BELOW ARE EMPTY ON PURPOSE. NOTHING IS PINNED YET. **
+
+  An empty <pin-set> is not enforced by the platform (NetworkSecurityTrustManager returns early
+  when the set is empty), so the app behaves today exactly as it did before this file existed,
+  minus the cleartext narrowing described further down. That is the deliberate outcome: a pin can
+  only be computed from the live certificate, and a WRONG pin brands every install that carries
+  it permanently unable to reach the backend — no server-side change can rescue it, because the
+  client aborts the handshake before it ever speaks to us. A mechanism with no pins is safe; a
+  guessed pin is not recoverable.
+
+  HOW TO FILL ONE IN
+    openssl s_client -servername <host> -connect <host>:443 -showcerts </dev/null \
+      | openssl x509 -pubkey -noout \
+      | openssl pkey -pubin -outform der \
+      | openssl dgst -sha256 -binary | openssl enc -base64
+  Run it once per certificate you want to accept and paste the base64 into a <pin> below.
+
+  TWO RULES, BOTH ENFORCED BY src/infra/native/__tests__/transportSecurity.test.ts
+    1. Never ship a single pin. Ship at least two: the key in use, plus a BACKUP whose private
+       key is held offline and is not yet deployed (or the issuing CA's key). One pin plus one
+       routine certificate rotation is how an app bricks itself.
+    2. Always set `expiration` on the pin-set. Past that date the platform stops enforcing pins
+       instead of failing every connection — the only fail-open valve available, and the last
+       thing standing between a forgotten rotation and a dead install base. Pick a date you will
+       actually still be shipping updates before, e.g. 6-12 months out.
+
+  A pin shape (do NOT uncomment: the digests are placeholders, not real keys):
+    <pin-set expiration="2027-06-30">
+      <pin digest="SHA-256">BASE64_OF_THE_LIVE_LEAF_OR_INTERMEDIATE_SPKI=</pin>
+      <pin digest="SHA-256">BASE64_OF_THE_OFFLINE_BACKUP_SPKI=</pin>
+    </pin-set>
+
+  Before pinning prod, settle WHAT is being pinned. `velchat.duckdns.org` is served by Caddy with
+  Let's Encrypt, which generates a fresh key on every renewal by default — pinning that leaf
+  means a dead app roughly every 60 days. Either pin the issuing CA's SPKI, or have the backend
+  commit to a fixed key (Caddy `key_type` + a reused key) and a published backup. That decision
+  belongs to whoever owns the VM, not to this file.
+-->
+<network-security-config>
+
+  <!--
+    Default for every host that has no entry of its own: system CAs only, no cleartext.
+
+    NOTE this supersedes `android:usesCleartextTraffic` in the manifest entirely — once a
+    network security config exists, the manifest attribute is ignored on every API level this
+    app supports (minSdk 24). So the cleartext behaviour the debug builds rely on has to be
+    restated here; that is what the loopback block below is for.
+  -->
+  <base-config cleartextTrafficPermitted="false">
+    <trust-anchors>
+      <certificates src="system" />
+    </trust-anchors>
+  </base-config>
+
+  <!--
+    The local development loop, and nothing else.
+
+    `pnpm android` reaches Metro and a locally-run backend over plain http: the emulator sees the
+    host machine as 10.0.2.2, a USB device sees it as localhost via `adb reverse`. Denying
+    cleartext here would break `pnpm start` / `pnpm reverse` on the first request, which is why
+    these four are listed rather than left to the base config.
+
+    This block is NOT limited to debug builds — cleartext rules cannot live in
+    <debug-overrides>, and a per-buildType config would need a file under `src/debug/res/xml/`.
+    The exposure it leaves in a release APK is cleartext to loopback and to the emulator's host
+    alias, neither of which is reachable from a network. It is still strictly narrower than the
+    `usesCleartextTraffic=true` that debug builds carried before this file existed.
+
+    If you run Metro over a LAN address instead (a physical device without `adb reverse`), add
+    that IP here or the bundle will not load.
+  -->
+  <domain-config cleartextTrafficPermitted="true">
+    <domain includeSubdomains="false">localhost</domain>
+    <domain includeSubdomains="false">127.0.0.1</domain>
+    <!-- The Android emulator's alias for the host machine. -->
+    <domain includeSubdomains="false">10.0.2.2</domain>
+    <!-- Genymotion's equivalent. -->
+    <domain includeSubdomains="false">10.0.3.2</domain>
+  </domain-config>
+
+  <!--
+    One entry per origin any flavor can be built against, taken from .env.dev / .env.stage /
+    .env.prod. Hosts are matched EXACTLY (no includeSubdomains): a host that is missing from this
+    file is silently unpinned even once pins land elsewhere, and that is the quiet hole the test
+    exists to close. When you add or change a URL in a .env file, add it here in the same commit.
+  -->
+
+  <!-- prod (.env.prod) — Azure VM behind Caddy + Let's Encrypt; REST and WS share the origin. -->
+  <domain-config>
+    <domain includeSubdomains="false">velchat.duckdns.org</domain>
+    <!-- No <pin-set> until a real pin exists: an EMPTY one enforces nothing at runtime and
+         Android lint treats it as a fatal error in a release build, so the app could not be
+         assembled at all. Paste the pin-set from the header recipe here when the pins land. -->
+  </domain-config>
+
+  <!-- dev (.env.dev) — Render, topology axis6. WS deliberately bypasses the edge gateway. -->
+  <domain-config>
+    <domain includeSubdomains="false">velchat-edge-gateway-2aje.onrender.com</domain>
+    <!-- No <pin-set> until a real pin exists: an EMPTY one enforces nothing at runtime and
+         Android lint treats it as a fatal error in a release build, so the app could not be
+         assembled at all. Paste the pin-set from the header recipe here when the pins land. -->
+  </domain-config>
+  <domain-config>
+    <domain includeSubdomains="false">velchat-realtime-service-2aje.onrender.com</domain>
+    <!-- No <pin-set> until a real pin exists: an EMPTY one enforces nothing at runtime and
+         Android lint treats it as a fatal error in a release build, so the app could not be
+         assembled at all. Paste the pin-set from the header recipe here when the pins land. -->
+  </domain-config>
+
+  <!--
+    stage (.env.stage) — the env file marks both of these as PLACEHOLDERS, pending the ingress
+    host strategy. They are listed so the config cannot be the reason a stage build is unpinned,
+    but do not pin them until the hosts themselves are confirmed.
+  -->
+  <domain-config>
+    <domain includeSubdomains="false">velchat-api-gateway.onrender.com</domain>
+    <!-- No <pin-set> until a real pin exists: an EMPTY one enforces nothing at runtime and
+         Android lint treats it as a fatal error in a release build, so the app could not be
+         assembled at all. Paste the pin-set from the header recipe here when the pins land. -->
+  </domain-config>
+  <domain-config>
+    <domain includeSubdomains="false">velchat-realtime-gateway.onrender.com</domain>
+    <!-- No <pin-set> until a real pin exists: an EMPTY one enforces nothing at runtime and
+         Android lint treats it as a fatal error in a release build, so the app could not be
+         assembled at all. Paste the pin-set from the header recipe here when the pins land. -->
+  </domain-config>
+
+  <!--
+    Debuggable builds additionally trust user-installed CAs.
+
+    This is what makes the control TESTABLE: with a proxy CA installed you can watch a debug
+    build's traffic, and once pins are real you can prove a release build refuses the same proxy.
+    It applies only when android:debuggable is true, so no shipped APK is affected, and per the
+    platform's rules these anchors also override pins — which is the point, since a proxy
+    certificate could never match a pin.
+  -->
+  <debug-overrides>
+    <trust-anchors>
+      <certificates src="user" />
+    </trust-anchors>
+  </debug-overrides>
+
+</network-security-config>

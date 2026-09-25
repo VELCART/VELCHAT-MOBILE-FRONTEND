@@ -441,6 +441,10 @@ class SyncEngine {
       this.reconnectAttempts = 0;
       this.connect();
       this.kickOutbox();
+      // Going offline took the open chat's presence poll with it (the `else` branch below).
+      // Nothing else will put it back — the chat screen never unmounted, so the effect that
+      // starts the poll will not run again.
+      this.resumePeerPresence();
     } else if (!connected && was) {
       // Went offline — tear the socket down and pause the outbox (no hammering).
       this.setConnState('disconnected');
@@ -467,6 +471,9 @@ class SyncEngine {
       this.connect();
     }
     this.kickOutbox();
+    // Same reasoning as the socket: whatever the open chat was watching went stale (or stopped
+    // entirely) while we were away, and returning to it is exactly when the user looks at it.
+    this.resumePeerPresence();
   }
 
   /**
@@ -1673,6 +1680,48 @@ class SyncEngine {
   }
 
   /**
+   * Put the open chat's presence poll back after an interruption took it away (VC-046).
+   *
+   * Every path that releases the link tears the poll down — `onNetwork(false)` and the §M13
+   * background suspend both call `clearPeerPresenceTimer` — and that half is right: polling a
+   * link that is gone is pure battery. What was missing is the other half. The ONLY caller of
+   * `activatePresence` is the chat header's mount effect, and neither returning from the
+   * background nor returning from a tunnel remounts a screen, so the poll simply never came
+   * back: a chat held open across one interruption showed the presence it had read before the
+   * interruption for as long as the user stayed in it. Reported as "presence updates with a
+   * noticeable delay"; it was actually "presence stops updating".
+   *
+   * Keyed off `activePresencePeers`, NOT `activeConversationId`. The chat screen withdraws its
+   * active id when the app leaves the foreground and re-asserts it on return, and it registers
+   * its AppState listener after the engine's — so at the instant this runs the active id is
+   * still null and a resume keyed on it would do nothing on the one transition that needs it
+   * most. `activePresencePeers` is the registration `activatePresence` / `deactivatePresence`
+   * own, which is the honest answer to "is a presence line on screen right now": empty means
+   * nobody is watching, and then this must stay silent (§M20.3, VC-065).
+   *
+   * The leading read is as much of the fix as the timer. There is no live `presence.changed`
+   * frame to correct a stale value (the gateway fans out message/receipt/caption only), so
+   * without it the user would stare at a known-stale line for a full interval after coming
+   * back. One extra GET per resume is nothing against §R6 — unlike shortening the interval,
+   * which would pay for that latency every 20 s of every open chat, forever.
+   */
+  private resumePeerPresence(): void {
+    if (this.stopped || this.suspended || !this.online) return;
+    const me = getAccountId();
+    if (!me) return;
+    // Insertion-ordered, so the last entry is the most recently opened chat — the same one
+    // `activatePresence` would have left the single poll pointed at.
+    const watching = [...this.activePresencePeers.values()];
+    const peer = watching[watching.length - 1];
+    if (peer === undefined) return;
+    // The server's `subscribers:{u}` set expires after 300s, so an outage long enough to stop
+    // the poll is long enough to have dropped us out of it too.
+    void subscribePresence(me, [peer]).catch(() => undefined);
+    void this.refreshPeerPresence(peer);
+    this.startPeerPresencePolling(peer);
+  }
+
+  /**
    * A chat became active → resolve its DM peer (members − me), subscribe to the peer's live presence
    * (fan-out targets subscribers only), and fetch the current snapshot into the store. Returns the
    * peerId, or `null` for a group / note-to-self (no single-peer presence line). Never blocks the UI:
@@ -1767,6 +1816,8 @@ class SyncEngine {
     draining: boolean;
     outboxTimerActive: boolean;
     reconnectTimerActive: boolean;
+    /** Whether the OPEN chat's peer-presence poll is currently armed (§M20.3 ownership). */
+    peerPresencePollActive: boolean;
     activePresencePeers: number;
     typingTimers: number;
   } {
@@ -1780,6 +1831,7 @@ class SyncEngine {
       draining: this.draining,
       outboxTimerActive: this.outboxTimer !== null,
       reconnectTimerActive: this.reconnectTimer !== null,
+      peerPresencePollActive: this.peerPresenceTimer !== null,
       activePresencePeers: this.activePresencePeers.size,
       typingTimers: this.typingTimers.size,
     };
