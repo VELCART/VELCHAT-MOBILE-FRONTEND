@@ -191,6 +191,45 @@ describe('pushRuntime — a queued reply', () => {
     expect(mockMarkRead).toHaveBeenCalledWith('c1');
   });
 
+  it('transmits it on the LIVE path too, not only on the headless one', async () => {
+    // Which of the two paths runs is pure chance: if the process happens to still be alive when
+    // the user hits Reply, the event arrives through the live subscription instead of a headless
+    // wake. `sendText` then kicks the outbox — and that kick is gated on a FOREGROUND engine,
+    // while the app being backgrounded is the entire situation a notification reply exists for.
+    // So the reply sat in the queue showing "Sending…" until the user next OPENED the app, which
+    // is exactly the wait this feature removes. Observed on a device before this was fixed.
+    startPushRuntime();
+    await new Promise(r => setTimeout(r, 0));
+    mockSendText.mockClear();
+    mockFlushOutbox.mockClear();
+
+    for (const listener of [...mockListeners]) {
+      listener({ type: 'reply', conversationId: 'c1', text: 'from the tray' });
+    }
+    await new Promise(r => setTimeout(r, 0));
+
+    expect(mockSendText).toHaveBeenCalledWith('c1', 'me', 'from the tray');
+    expect(mockFlushOutbox).toHaveBeenCalledTimes(1);
+    expect(mockSendText.mock.invocationCallOrder[0] as number).toBeLessThan(
+      mockFlushOutbox.mock.invocationCallOrder[0] as number,
+    );
+  });
+
+  it('does not flush for an action that sends nothing', async () => {
+    startPushRuntime();
+    await new Promise(r => setTimeout(r, 0));
+    mockFlushOutbox.mockClear();
+
+    for (const listener of [...mockListeners]) {
+      listener({ type: 'read', conversationId: 'c1', upToSeq: 7 });
+    }
+    await new Promise(r => setTimeout(r, 0));
+
+    // A read watermark rides its own path; flushing an empty outbox on every one of them would
+    // wake the network for nothing.
+    expect(mockFlushOutbox).not.toHaveBeenCalled();
+  });
+
   it('transmits before resolving — the process may be killed the moment we return', async () => {
     mockState.queued = [{ type: 'reply', conversationId: 'c1', text: 'hi' }];
     await runQueuedPushActions();

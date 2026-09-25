@@ -124,7 +124,24 @@ internal class PushActionReceiver : BroadcastReceiver() {
    */
   private fun queueForJs(context: Context, store: PushStore, event: JSONObject) {
     store.enqueueEvent(event)
-    if (PushBridge.emitPendingEvents(context)) return
+    // A live React context is only trusted while the app is actually RESUMED.
+    //
+    // `emitPendingEvents` answers "is there a context to emit to", not "will anything act on
+    // it". A backgrounded process still has one, so this returned early, the headless service
+    // was never started, and javascript — suspended behind the app being in the background —
+    // did not drain the event. The reply sat in the native queue, its notification stuck on
+    // "Sending…", until the user next OPENED the app: precisely the wait replying from a
+    // notification exists to remove, and exactly what it looked like from the outside (nothing
+    // sent). Measured on a two-device run: the drain log never appeared until the app was
+    // brought forward.
+    //
+    // Resumed is the one state where the live path is genuinely faster AND certain, because the
+    // engine is running and its outbox is not suspended. Everywhere else, take the headless
+    // route, which owns a foreground service for the duration and flushes the outbox before it
+    // resolves. Starting it with the process already alive is fine — RN reuses the instance.
+    if (PushBridge.isAppResumed(context) && PushBridge.emitPendingEvents(context)) {
+      return
+    }
     try {
       PushHeadlessService.start(context)
     } catch (e: Throwable) {

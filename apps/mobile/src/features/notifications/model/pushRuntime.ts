@@ -89,9 +89,29 @@ const inflight = new Set<Promise<unknown>>();
 function installEventHandler(): void {
   if (unsubEvents) return;
   unsubEvents = subscribePushEvents(event => {
-    const work = handlePushEvent(event).catch(err => {
-      log.warn('push action failed', { type: event.type, reason: String(err) });
-    });
+    const work = handlePushEvent(event)
+      .then(async () => {
+        // Flush HERE too, not only on the headless path.
+        //
+        // A reply typed into a notification writes its bubble and its outbox row like any other
+        // send, and `sendText` then kicks the outbox — but that kick is gated on a foreground
+        // engine, and the app being backgrounded is the entire situation a notification reply
+        // exists for. So when the PROCESS happened to still be alive, the reply was handled by
+        // this live path, the kick returned immediately because the engine was suspended, and
+        // the message sat in the queue showing "Sending…" until the user next OPENED the app —
+        // exactly the wait replying from a notification is supposed to avoid. The headless path
+        // has always flushed; this one never did, and which of the two runs is pure chance.
+        //
+        // `flushOutboxNow` ignores the lifecycle gate on purpose and joins a drain already in
+        // progress, so on a live foreground engine this is a no-op.
+        if (event.type === 'reply') await syncEngine.flushOutboxNow();
+      })
+      .catch(err => {
+        log.warn('push action failed', {
+          type: event.type,
+          reason: String(err),
+        });
+      });
     inflight.add(work);
     void work.finally(() => inflight.delete(work));
   });
