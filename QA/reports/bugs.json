@@ -577,7 +577,7 @@
       "title": "Message plaintext and the user's own typed replies persist in plaintext SharedPreferences",
       "severity": "P1",
       "priority": "P1",
-      "status": "Open",
+      "status": "Fixed",
       "layer": "CLIENT",
       "feature": "Security / Notifications",
       "component": "android/app/src/main/java/com/velchat/push/PushStore.kt:28-31,248-273,394-400",
@@ -601,8 +601,9 @@
       "evidence": ["QA/_audit/auth-network-push-audit.md#s4"],
       "refs": ["android/app/src/main/java/com/velchat/push/PushStore.kt:28-31"],
       "regression": false,
-      "notes": "Needs an ADR or, at minimum, a scrub-on-cancel.",
-      "jira": "VC-19"
+      "notes": "Needs an ADR or, at minimum, a scrub-on-cancel.\n\nFIX: the notification store now seals its CONTENT entries at rest with the same AndroidKeyStore-wrapped key introduced for VC-016. Five entries are protected — the MessagingStyle message bodies, the pending-event queue (which holds the reply the user typed into a notification while the app was dead), the conversation and person display names, and the avatar map, because those carry URLs and on-disk paths tied to a person. Counts, seq watermarks, mute-untils, seen-seqs and the active conversation id stay plain on purpose: they are numbers and opaque ids, and sealing them would put an AES operation on the notification hot path for nothing (activeConversationId alone is read on every inbound push).\n\nThe upgrade needs no migration pass and no flag: a sealed value carries a v1: prefix, so a value without one is recognised as a legacy plaintext entry, returned as-is, and re-sealed the next time that entry is written. Sealing that fails stores the plaintext rather than dropping it — losing a queued reply is worse than storing it the way the previous build already did — and an unseal that fails returns empty, which every caller already treats as a corrupt entry rather than wedging notifications. Nothing logs a key, a blob or a fragment (M19).\n\nVerified: Kotlin compiles clean, 588/588 jest, tsc clean, eslint 0 errors. NOT yet re-verified on a device end-to-end after the seal landed, so the live notification path under sealed storage is still owed a two-device run.",
+      "jira": "VC-19",
+      "fixedIn": "dev branch, 2026-09-25"
     },
     {
       "id": "VC-018",

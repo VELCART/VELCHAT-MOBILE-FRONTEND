@@ -39,6 +39,9 @@ internal object SecureKeyStore {
   private const val KEY_SEALED = "mmkv.sealed.v1"
   private const val KEY_COMMITTED = "mmkv.committed.v1"
 
+  /** Marks a value written by {@link sealText}; its absence means a legacy plaintext entry. */
+  private const val SEALED_PREFIX = "v1:"
+
   private const val KEYSTORE = "AndroidKeyStore"
   private const val WRAP_ALIAS = "velchat.mmkv.wrap.v1"
   private const val TRANSFORM = "AES/GCM/NoPadding"
@@ -94,6 +97,47 @@ internal object SecureKeyStore {
         .apply()
   }
 
+  // ── sealing arbitrary text ─────────────────────────────────────────────────
+
+  /**
+   * Seal a string for at-rest storage, or return null if the keystore cannot (VC-017).
+   *
+   * Used for the notification store's message bodies and the user's own typed replies, which
+   * were sitting in SharedPreferences as readable JSON. The prefix is what makes the upgrade
+   * free: a value without it is a legacy plaintext one, so nothing has to be migrated up front
+   * — it is simply re-sealed the next time it is written.
+   *
+   * Null means "could not", never "empty". The caller stores the plaintext rather than losing
+   * the data, which is exactly where it already was.
+   */
+  fun sealText(context: Context, plain: String): String? =
+      try {
+        require(context.applicationContext != null)
+        SEALED_PREFIX + seal(plain.toByteArray(Charsets.UTF_8))
+      } catch (e: Throwable) {
+        Log.w(TAG, "seal failed, storing as-is: ${e.javaClass.simpleName}")
+        null
+      }
+
+  /**
+   * Unseal a value written by {@link sealText}. A value with no prefix is returned unchanged —
+   * that is a legacy plaintext entry, and refusing to read it would lose a pending reply.
+   */
+  fun unsealText(context: Context, stored: String): String {
+    if (!stored.startsWith(SEALED_PREFIX)) return stored
+    return try {
+      require(context.applicationContext != null)
+      val raw = unsealBytes(stored.removePrefix(SEALED_PREFIX))
+      String(raw, Charsets.UTF_8)
+    } catch (e: Throwable) {
+      // A key the device can no longer unwrap (app data restored onto another device, keystore
+      // reset). The entry is unreadable rather than wrong, and every caller already treats a
+      // corrupt entry as empty rather than wedging notifications forever.
+      Log.w(TAG, "unseal failed, treating as empty: ${e.javaClass.simpleName}")
+      ""
+    }
+  }
+
   // ── sealing ────────────────────────────────────────────────────────────────
 
   private fun seal(raw: ByteArray): String {
@@ -105,7 +149,10 @@ internal object SecureKeyStore {
     return Base64.encodeToString(iv + body, Base64.NO_WRAP)
   }
 
-  private fun unseal(sealed: String): String {
+  private fun unseal(sealed: String): String =
+      Base64.encodeToString(unsealBytes(sealed), Base64.NO_WRAP)
+
+  private fun unsealBytes(sealed: String): ByteArray {
     val blob = Base64.decode(sealed, Base64.NO_WRAP)
     val cipher = Cipher.getInstance(TRANSFORM)
     cipher.init(
@@ -113,8 +160,7 @@ internal object SecureKeyStore {
         wrapKey(),
         GCMParameterSpec(GCM_TAG_BITS, blob, 0, IV_BYTES),
     )
-    val raw = cipher.doFinal(blob, IV_BYTES, blob.size - IV_BYTES)
-    return Base64.encodeToString(raw, Base64.NO_WRAP)
+    return cipher.doFinal(blob, IV_BYTES, blob.size - IV_BYTES)
   }
 
   /**

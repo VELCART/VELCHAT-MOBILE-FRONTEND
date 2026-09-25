@@ -2,6 +2,7 @@ package com.velchat.push
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.velchat.securestore.SecureKeyStore
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -170,7 +171,7 @@ internal class PushStore(context: Context) {
       val all = readJson(KEY_AVATARS)
       all.put(accountId, JSONObject().put("url", url).put("file", file))
       trimOldest(all, MAX_NAMES)
-      prefs.edit().putString(KEY_AVATARS, all.toString()).apply()
+      writeRaw(KEY_AVATARS, all.toString())
     }
   }
 
@@ -243,7 +244,7 @@ internal class PushStore(context: Context) {
         if (name.isBlank()) merged.remove(id) else merged.put(id, name)
       }
       trimOldest(merged, MAX_NAMES)
-      prefs.edit().putString(key, merged.toString()).apply()
+      writeRaw(key, merged.toString())
     }
   }
 
@@ -331,7 +332,7 @@ internal class PushStore(context: Context) {
           all.remove(oldest)
         }
       }
-      prefs.edit().putString(KEY_LINES, all.toString()).apply()
+      writeRaw(KEY_LINES, all.toString())
       return toLines(ordered)
     }
   }
@@ -344,7 +345,7 @@ internal class PushStore(context: Context) {
       val all = readJson(KEY_LINES)
       if (!all.has(conversationId)) return
       all.remove(conversationId)
-      prefs.edit().putString(KEY_LINES, all.toString()).apply()
+      writeRaw(KEY_LINES, all.toString())
     }
   }
 
@@ -535,7 +536,7 @@ internal class PushStore(context: Context) {
       queue.put(event)
       val overflow = queue.length() - MAX_PENDING
       if (overflow > 0) for (i in 0 until overflow) queue.remove(0)
-      prefs.edit().putString(KEY_PENDING, queue.toString()).apply()
+      writeRaw(KEY_PENDING, queue.toString())
     }
   }
 
@@ -557,9 +558,32 @@ internal class PushStore(context: Context) {
 
   // ── internals ──────────────────────────────────────────────────────────────
 
+  /**
+   * Read one entry, unsealing it if it is one of the protected ones (VC-017).
+   *
+   * A value with no seal prefix comes back unchanged, so an install that upgrades keeps working
+   * and is simply re-sealed the next time that entry is written — no migration pass, no flag.
+   */
+  private fun readRaw(key: String, empty: String): String {
+    val stored = prefs.getString(key, null) ?: return empty
+    if (key !in PROTECTED) return stored
+    val plain = SecureKeyStore.unsealText(appContext, stored)
+    return if (plain.isEmpty()) empty else plain
+  }
+
+  /**
+   * Write one entry, sealing it if it is protected. Sealing that fails stores the plaintext:
+   * losing a queued reply is worse than storing it the way the previous build already did.
+   */
+  private fun writeRaw(key: String, value: String) {
+    val toStore =
+        if (key in PROTECTED) SecureKeyStore.sealText(appContext, value) ?: value else value
+    prefs.edit().putString(key, toStore).apply()
+  }
+
   private fun readJson(key: String): JSONObject =
       try {
-        JSONObject(prefs.getString(key, "{}") ?: "{}")
+        JSONObject(readRaw(key, "{}"))
       } catch (_: Throwable) {
         // A corrupt entry must not wedge notifications forever — start over.
         JSONObject()
@@ -567,7 +591,7 @@ internal class PushStore(context: Context) {
 
   private fun readArray(key: String): JSONArray =
       try {
-        JSONArray(prefs.getString(key, "[]") ?: "[]")
+        JSONArray(readRaw(key, "[]"))
       } catch (_: Throwable) {
         JSONArray()
       }
@@ -604,6 +628,23 @@ internal class PushStore(context: Context) {
     private const val KEY_AVATARS = "avatars.v2"
     private const val KEY_LAST_SEQ = "lastSeq"
     private const val KEY_SEEN = "seenSeqs"
+
+    /**
+     * The entries sealed at rest (VC-017).
+     *
+     * These four are the ones that hold CONTENT rather than identifiers: the notification
+     * thread's message bodies, the reply the user typed into a notification while the app was
+     * dead, and the display names mirrored so a notification can say who is writing. All of it
+     * used to sit in SharedPreferences as readable JSON, which on a rooted or backed-up device
+     * is the message history in the clear (§M19).
+     *
+     * The rest stay plain deliberately. Counts, watermarks, mute-untils, seen seqs and the
+     * active conversation id are numbers and opaque ids — sealing them would put an AES
+     * operation on the notification hot path for nothing, and `activeConversationId` in
+     * particular is read on every inbound push. `KEY_AVATARS` is in the list because it carries
+     * URLs and on-disk paths tied to a person.
+     */
+    private val PROTECTED = setOf(KEY_LINES, KEY_PENDING, KEY_NAMES, KEY_PEOPLE, KEY_AVATARS)
 
     private const val MAX_NAMES = 300
     private const val MAX_PENDING = 64
