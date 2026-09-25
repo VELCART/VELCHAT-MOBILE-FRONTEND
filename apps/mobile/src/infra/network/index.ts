@@ -9,6 +9,7 @@ export { api, refreshAccessToken, refreshSession, warmBackend } from './client';
 export {
   sendChatMessage,
   fetchMessagesAfter,
+  fetchPeerReceipts,
   normalizeSendAck,
   normalizeServerMessage,
 } from './chat';
@@ -54,6 +55,7 @@ export {
   getAccountId,
   getPhone,
   hasSession,
+  hasValidSession,
   accessTokenExpiresInMs,
   setTokens,
   clearSession,

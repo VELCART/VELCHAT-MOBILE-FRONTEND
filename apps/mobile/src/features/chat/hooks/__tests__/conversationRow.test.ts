@@ -92,3 +92,50 @@ describe('conversationTimeLabel', () => {
     expect(conversationTimeLabel(NaN, NOW)).toBe('');
   });
 });
+
+describe('VC-044 / VC-047 — the chat list shows the name YOU saved', () => {
+  const book = [
+    {
+      key: 'k1',
+      accountId: 'peer_1',
+      name: 'Aayush Sir',
+      phoneE164: '+910000000000',
+    },
+  ];
+
+  it('the exact defect: prefers the address-book name over the registered one', () => {
+    const row = toConversationRow(
+      model({ name: 'Aayush Jain', peerId: 'peer_1' }),
+      NOW,
+      book,
+    );
+    expect(row.name).toBe('Aayush Sir');
+  });
+
+  it('keeps the registered name for a peer who is not in the address book', () => {
+    const row = toConversationRow(
+      model({ name: 'Ada Lovelace', peerId: 'peer_9' }),
+      NOW,
+      book,
+    );
+    expect(row.name).toBe('Ada Lovelace');
+  });
+
+  it('leaves a group name alone — it has no peer to look up', () => {
+    const row = toConversationRow(
+      model({ type: 'group', name: 'Team Velchat', peerId: undefined }),
+      NOW,
+      book,
+    );
+    expect(row.name).toBe('Team Velchat');
+  });
+
+  it('behaves exactly as before when contacts have not loaded', () => {
+    const row = toConversationRow(
+      model({ name: 'Aayush Jain', peerId: 'peer_1' }),
+      NOW,
+      null,
+    );
+    expect(row.name).toBe('Aayush Jain');
+  });
+});

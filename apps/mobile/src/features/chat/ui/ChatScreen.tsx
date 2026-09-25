@@ -42,6 +42,12 @@ import { ChatHeader } from './chat/ChatHeader';
 import { Composer } from './chat/Composer';
 import { JumpToLatest } from './chat/JumpToLatest';
 import { MessageBubble } from './chat/MessageBubble';
+import { ChatWallpaper } from './chat/ChatWallpaper';
+import { WallpaperSheet } from './chat/WallpaperSheet';
+import { setChatWallpaper } from '../api/setChatWallpaper';
+import { useConversationIdentity } from '../hooks/useConversationIdentity';
+import { wallpaperPaint, type WallpaperId } from '../model/wallpaper';
+import { isAtBottom } from '../model/autoScroll';
 import {
   compactTime,
   dayCategory,
@@ -49,8 +55,41 @@ import {
   startsNewRun,
 } from './chat/chatModel';
 
-/** Show the FAB once scrolled this far from the newest message (inverted list: y≈0 = bottom). */
-const JUMP_THRESHOLD = 120;
+/**
+ * How near the end counts as "following", as a fraction of the visible window. FlashList pins
+ * the list to the newest message while the reader is inside this band and leaves them alone
+ * outside it — the whole follow behaviour, in one number. ~15% of the window is a little over
+ * one bubble: enough that a burst cannot outrun it, small enough that someone reading history
+ * is never yanked.
+ */
+const AUTOSCROLL_BAND = 0.15;
+
+/**
+ * The list follows the newest message BY LAYOUT, not by a scroll command.
+ *
+ * Three earlier attempts issued one: `scrollToOffset`, then `scrollToOffset` plus a frame, then
+ * `scrollToIndex` plus a 180ms retry. All three lost the same race. FlashList re-pins the
+ * viewport itself — on every data change its controller measures how far the first visible item
+ * moved and cancels the shift through an invisible ScrollAnchor, and because that is a STATE
+ * update it lands a render or two AFTER any callback we can scroll from. The newest bubble kept
+ * ending up exactly one message below the fold, intermittently, which is the worst possible
+ * shape for a bug on the app's most-used screen.
+ *
+ * `autoscrollToBottomThreshold` is the library's own answer and it is implemented (unlike
+ * `autoscrollToTopThreshold`, which is declared in FlashListProps and never read in 2.3.2). It
+ * requires the list NOT be inverted, because it pins the END of the content — so `rows` is
+ * reversed into ascending order here and `loadOlder` moves from `onEndReached` to
+ * `onStartReached`. `startRenderingFromBottom` opens the chat on the newest message, and
+ * anchoring still holds the reader's place when older history is paged in above them.
+ *
+ * Hoisted so the object identity is stable; a fresh one each render re-configures the list.
+ */
+const FOLLOW_NEWEST = {
+  startRenderingFromBottom: true,
+  autoscrollToBottomThreshold: AUTOSCROLL_BAND,
+  // A message you just sent should already BE at the bottom, not slide there afterwards.
+  animateAutoScrollToBottom: false,
+} as const;
 
 // Hoisted: an inline literal is a fresh prop identity on every render. Same value as before
 // (`spacing` is the static token the theme carries), so the rendered padding is unchanged.
@@ -79,13 +118,68 @@ function messageItemType(item: MessageRow): string {
   return item.mine ? 'mine' : 'theirs';
 }
 
+/**
+ * The screen the router mounts — and the one line that makes a conversation switch a switch.
+ *
+ * The notification deep link (`velchat://chat/:conversationId`) dispatches a NAVIGATE to `Chat`.
+ * When `Chat` is ALREADY the route on top, the stack router matches it by name, keeps its key and
+ * swaps `route.params`: the screen is reused, not remounted. Every hook below re-runs on the new
+ * id, so the thread, the header and the presence line were always right — the screen's own state
+ * was not. The composer went on holding the previous chat's words while `send` was already bound
+ * to the new peer, so one tap put a private message in front of the wrong person (VC-064); the
+ * scroll offset, the jump-to-latest flag and the newest-message id crossed over with it.
+ *
+ * A `key` is the honest way to say "this is a different conversation": React tears the old thread
+ * down and builds a new one, so there is no inventory of state to keep in step — whatever
+ * `ChatThread` grows later is covered by construction rather than by remembering to reset it. It
+ * also re-runs the open-the-chat effects, which is what this entry point wants.
+ *
+ * `getId: ({ params }) => params.conversationId` on the Chat screen remounts too, but it does so
+ * by PUSHING a second Chat route (StackRouter reuses a route only when the id matches), and
+ * native-stack keeps every route beneath the top mounted: one live thread per notification tap,
+ * each holding a DB subscription and a FlashList, on a 3 GB reference device (§R5). Worse, the
+ * one popped back to would sit on screen with NO active conversation — the effect that claims it
+ * keys on the id, not on focus, so it never re-runs (VC-062). Remounting inside the route leaves
+ * the stack exactly as it is.
+ */
 export function ChatScreen(): React.JSX.Element {
+  const route = useRoute<RouteProp<RootStackParamList, 'Chat'>>();
+  const { conversationId, name } = route.params;
+  return (
+    <ChatThread
+      key={conversationId}
+      conversationId={conversationId}
+      name={name}
+    />
+  );
+}
+
+function ChatThread({
+  conversationId,
+  name,
+}: {
+  conversationId: string;
+  name: string | undefined;
+}): React.JSX.Element {
   const t = useTheme();
   const { t: tr } = useTranslation();
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
-  const route = useRoute<RouteProp<RootStackParamList, 'Chat'>>();
-  const { conversationId, name } = route.params;
+  // The header observes this row too; one extra subscription to a single row is cheaper than
+  // threading the value down through the header's props.
+  const { wallpaper } = useConversationIdentity(conversationId);
+  const paint = wallpaperPaint(wallpaper, t.scheme);
+  const [wallpaperOpen, setWallpaperOpen] = useState(false);
+  const openWallpaper = useCallback(() => setWallpaperOpen(true), []);
+  const closeWallpaper = useCallback(() => setWallpaperOpen(false), []);
+  // Write it straight to the row; the identity subscription above re-renders the thread, so
+  // the new ground is on screen before the sheet has finished closing.
+  const pickWallpaper = useCallback(
+    (id: WallpaperId) => {
+      void setChatWallpaper(conversationId, id).catch(() => undefined);
+    },
+    [conversationId],
+  );
   const { messages, meId, loadOlder } = useMessages(conversationId);
   const send = useSendMessage(conversationId);
   const retry = useRetrySend();
@@ -106,11 +200,18 @@ export function ChatScreen(): React.JSX.Element {
   const now = useMemo(() => Date.now(), []);
 
   const listRef = useRef<FlashListRef<MessageRow>>(null);
+  // Mirrored in a ref so the common case — a scroll event that does not cross the threshold —
+  // costs no re-render.
   const showJumpRef = useRef(false);
   const [showJump, setShowJump] = useState(false);
 
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
-    const next = e.nativeEvent.contentOffset.y > JUMP_THRESHOLD;
+    const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
+    const next = !isAtBottom({
+      offsetY: contentOffset.y,
+      layoutHeight: layoutMeasurement.height,
+      contentHeight: contentSize.height,
+    });
     if (next !== showJumpRef.current) {
       showJumpRef.current = next;
       setShowJump(next);
@@ -118,7 +219,7 @@ export function ChatScreen(): React.JSX.Element {
   }, []);
 
   const jumpToLatest = useCallback(() => {
-    listRef.current?.scrollToOffset({ offset: 0, animated: true });
+    listRef.current?.scrollToEnd({ animated: true });
   }, []);
 
   const onBack = useCallback(() => navigation.goBack(), [navigation]);
@@ -141,6 +242,22 @@ export function ChatScreen(): React.JSX.Element {
       hide.remove();
     };
   }, []);
+
+  // Keep the newest message visible when the keyboard changes the viewport.
+  //
+  // FlashList's follow (`autoscrollToBottomThreshold`) arms itself from SCROLL events, and a
+  // keyboard opening produces none — it shrinks the list's height from underneath. So the newest
+  // bubble slid under the fold, nothing re-armed the flag, and every message sent afterwards was
+  // left below it. That is the "new message chhup jata hai" report in its last hiding place: the
+  // thread follows correctly with the keyboard down and stopped following the moment the user
+  // started typing, which is exactly when they are watching.
+  //
+  // Only when the reader was already at the bottom — `showJumpRef` is the live answer to that,
+  // and someone scrolled up into history must not be yanked down by their own keyboard.
+  useEffect(() => {
+    if (showJumpRef.current) return;
+    listRef.current?.scrollToEnd({ animated: false });
+  }, [kbHeight]);
 
   const onSend = useCallback(() => {
     if (!text.trim()) return;
@@ -178,7 +295,17 @@ export function ChatScreen(): React.JSX.Element {
     [messages, meId, dateLabelFor],
   );
 
+  // Ascending (oldest → newest) for the list.
+  //
+  // `messages` is the DESC window the query returns and `rows` keeps that order, because the
+  // grouping helpers above read it that way. The list needs the opposite, and reversing HERE
+  // rather than in the query is what makes the grouping safe: every flag stays attached to its
+  // own row, and the rendered order is identical to what the inverted list used to draw — the
+  // oldest at the top, the newest at the bottom.
+  const rowsAsc = useMemo(() => [...rows].reverse(), [rows]);
+
   // Depends only on stable references, so a new emission no longer re-renders every cell.
+  // The two wallpaper values are plain strings off a memoised paint, so they don't churn.
   const renderItem = useCallback(
     ({ item }: { item: MessageRow }) => (
       <MessageBubble
@@ -190,30 +317,47 @@ export function ChatScreen(): React.JSX.Element {
         firstOfRun={item.firstOfRun}
         dateLabel={item.dateLabel}
         onRetry={retry}
+        incomingTint={paint.incomingTint}
+        incomingBorder={paint.incomingBorder}
       />
     ),
-    [retry],
+    [retry, paint.incomingTint, paint.incomingBorder],
   );
 
   return (
     <Screen edges={['top']} padded={false}>
-      <ChatHeader conversationId={conversationId} name={name} onBack={onBack} />
+      <ChatHeader
+        conversationId={conversationId}
+        name={name}
+        onBack={onBack}
+        onOpenWallpaper={openWallpaper}
+      />
+      <WallpaperSheet
+        visible={wallpaperOpen}
+        current={wallpaper}
+        onClose={closeWallpaper}
+        onPick={pickWallpaper}
+      />
 
       <View style={{ flex: 1, paddingBottom: kbHeight }}>
         <View style={{ flex: 1, backgroundColor: t.colors.bgBase }}>
+          {/* Behind the list and outside it, so scrolling never repaints the wallpaper. */}
+          <ChatWallpaper id={wallpaper} />
           <FlashList
             ref={listRef}
-            data={rows}
-            inverted
+            data={rowsAsc}
             keyExtractor={m => m.id}
             renderItem={renderItem}
             getItemType={messageItemType}
             onScroll={onScroll}
             scrollEventThrottle={16}
-            // Inverted list: the "end" is the TOP, i.e. the oldest bubble on screen. Without this
-            // the history simply stopped at one window and nothing could ever load more.
-            onEndReached={loadOlder}
-            onEndReachedThreshold={0.5}
+            // See FOLLOW_NEWEST: this is the follow behaviour, and the reason the list is no
+            // longer inverted.
+            maintainVisibleContentPosition={FOLLOW_NEWEST}
+            // Oldest-first now, so the history is at the START of the content. Without this the
+            // thread simply ended at one window and nothing could ever load more.
+            onStartReached={loadOlder}
+            onStartReachedThreshold={0.5}
             contentContainerStyle={LIST_CONTENT_STYLE}
             showsVerticalScrollIndicator={false}
           />

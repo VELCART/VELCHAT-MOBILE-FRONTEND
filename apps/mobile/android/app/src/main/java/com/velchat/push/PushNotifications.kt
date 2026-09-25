@@ -56,6 +56,12 @@ internal object PushNotifications {
   const val CHANNEL_MESSAGES = "velchat.messages.v2"
   const val CHANNEL_CALLS = "velchat.calls.v2"
 
+  /**
+   * The channel for the brief foreground service that finishes an inline reply. Separate from
+   * messages so the user can silence it without silencing the thing they actually want.
+   */
+  const val CHANNEL_WORKING = "velchat.working.v1"
+
   /** Channels this app created in the past. Deleted on sight — see the note above. */
   private val LEGACY_CHANNELS = listOf("velchat.messages.v1", "velchat.calls.v1")
 
@@ -115,8 +121,44 @@ internal object PushNotifications {
       }
     }
 
+    // The channel a brief foreground service posts on while it sends a reply the user typed into
+    // a notification. MIN importance: it exists because Android requires a foreground service to
+    // be visible, not because the user needs telling — they just pressed send.
+    val working =
+        NotificationChannel(
+                CHANNEL_WORKING,
+                context.getString(R.string.push_channel_working_name),
+                NotificationManager.IMPORTANCE_MIN,
+            )
+            .apply {
+              description = context.getString(R.string.push_channel_working_desc)
+              setShowBadge(false)
+              enableVibration(false)
+              setSound(null, null)
+            }
+
     manager.createNotificationChannel(messages)
     manager.createNotificationChannel(calls)
+    manager.createNotificationChannel(working)
+  }
+
+  /**
+   * The notification a foreground service must show while it finishes a reply.
+   *
+   * Deliberately the quietest thing the platform allows: MIN importance, no sound, no badge, and
+   * gone as soon as the send completes. The user pressed send — the confirmation they want is the
+   * message appearing in the chat, not a status bar entry about it.
+   */
+  fun workingNotification(context: Context): Notification {
+    ensureChannels(context)
+    return NotificationCompat.Builder(context, CHANNEL_WORKING)
+        .setSmallIcon(R.drawable.ic_notification)
+        .setContentTitle(context.getString(R.string.push_working_title))
+        .setPriority(NotificationCompat.PRIORITY_MIN)
+        .setOngoing(true)
+        .setSilent(true)
+        .setShowWhen(false)
+        .build()
   }
 
   /**
@@ -191,11 +233,30 @@ internal object PushNotifications {
                 body,
                 System.currentTimeMillis(),
                 senderId = senderId,
+                seq = seq,
             ),
         )
+    // What the COLLAPSED row quotes, taken from the thread's newest incoming line rather than
+    // from the message that just arrived — after ordering by seq those are not always the same
+    // one, and an out-of-order push must not be able to advertise itself as the latest (VC-056).
+    // Incoming only: an inline reply can sort last, and quoting the user's own words back at
+    // them is not a notification about anything.
+    val newest = lines.lastOrNull { !it.mine }
+    val newestBody = newest?.text ?: body
+    // Guarded on `newest`, not on its sender: a stored line whose `sid` was blank reads back as
+    // null, and falling through to the ARRIVING sender there would put one person's face beside
+    // another person's words in a group.
+    val newestSenderId = if (newest != null) newest.senderId else senderId
     // Remembered so the notification can be REBUILT after an inline reply with actions that
     // still acknowledge the right message — see `showOwnReply`.
     store.setLastSeq(conversationId, seq)
+    // The HIGHEST seq seen for this chat, not the one that just arrived. The whole premise of the
+    // ordering fix above is that FCM delivers out of order, so a late push would otherwise rebuild
+    // the actions with a LOWER seq — and `immutableFlags()` carries FLAG_UPDATE_CURRENT, so the
+    // extras really are rewritten. Tapping "Mark read" would then acknowledge up to the late
+    // message and leave the newer one unread to its sender. `showOwnReply` already reads it this
+    // way when it rebuilds.
+    val ackSeq = store.lastSeq(conversationId)
 
     val id = notificationId(conversationId)
 
@@ -217,12 +278,12 @@ internal object PushNotifications {
                   // directly and show nothing at all if only the style is populated.
                   .setContentTitle(conversationName)
                   .setContentText(
-                      if (isGroup && lines.size == 1) "$senderName: $body" else body)
+                      if (isGroup && lines.size == 1) "$senderName: $body" else newestBody)
                   // The COLLAPSED row does not draw the style's per-message faces, so the photo
                   // has to be set here as well or it appears only once the user expands — which
                   // is exactly when they no longer need help recognising who wrote.
                   .apply {
-                    senderId?.let { PushAvatars.bitmap(store.personAvatarFile(it)) }?.let(
+                    newestSenderId?.let { PushAvatars.bitmap(store.personAvatarFile(it)) }?.let(
                         ::setLargeIcon)
                   }
                   .setCategory(NotificationCompat.CATEGORY_MESSAGE)
@@ -234,8 +295,8 @@ internal object PushNotifications {
                   .setGroup(GROUP_MESSAGES)
                   .setContentIntent(openConversationIntent(context, conversationId, id))
                   .setDeleteIntent(dismissIntent(context, conversationId, id))
-                  .addAction(replyAction(context, conversationId, seq, id))
-                  .addAction(markReadAction(context, conversationId, seq, id))
+                  .addAction(replyAction(context, conversationId, ackSeq, id))
+                  .addAction(markReadAction(context, conversationId, ackSeq, id))
                   .addAction(muteAction(context, conversationId, id))
           postSafely(context, id, builder.build())
         } catch (e: Throwable) {
@@ -298,7 +359,17 @@ internal object PushNotifications {
       isGroup: Boolean,
       lines: List<PushStore.Line>,
   ): NotificationCompat.MessagingStyle {
-    val me = Person.Builder().setName(context.getString(R.string.push_you)).setKey("me").build()
+    // Our own photo too, looked up by the account id native already stores for the ack credential.
+    // Once the user replies inline the thread shows both sides, and their own line was the only
+    // one with no face on it.
+    val me =
+        Person.Builder()
+            .setName(context.getString(R.string.push_you))
+            .setKey("me")
+            .apply {
+              store.accountId()?.let { id -> avatarIcon(store.personAvatarFile(id))?.let(::setIcon) }
+            }
+            .build()
     val style = NotificationCompat.MessagingStyle(me).setGroupConversation(isGroup)
     if (isGroup) style.conversationTitle = conversationName
     // Photos are decoded ONCE per person, not once per line: a thread of ten messages from the
@@ -446,7 +517,9 @@ internal object PushNotifications {
       NotificationManagerCompat.from(context).cancel(SUMMARY_ID)
       return
     }
-    val total = active
+    // The summary names MESSAGES, so it must count messages — `active` is the number of chats
+    // and using it made the collapsed notification misreport both ways (VC-054).
+    val total = store.countedMessages()
     val summary =
         NotificationCompat.Builder(context, CHANNEL_MESSAGES)
             .setSmallIcon(R.drawable.ic_notification)
@@ -456,6 +529,12 @@ internal object PushNotifications {
                 context.resources.getQuantityString(R.plurals.push_summary_text, total, total))
             .setGroup(GROUP_MESSAGES)
             .setGroupSummary(true)
+            // Dismissing the bundle has to clear our state too. Not all of Android delivers the
+            // CHILDREN's delete intents when a group is swiped away, and on a build that does
+            // not, every count and every line survived a dismissal wholesale — so the next single
+            // message re-posted a summary counting messages the user had already swept away
+            // (VC-067). Idempotent where the children's intents do arrive.
+            .setDeleteIntent(summaryDismissIntent(context))
             .setOnlyAlertOnce(true)
             .setAutoCancel(true)
             .build()
@@ -554,6 +633,18 @@ internal object PushNotifications {
           context,
           requestCode(base, ACTION_DISMISS),
           PushActionReceiver.intent(context, PushActionReceiver.ACTION_DISMISS, conversationId, 0L),
+          immutableFlags(),
+      )
+
+  /**
+   * The bundle's own dismiss. `SUMMARY_ID` as the request code base is safe: `notificationId`
+   * never returns it, so this PendingIntent can never be confused with a conversation's.
+   */
+  private fun summaryDismissIntent(context: Context): PendingIntent =
+      PendingIntent.getBroadcast(
+          context,
+          requestCode(SUMMARY_ID, ACTION_DISMISS),
+          PushActionReceiver.summaryIntent(context),
           immutableFlags(),
       )
 

@@ -61,6 +61,15 @@ export function useMessages(conversationId: string): {
     })();
   }, [conversationId, limit]);
 
+  // Opening the chat is a ONE-TIME act, so it keys on the conversation and nothing else.
+  //
+  // All of this used to share an effect with the subscription below, which also depends on
+  // `limit` — so every `loadOlder` page tore it all down and ran it again: a receipts GET and a
+  // read frame per page of scrollback, and the pair `setActiveConversationForPush(null)` →
+  // `…(conversationId)`. That bridge hop is ASYNC, so for one native round trip the native side
+  // believed NO chat was on screen, and a push landing inside that window posted a heads-up
+  // notification for the chat the user was reading — the exact thing this mechanism exists to
+  // prevent (VC-068). Ten pages of history was ten such windows.
   useEffect(() => {
     // Opening the chat = read it: clear the unread badge locally + tell the server (§F2).
     // Telling the engine this chat is ON SCREEN is what keeps that true for messages that arrive
@@ -72,29 +81,53 @@ export function useMessages(conversationId: string): {
     // still there after a notification TAP, because tapping opens the app without clearing the
     // stacked "3 new messages" counter behind it.
     clearConversationNotification(conversationId);
+    // Repair ticks the socket could not deliver. A receipt published while this device was
+    // reconnecting is gone — nothing re-derives it — so a bubble can sit on one tick long after
+    // the peer read it. Opening the chat is exactly when that is visible, and the durable answer
+    // is one cheap read away. Never throws.
+    void syncEngine.reconcilePeerReceipts(conversationId);
     // Native suppresses a push only for the chat on screen, so it has to be told which
     // one that is — and told again (null) on leaving, or this chat stays silent.
     setActiveConversationForPush(conversationId);
-    // Suppression must track what is actually VISIBLE, not merely what was last opened. A
-    // backgrounded app is showing nothing, so the id is withdrawn on leaving the foreground and
-    // re-asserted on return — otherwise a chat left open behind a locked screen swallows every
-    // notification for itself.
+    // "On screen" must mean VISIBLE, not merely "last opened", and that applies to the ENGINE
+    // as much as to the push layer. The engine reads every message that lands in its active
+    // conversation on arrival; it only ever cleared that id on UNMOUNT, and backgrounding does
+    // not unmount — so an app left sitting on a chat behind a locked screen went on marking
+    // arriving messages read, and the sender got a blue tick for a message nobody had looked at.
+    // Withdraw both on leaving the foreground, re-assert both on return.
     const appStateSub = AppState.addEventListener('change', state => {
-      setActiveConversationForPush(state === 'active' ? conversationId : null);
+      const visible = state === 'active';
+      setActiveConversationForPush(visible ? conversationId : null);
+      syncEngine.setActiveConversation(visible ? conversationId : null);
+      if (!visible) return;
+      // Coming back to a chat that is on screen is a read, and it has to be reported here:
+      // everything below runs only on mount, and a notification TAP resumes an ALREADY-MOUNTED
+      // screen, so the mount effect never re-runs on the one path that most needs it.
+      void syncEngine.markConversationRead(conversationId);
+      // Same reason the tray still held lines the user had read: AUTO_CANCEL removes the posted
+      // notification on tap but runs none of our clearing, so the stored MessagingStyle lines
+      // survived to be rebuilt into the next one.
+      clearConversationNotification(conversationId);
     });
+    return () => {
+      appStateSub.remove();
+      syncEngine.setActiveConversation(null);
+      setActiveConversationForPush(null);
+    };
+  }, [conversationId]);
+
+  // The only thing a wider window changes: re-run the query, release the narrower one. `meId` was
+  // never read by either half — it is a stable account id, and keeping it in the array only ever
+  // meant more ways to re-run all of the above.
+  useEffect(() => {
     let sub: { unsubscribe: () => void } | undefined;
     try {
       sub = observeMessages(conversationId, limit).subscribe(setMessages);
     } catch {
       setMessages([]);
     }
-    return () => {
-      appStateSub.remove();
-      sub?.unsubscribe();
-      syncEngine.setActiveConversation(null);
-      setActiveConversationForPush(null);
-    };
-  }, [conversationId, meId, limit]);
+    return () => sub?.unsubscribe();
+  }, [conversationId, limit]);
   return { messages, meId, loadOlder };
 }
 

@@ -15,6 +15,11 @@ export {
 export type { NotificationPermission } from './notifications';
 export { hapticTick, hapticSelection } from './haptics';
 export {
+  secureStoreKey,
+  secureStoreKeyCommitted,
+  commitSecureStoreKey,
+} from './secureStore';
+export {
   requestCameraPermission,
   requestMicrophonePermission,
   requestContactsPermission,
@@ -28,3 +33,19 @@ export {
 export type { DeviceContact, ContactsAccess } from './deviceContacts';
 export { getAppState, subscribeAppState } from './appState';
 export type { AppStateStatus } from './appState';
+export { endpointHost, transportSecurityGap } from './transportSecurity';
+export type {
+  DomainPinPolicy,
+  TransportSecurityGap,
+} from './transportSecurity';
+export {
+  CLIPBOARD_AUTO_CLEAR_MS,
+  clipboardClearPlan,
+  copyWithAutoClear,
+  disposeClipboardAutoClear,
+} from './clipboard';
+export { assessDeviceIntegrity, readDeviceIntegrity } from './deviceIntegrity';
+export type {
+  DeviceIntegritySignals,
+  DeviceIntegritySignal,
+} from './deviceIntegrity';

@@ -10,6 +10,7 @@ export { SignInScreen } from './ui/SignInScreen';
 export { EnterPhoneScreen } from './ui/EnterPhoneScreen';
 export { ReverseOtpScreen } from './ui/ReverseOtpScreen';
 export { useAuthStore } from './model/authStore';
+export { hasStoredSession } from './model/storedSession';
 export {
   useAuthBootstrap,
   useAccountInfo,

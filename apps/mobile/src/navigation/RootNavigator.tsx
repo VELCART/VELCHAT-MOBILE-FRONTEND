@@ -22,6 +22,7 @@ import {
   EnterPhoneScreen,
   ReverseOtpScreen,
   useAuthStore,
+  hasStoredSession,
   useSessionWatch,
 } from '../features/auth';
 import { AppTabs } from './AppTabs';
@@ -35,6 +36,24 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const linking: LinkingOptions<RootStackParamList> = {
   prefixes: ['velchat://', 'https://velchat.app'],
+  /**
+   * A deep link is only honoured while there is a session.
+   *
+   * Notifications outlive a sign-out: the native side keeps its own credentials so it can
+   * acknowledge a push with no JS alive, and a notification already in the tray survives the
+   * app's auth state changing underneath it. Without this, tapping one on a signed-out install
+   * navigated straight to `Chat` — the linking config is evaluated independently of
+   * `initialRouteName`, so the auth gate simply was not in the path. The user was left looking at
+   * a conversation from behind the sign-in screen.
+   *
+   * The predicate is `hasStoredSession()` — tokens present on the device — and NOT the auth store's
+   * `active`. A notification tapped from cold arrives at the container before the store has
+   * hydrated, so asking the store would drop exactly the link this path exists for and land the
+   * user on the chat list instead of the chat they tapped. `hasSession` reads MMKV synchronously,
+   * so it is already true at that moment for anyone who has signed in. It comes through the auth
+   * feature rather than straight from `infra` because navigation may not reach past it (§M3).
+   */
+  filter: () => hasStoredSession(),
   config: {
     screens: {
       Welcome: 'welcome',

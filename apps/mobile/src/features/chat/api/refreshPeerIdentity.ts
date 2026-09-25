@@ -18,6 +18,7 @@ import {
 } from '../../../infra';
 import { subscribeProfileChanged } from '../../../core';
 import { getProfile, getMediaUrl } from '../../user';
+import { discoveredContacts, peerDisplayName } from '../../contacts';
 
 /**
  * How long a cached name/photo is trusted. The cost of being wrong is a peer's new picture taking
@@ -50,7 +51,13 @@ export async function refreshPeerIdentity(
   const profile = await getProfile(peerId).catch(() => null);
   if (!profile) return;
   const patch: ConversationPatch = {};
-  const name = profile.displayName?.trim();
+  // The name the USER saved wins over the one the peer registered (VC-047): without this, a
+  // revalidation an hour later quietly renamed "Aayush Sir" back to "Aayush Jain".
+  const name = peerDisplayName(
+    discoveredContacts(),
+    peerId,
+    profile.displayName,
+  );
   if (name) patch.name = name;
   if (profile.avatarMediaId) {
     const media = await getMediaUrl(profile.avatarMediaId).catch(() => null);
@@ -81,7 +88,13 @@ async function refreshPeerIdentityFor(accountId: string): Promise<void> {
   const profile = await getProfile(accountId).catch(() => null);
   if (!profile) return;
   const patch: ConversationPatch = {};
-  const name = profile.displayName?.trim();
+  // Same precedence as above: a peer changing their registered name must not override the name
+  // this user has them saved under (VC-047).
+  const name = peerDisplayName(
+    discoveredContacts(),
+    accountId,
+    profile.displayName,
+  );
   if (name) patch.name = name;
   if (profile.avatarMediaId) {
     const media = await getMediaUrl(profile.avatarMediaId).catch(() => null);

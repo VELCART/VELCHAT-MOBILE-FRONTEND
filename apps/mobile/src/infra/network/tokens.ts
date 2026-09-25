@@ -113,6 +113,25 @@ export function accessTokenExpiresInMs(now: number = Date.now()): number {
   }
 }
 
+/**
+ * True when a session both EXISTS and has a currently-valid (non-expired) access token (VC-036).
+ *
+ * Deliberately separate from `hasSession()`, which stays presence-only on purpose: SyncEngine's
+ * reconnect and 4001-recovery guards (`connect()`, `onClose()`, `recoverFromUnauthorized()`) must
+ * stay true for a token that is merely expired-but-present — that is exactly the case the
+ * socket's own 4001 → refresh → reconnect self-healing exists to repair. If `hasSession()` itself
+ * went expiry-aware, those guards would bail BEFORE the handshake that triggers that repair ever
+ * runs, trading one wasted cold-start handshake for realtime stuck disconnected until a
+ * force-quit — worse than the bug this fixes.
+ *
+ * This is for the one caller that genuinely needs "is this usable right now, with no round trip
+ * to find out": the cold-start bootstrap, which must refresh BEFORE opening a socket rather than
+ * let a doomed handshake fail once (`useAuthBootstrap` in `features/auth/hooks/useAuth.ts`).
+ */
+export function hasValidSession(): boolean {
+  return hasSession() && accessTokenExpiresInMs() > 0;
+}
+
 // ── session change notification ────────────────────────────────────────────────
 /**
  * Listeners for "a session appeared / went away".
@@ -176,12 +195,23 @@ export function setTokens(t: SessionTokens): void {
   if (sessionIdentity() !== before) emitSession(true);
 }
 
+/**
+ * Wipe the token pair. Deliberately does NOT delete `KVKeys.deviceId` (VC-014): this runs both
+ * on a real sign-out AND on a forced expiry — including the rotating-refresh reuse-detected
+ * "family revoke", which is structurally reachable from a merely LOST refresh response (the
+ * client cannot tell "the server never saw it" from "it rotated and the reply never arrived"),
+ * not only a genuine compromise. The device row is entirely separate from that token family, so
+ * a device that still holds its private key can mint a fresh one immediately via
+ * `/auth/challenge` + `/auth/login/device-key` — but only if it still knows its OWN device id to
+ * put in that request. `setTokens()` always overwrites this on the next successful login/refresh
+ * regardless, so leaving it here costs nothing; a full sign-out that wants to look as if this
+ * device never had a session deletes it explicitly instead (see `authStore.signOut()`).
+ */
 export function clearSession(): void {
   const had = Boolean(kv.getString(KVKeys.accessToken));
   kv.delete(KVKeys.accessToken);
   kv.delete(KVKeys.refreshToken);
   kv.delete(KVKeys.cnfJkt);
   kv.delete(KVKeys.accountId);
-  kv.delete(KVKeys.deviceId);
   if (had) emitSession(false);
 }

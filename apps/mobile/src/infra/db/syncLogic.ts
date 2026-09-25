@@ -12,13 +12,25 @@ export type ReconcileAction = 'update' | 'skip' | 'insert';
  * Reconcile decision (§L6): a server message is dedup'd first by `client_msg_id` (our own
  * echo/ack → UPDATE the optimistic row), then by `(conversation_id, seq)` (already have it →
  * SKIP), else it is new → INSERT. Server `seq` is the ordering + identity key (never ts).
+ *
+ * The one exception to "same seq → skip" is a row we hold WITHOUT a body (VC-063). The gateway's
+ * fan-out payload carries `text` only when the message is server-readable, so a frame routinely
+ * lands as metadata alone and inserts a bodiless row; the REST copy that follows is the same
+ * (conversation, seq) and is the only source of the text there will ever be. Skipping it threw
+ * away the message and left a blank bubble permanently — and a peer's message can never take the
+ * `client_msg_id` branch instead, because there is no client id on the wire and the insert
+ * synthesises one. It stays narrow on purpose: only a MISSING body earns a write, so an ordinary
+ * duplicate is still free.
  */
 export function reconcileDecision(input: {
   hasClientMsgIdRow: boolean;
   hasSeqRow: boolean;
+  /** We hold this seq, it has no body, and the message being reconciled does. */
+  seqRowMissingBody?: boolean;
 }): ReconcileAction {
   if (input.hasClientMsgIdRow) return 'update';
-  if (input.hasSeqRow) return 'skip';
+  if (input.hasSeqRow)
+    return input.seqRowMissingBody === true ? 'update' : 'skip';
   return 'insert';
 }
 
@@ -47,19 +59,4 @@ export function backoffMs(attempt: number, opts: BackoffOptions = {}): number {
   const exp = Math.min(cap, base * 2 ** Math.max(0, attempt - 1));
   const half = exp / 2;
   return Math.round(half + rand() * half);
-}
-
-/** Max send attempts before an outbox item is surfaced as permanently failed (§L6). */
-export const MAX_SEND_ATTEMPTS = 8;
-
-/**
- * After a failed send, decide whether the item retries or is permanently failed. `attempts`
- * is the count AFTER incrementing for this failure. Permanent → the send UI surfaces a
- * manual retry (§L6 "permanent → surface retry UI").
- */
-export function nextOutboxRetry(
-  attempts: number,
-  maxAttempts: number = MAX_SEND_ATTEMPTS,
-): { state: 'queued' | 'failed' } {
-  return { state: attempts >= maxAttempts ? 'failed' : 'queued' };
 }

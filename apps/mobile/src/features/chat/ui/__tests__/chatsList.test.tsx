@@ -100,6 +100,29 @@ describe('ConversationRow', () => {
     render(withTheme(<ConversationRow {...rowProps(m)} />));
     expect(screen.getByText('99+')).toBeOnTheScreen();
   });
+
+  it('names a DM whose peer never resolved, to the eye AND to a screen reader', () => {
+    // VC-070, seen live: the row rendered as a bare em-dash next to a generic avatar, and the
+    // accessibility label fell through to the literal word 'Chat' — so the screen-reader user
+    // got even less than the sighted one, who at least had the message preview.
+    const m = fakeModel();
+    (m as unknown as { name: string | undefined }).name = undefined;
+    render(withTheme(<ConversationRow {...rowProps(m)} />));
+    expect(screen.queryByText('—')).toBeNull();
+    expect(screen.getByText('Unknown contact')).toBeOnTheScreen();
+    expect(screen.getByLabelText('Unknown contact')).toBeOnTheScreen();
+  });
+
+  it('does not call an unnamed group a contact', () => {
+    // Everything that is not a DM lands here too — a group, a channel, a broadcast — and calling
+    // any of those a "contact" would replace a missing answer with a wrong one.
+    const m = fakeModel();
+    const mutable = m as unknown as { name: string | undefined; type: string };
+    mutable.name = undefined;
+    mutable.type = 'group';
+    render(withTheme(<ConversationRow {...rowProps(m)} />));
+    expect(screen.getByText('Unnamed chat')).toBeOnTheScreen();
+  });
 });
 
 describe('ChatsList empty state', () => {

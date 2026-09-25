@@ -31,6 +31,7 @@ import {
   getAccountId,
   getDeviceId,
   getConversationMembers,
+  maxContiguousSeqForConversation,
   getPresence,
   subscribePresence,
   presenceOnline,
@@ -41,8 +42,10 @@ import {
   getNetworkStatus,
   subscribeAppState,
   isAppError,
+  AppError,
   sendChatMessage,
   fetchMessagesAfter,
+  fetchPeerReceipts,
   normalizeServerMessage,
   applyServerMessage,
   applyServerMessages,
@@ -89,11 +92,32 @@ const OUTBOX_MAX_DELAY_MS = 30_000;
  */
 const MAX_AUTH_REFRESH_ATTEMPTS = 2;
 /**
+ * Safety ceiling on how many pages `fetchOlderMessages` will step back over in ONE call while
+ * searching for the first non-deleted page (VC-027). Real deletion runs are nowhere near this
+ * wide; it exists purely so a pathological/corrupt history can't turn one scroll gesture into an
+ * unbounded request storm — it still returns `false` (today's exact behaviour) in that case
+ * rather than hang.
+ */
+const MAX_HOLE_HOPS = 200;
+/**
  * Receipts are coalesced over this window before going out. A burst of inbound messages must cost
  * ONE cumulative frame, not one per message: the gateway drops inbound frames above ~40/sec per
  * connection, silently and shared, so a chatty group could otherwise starve `read` and `sync`.
  */
 const RECEIPT_FLUSH_DELAY_MS = 250;
+/**
+ * Per-tick ceiling on receipt frames `flushReceipts` will emit (VC-025). Kept well under the
+ * gateway's ~40/sec inbound budget deliberately: receipts share that budget with everything else
+ * on the connection (outbox sends, typing), so a reassert must leave room rather than claim it
+ * all for itself.
+ */
+const MAX_RECEIPT_FRAMES_PER_FLUSH = 20;
+/**
+ * Gap between chunks of an over-budget flush — comfortably longer than the gateway's own
+ * per-second window, so consecutive chunks land in SEPARATE rate-limit windows instead of one
+ * burst split across two ticks that still lands in the same second.
+ */
+const RECEIPT_FLUSH_CHUNK_DELAY_MS = 1100;
 /**
  * Conversations backfilled concurrently on reconnect. Sequential catch-up leaves a 500-chat user
  * "syncing" for minutes; unbounded fan-out is a self-inflicted burst against the edge limiter.
@@ -169,6 +193,11 @@ class SyncEngine {
   private started = false;
   private stopped = true;
   private draining = false;
+  /**
+   * The walk currently in progress, so a caller who needs the queue actually EMPTY can wait for
+   * it instead of being told it is somebody else's problem. See `flushOutboxNow`.
+   */
+  private drainInFlight: Promise<void> | null = null;
   /** Set when the server rate-limits a send; no drain runs before it expires. */
   private outboxCooldownUntil = 0;
   /**
@@ -196,8 +225,7 @@ class SyncEngine {
    * otherwise sit in the chat list showing a raw UUID until the next cold start.
    */
   private displayNameResolver:
-    | ((accountId: string) => Promise<string | undefined>)
-    | null = null;
+    ((accountId: string) => Promise<string | undefined>) | null = null;
   /** Account ids we already tried to name — one attempt each, never a retry loop per message. */
   private readonly namedPeers = new Set<string>();
   // Ephemeral realtime (§C4/§A15) — NEVER persisted. One owned expiry timer per typing
@@ -207,6 +235,44 @@ class SyncEngine {
     ReturnType<typeof setTimeout>
   >();
   private readonly activePresencePeers = new Map<string, string>();
+  /**
+   * Bumped by every close. `activatePresence` captures it before its first await and bails if it
+   * has moved, because that means the chat it was resolving for is no longer open (VC-065).
+   * Without it the late resume registered a peer AFTER the close had deleted it — a ghost the map
+   * could never lose, which made `deactivatePresence` stop clearing timers for the whole session
+   * — and started a 20s poll for a chat nobody was looking at.
+   */
+  private presenceEpoch = 0;
+
+  /**
+   * Per conversation, the seq up to which the SERVER has been asked and has answered — so any
+   * hole below it is proven legitimate rather than merely missing.
+   *
+   * The contiguity clamp (VC-069) exists to stop a cumulative `read` covering a message this
+   * device never received. On its own it assumes every hole is fillable, and on this backend
+   * that is false in two ways: history filters `deleted:false`, so a delete-for-everyone leaves
+   * a seq that can NEVER be served again, and the seq counter is incremented before the insert
+   * with no release path, so a failed send burns one permanently. Clamping on a hole like that
+   * would freeze the watermark for the life of the install — the sender stuck on a grey tick
+   * forever, which is worse than the bug the clamp fixes.
+   *
+   * A completed catch-up is the proof: if we asked for everything after X and the server ran out,
+   * whatever is still missing below the newest is not coming. In memory on purpose — losing it
+   * on a restart costs one clamped window until the next sync, and a wrong PERSISTED floor would
+   * be the permanent lie all over again.
+   */
+  private readonly provenFloor = new Map<string, number>();
+
+  /**
+   * Which `activatePresence` call owns each conversation's entry, by epoch.
+   *
+   * The epoch alone says "something closed since I started"; it does not say whether the entry
+   * under this id is still MINE. Open a chat, back out, re-open it, and the first call's network
+   * fetch can resolve after the second call has already registered and started polling — its
+   * undo would then delete a live registration and stop the poll for a chat that is on screen,
+   * leaving the presence line frozen until the user leaves and comes back.
+   */
+  private readonly presenceOwner = new Map<string, number>();
   // One-shot crash-recovery: resets outbox rows orphaned in `sending` by a prior kill.
   // The first drain awaits it so it can't claim behind a stuck row.
   private recovery: Promise<unknown> | null = null;
@@ -350,7 +416,11 @@ class SyncEngine {
     this.gapProbedFrom.clear();
     this.loadingOlder.clear();
     this.namedPeers.clear();
+    this.presenceEpoch += 1; // an activate still in flight must not repopulate this
+    this.presenceOwner.clear();
     this.activePresencePeers.clear();
+    this.presenceOwner.clear();
+    this.provenFloor.clear();
     // Not awaited, but it must not be remembered: a resync in flight when the session ends would
     // otherwise make the NEXT session's first `resyncNow()` a no-op returning the old promise.
     this.pushResync = null;
@@ -359,6 +429,7 @@ class SyncEngine {
     this.socket = null;
     s?.close();
     this.draining = false;
+    this.drainInFlight = null;
   }
 
   // ── connectivity ─────────────────────────────────────────────────────────
@@ -370,6 +441,10 @@ class SyncEngine {
       this.reconnectAttempts = 0;
       this.connect();
       this.kickOutbox();
+      // Going offline took the open chat's presence poll with it (the `else` branch below).
+      // Nothing else will put it back — the chat screen never unmounted, so the effect that
+      // starts the poll will not run again.
+      this.resumePeerPresence();
     } else if (!connected && was) {
       // Went offline — tear the socket down and pause the outbox (no hammering).
       this.setConnState('disconnected');
@@ -396,6 +471,9 @@ class SyncEngine {
       this.connect();
     }
     this.kickOutbox();
+    // Same reasoning as the socket: whatever the open chat was watching went stale (or stopped
+    // entirely) while we were away, and returning to it is exactly when the user looks at it.
+    this.resumePeerPresence();
   }
 
   /**
@@ -428,7 +506,11 @@ class SyncEngine {
     this.activeConversationId = null;
     this.gapProbedFrom.clear();
     this.namedPeers.clear();
+    this.presenceEpoch += 1; // an activate still in flight must not repopulate this
+    this.presenceOwner.clear();
     this.activePresencePeers.clear();
+    this.presenceOwner.clear();
+    this.provenFloor.clear();
     const s = this.socket;
     this.socket = null;
     s?.close();
@@ -742,8 +824,39 @@ class SyncEngine {
    * 8-hour absence from a busy group used to restore the oldest 100 missed messages and leave the
    * newest hundreds invisible until several more reconnect cycles happened to fill them in.
    */
-  private async backfillConversation(conversationId: string): Promise<void> {
-    let cursor = await maxSeqForConversation(conversationId);
+  private async backfillConversation(
+    conversationId: string,
+    fromSeq?: number,
+  ): Promise<void> {
+    try {
+      await this.pageBackfill(conversationId, fromSeq);
+    } finally {
+      // AFTER the messages, and on every exit path.
+      //
+      // Both halves matter. After, because a watermark applies to ROWS — reconciling first put it
+      // against messages this backfill had not created yet, and it silently did nothing. And on
+      // every path, because the case that needs repairing most is a reconnect with nothing new to
+      // fetch: the peer read while we were away, so there are no new messages and the ticks are
+      // still wrong.
+      await this.reconcilePeerReceipts(conversationId);
+    }
+  }
+
+  /**
+   * The paging half of {@link backfillConversation}.
+   *
+   * `fromSeq` is what makes a HOLE repairable (VC-051). Every cursor this client has is
+   * MAX(seq), so the moment anything newer lands, a message missing below it is beneath the
+   * cursor and no `afterSeq` request can ever reach it again — which is why a dropped message
+   * stayed missing across cold starts and reconnects forever. The gap probe knows the lower
+   * edge of the hole (the `localMax` read BEFORE the new message was applied); passing it here
+   * is the difference between detecting the hole and actually asking the server for it.
+   */
+  private async pageBackfill(
+    conversationId: string,
+    fromSeq?: number,
+  ): Promise<void> {
+    let cursor = fromSeq ?? (await maxSeqForConversation(conversationId));
     for (let page = 0; page < MAX_BACKFILL_PAGES; page++) {
       if (this.stopped) return;
       const batch = await fetchMessagesAfter(
@@ -751,7 +864,11 @@ class SyncEngine {
         cursor,
         BACKFILL_PAGE,
       );
-      if (batch.length === 0) return;
+      if (batch.length === 0) {
+        // The server has nothing after `cursor`: everything up to here is accounted for.
+        this.noteProvenFloor(conversationId, cursor);
+        return;
+      }
       await applyServerMessages(batch);
       // Rows that just landed may already have been delivered/read by the peer — their receipt
       // arrived while we had nothing to apply it to. Re-apply the remembered watermark so those
@@ -763,16 +880,40 @@ class SyncEngine {
       );
       const me = getAccountId();
       const inbound = batch.filter(m => m.senderId !== me);
+      // Both watermarks below are cumulative, so neither may reach past a hole we still hold
+      // (VC-069) — and both are clamped, not just the read one.
       if (inbound.length > 0) {
         // Received while we were away — the sender is still waiting on a second grey tick.
+        const highestInbound = inbound.reduce(
+          (max, m) => (m.seq > max ? m.seq : max),
+          0,
+        );
         this.noteDelivered(
           conversationId,
-          inbound.reduce((max, m) => (m.seq > max ? m.seq : max), 0),
+          await this.honestWatermarkIfHoled(conversationId, highestInbound),
         );
+      }
+      // A page landing in the conversation ON SCREEN has been seen, exactly like the live path
+      // above (VC-026) — otherwise a reconnect backfill into an open chat climbs the unread badge
+      // on the conversation the user is actively reading, and the peer's ticks stall on grey until
+      // the user leaves and re-enters.
+      if (this.activeConversationId === conversationId) {
+        this.noteRead(
+          conversationId,
+          await this.honestWatermarkIfHoled(conversationId, highest),
+        );
+        try {
+          await clearUnread(conversationId);
+        } catch {
+          // badge cosmetics only — never fail the backfill over it
+        }
       }
       if (highest <= cursor) return; // server isn't advancing — stop rather than spin
       cursor = highest;
-      if (batch.length < BACKFILL_PAGE) return; // short page = caught up
+      if (batch.length < BACKFILL_PAGE) {
+        this.noteProvenFloor(conversationId, cursor); // short page = caught up
+        return;
+      }
     }
     log.warn('backfill hit the page cap — more history remains', {
       conversationId,
@@ -780,6 +921,38 @@ class SyncEngine {
   }
 
   // ── receipts (§F2/§C5) ───────────────────────────────────────────────────
+  /**
+   * Read the peer's DURABLE watermark from the server and apply it.
+   *
+   * Receipts arrive as live socket frames, and a frame missed is a frame lost. If the peer read a
+   * message while this device happened to be reconnecting — a network flip, a process the OS just
+   * restarted, the seconds after a push woke us — that frame went nowhere, and nothing re-derived
+   * it: the bubble kept a single tick for the rest of its life however long ago it was read.
+   * `applyPeerWatermark` could not help, because it replays a LOCAL memory of frames that did
+   * arrive.
+   *
+   * Safe to call anywhere: `fetchPeerReceipts` answers with an empty list for any failure,
+   * including a 404 from a backend that predates the route, so a tick that cannot be repaired
+   * never costs the sync that carries the messages.
+   */
+  async reconcilePeerReceipts(conversationId: string): Promise<void> {
+    if (!hasSession()) return;
+    const me = getAccountId();
+    const rows = await fetchPeerReceipts(conversationId);
+    for (const r of rows) {
+      // Our own rows are dropped server-side; this is belt and braces for a proxy that is not.
+      if (me !== undefined && r.userId === me) continue;
+      try {
+        await applyReceipt(conversationId, r.upToSeq, r.state);
+      } catch (e) {
+        log.warn('apply durable receipt failed', {
+          conversationId,
+          reason: String(e),
+        });
+      }
+    }
+  }
+
   /** Re-apply what the peer already told us, for rows that only exist now. */
   private async applyPeerWatermark(conversationId: string): Promise<void> {
     const peer = getPeerWatermark(conversationId);
@@ -817,43 +990,65 @@ class SyncEngine {
     }
   }
 
-  private scheduleReceiptFlush(): void {
+  private scheduleReceiptFlush(delayMs: number = RECEIPT_FLUSH_DELAY_MS): void {
     if (this.stopped || this.suspended || this.receiptTimer !== null) return;
     this.receiptTimer = setTimeout(() => {
       this.receiptTimer = null;
       void this.flushReceipts();
-    }, RECEIPT_FLUSH_DELAY_MS);
+    }, delayMs);
   }
 
   /**
-   * Emit the receipts still owed, one cumulative frame per state per conversation.
+   * Emit the receipts still owed, one cumulative frame per state per conversation — CHUNKED to
+   * stay under the gateway's shared inbound budget (VC-025).
    *
    * `sent` advances ONLY when the transport accepted the frame. The socket drops sends silently
    * when it isn't OPEN, so treating "we tried" as "they know" is exactly how a receipt vanishes
    * into a reconnect. Anything unsent stays dirty and is re-derived on the next flush — which the
    * reconnect path triggers, so a dropped frame costs one extra frame, never a stuck tick.
+   *
+   * A reconnect after any real gap can mark DOZENS of conversations dirty at once
+   * (`reassertReceipts`), and the old code sent every resulting frame in one synchronous tick.
+   * The gateway drops inbound frames past ~40/sec per connection, silently — so that burst
+   * self-inflicts exactly the backpressure this coalescing exists to avoid, and the client never
+   * learns which frames were dropped (a bare `socket.send()` only checks `readyState`). Capping
+   * frames per tick and rescheduling the rest, further apart than the gateway's own window,
+   * spreads a big reassert across several ticks instead of racing the rate limiter.
    */
   private flushReceipts(): void {
     if (this.stopped) return;
     const ids = takeDirty();
     if (ids.length === 0) return;
+    let sentFrames = 0;
+    let overBudget = false;
     for (const conversationId of ids) {
+      if (overBudget) {
+        markDirty(conversationId); // untouched this tick — catch it on the next chunk
+        continue;
+      }
       const desired = getDesired(conversationId);
       const frames = pendingReceiptFrames(desired, getSent(conversationId));
       if (frames.length === 0) continue;
       for (const f of frames) {
+        if (sentFrames >= MAX_RECEIPT_FRAMES_PER_FLUSH) {
+          markDirty(conversationId);
+          overBudget = true;
+          break;
+        }
         const ok = this.socket?.send(f.state, {
           conversationId,
           seq: f.upToSeq,
         });
         if (ok) {
           noteSent(conversationId, { [f.state]: f.upToSeq });
+          sentFrames += 1;
         } else {
           // Socket down or backpressured — keep it owed and retry on the next flush/reconnect.
           markDirty(conversationId);
         }
       }
     }
+    if (overBudget) this.scheduleReceiptFlush(RECEIPT_FLUSH_CHUNK_DELAY_MS);
   }
 
   /**
@@ -922,7 +1117,12 @@ class SyncEngine {
       ) {
         this.gapProbedFrom.set(m.conversationId, localMax);
         try {
-          await this.backfillConversation(m.conversationId);
+          // From `localMax`, NOT from wherever the conversation now sits. `applyServerMessage`
+          // above has just moved MAX(seq) up to the message that REVEALED the hole, so the
+          // ordinary backfill would ask `afterSeq = m.seq` — above the gap — and come back
+          // empty however many times it ran. Re-fetching the rows we already hold between
+          // `localMax` and `m.seq` is free: `applyServerMessages` dedups on (conversation, seq).
+          await this.backfillConversation(m.conversationId, localMax);
         } catch (e) {
           log.warn('gap backfill failed', {
             conversationId: m.conversationId,
@@ -935,7 +1135,10 @@ class SyncEngine {
       recordLatency('recv.apply', Date.now() - arrivedAt);
       if (m.senderId !== getAccountId()) {
         void this.nameStubConversation(m.conversationId, m.senderId);
-        this.noteDelivered(m.conversationId, m.seq);
+        // Clamped like the read below it, and for the same reason: `delivered` is cumulative
+        // too, so the frame that SKIPS ahead of what we hold would claim a second grey tick for
+        // every message it skipped (VC-069). `localMax` is already in hand from the gap check.
+        this.noteDelivered(m.conversationId, this.clampToHeld(m.seq, localMax));
       }
       // A message that lands in the conversation ON SCREEN has been seen — whoever sent it.
       //
@@ -945,7 +1148,7 @@ class SyncEngine {
       // back, where the mount-time read finally reported it. Reading a chat you are looking at is
       // true regardless of who wrote the message.
       if (this.activeConversationId === m.conversationId) {
-        this.noteRead(m.conversationId, m.seq);
+        this.noteRead(m.conversationId, this.clampToHeld(m.seq, localMax));
         try {
           await clearUnread(m.conversationId);
         } catch {
@@ -1006,29 +1209,92 @@ class SyncEngine {
    * live and already draining, the `draining` guard makes this a no-op.
    */
   async flushOutboxNow(): Promise<void> {
+    // Join a walk already in progress, then walk once more.
+    //
+    // The caller is a headless task, and Android kills it the INSTANT this resolves. `sendText`
+    // kicks a drain of its own and returns, so the old code found `draining` set and came back in
+    // milliseconds: the task completed, the foreground service stopped, and the HTTP send died in
+    // flight. The reply sat in the outbox until the app was next opened — from the user's side,
+    // indistinguishable from a reply that never sent. On a real device the service stopped 164 ms
+    // after JS began draining.
+    //
+    // The second walk is not belt-and-braces: a row written after the first walk claimed its last
+    // item would otherwise be left behind, and that row is the reply.
+    const running = this.drainInFlight;
+    if (running) await running.catch(() => undefined);
     await this.drainOutbox({ ignoreLifecycle: true });
   }
 
-  private async drainOutbox(
+  private drainOutbox(opts: { ignoreLifecycle?: boolean } = {}): Promise<void> {
+    // A walk already in progress is RETURNED, not swallowed.
+    //
+    // This used to be `if (this.draining) return`, which told the caller the queue was dealt with
+    // when in fact somebody else was halfway through it. Harmless for a fire-and-forget kick;
+    // fatal for `flushOutboxNow`, whose caller is killed the moment it resolves.
+    if (this.draining) return this.drainInFlight ?? Promise.resolve();
+    this.draining = true;
+    const run = this.walkOutbox(opts).finally(() => {
+      this.draining = false;
+      this.drainInFlight = null;
+    });
+    this.drainInFlight = run;
+    return run;
+  }
+
+  private async walkOutbox(
     opts: { ignoreLifecycle?: boolean } = {},
   ): Promise<void> {
-    if (this.draining) return;
-    this.draining = true;
     try {
       // Never claim before crash-recovery has un-stuck orphaned `sending` rows.
       if (this.recovery) await this.recovery;
       for (;;) {
+        // Why a walk STOPPED, on the one path where a stop is a bug.
+        //
+        // A wake window has no second chance, and every exit below looks identical from outside:
+        // the walk returns, the task completes, the process dies, and the message leaves when the
+        // app is next opened. The device log said only "flushed" — true, and useless. It now says
+        // which of these it was. Only for `ignoreLifecycle`, i.e. the headless flush, so the app's
+        // ordinary drains stay silent.
+        const stop = (reason: string): void => {
+          if (opts.ignoreLifecycle) log.info('outbox walk stopped', { reason });
+        };
         // `hasSession()` is checked either way: without tokens there is nothing to send, and no
         // caller may bypass that.
-        if (!hasSession()) break;
+        if (!hasSession()) {
+          stop('no session');
+          break;
+        }
         if (!opts.ignoreLifecycle && (this.stopped || !this.online)) break;
         // Rate limited a moment ago — walking the queue now just re-earns the 429 and burns an
         // attempt on every message behind it.
-        if (Date.now() < this.outboxCooldownUntil) break;
+        if (Date.now() < this.outboxCooldownUntil) {
+          stop('cooldown');
+          break;
+        }
         const item = await claimNextDue(Date.now());
-        if (!item) break;
+        if (!item) {
+          stop('nothing claimable');
+          break;
+        }
+        if (opts.ignoreLifecycle) {
+          log.info('outbox walk claimed a row', {
+            clientMsgId: item.clientMsgId,
+          });
+        }
         try {
           const ack = await sendChatMessage(item.input);
+          // A 2xx with no usable seq (`normalizeSendAck` defaults a missing/NaN one to 0) is a
+          // server-side anomaly, not a successful send (VC-022): `seq > 0` filters elsewhere (the
+          // cursor, `applyReceipt`) would make this row invisible forever — un-tickable, and the
+          // WS echo for the same message could never collapse into it either, leaving a permanent
+          // phantom duplicate. Route it through the SAME retry path as any other send failure
+          // instead of writing a state the rest of the system can never recover.
+          if (!(ack.seq > 0)) {
+            throw new AppError(
+              'server',
+              'Send acknowledged with no usable seq',
+            );
+          }
           await markMessageSent(item.clientMsgId, ack);
           await markAckd(item.id);
           // The peer may have acknowledged this message BEFORE our own ack came back — the
@@ -1057,6 +1323,9 @@ class SyncEngine {
         }
       }
     } finally {
+      // Cleared HERE, before the next drain is scheduled, and again by `drainOutbox` when this
+      // promise settles. Both matter: `scheduleOutbox` reads the queue and arms the timer that
+      // continues a backlog, and it must not do that while the flag still says a walk is running.
       this.draining = false;
       void this.scheduleOutbox();
     }
@@ -1144,14 +1413,25 @@ class SyncEngine {
     conversationId: string,
     page: number,
   ): Promise<boolean> {
-    const oldest = await minSeqForConversation(conversationId);
-    if (oldest <= 1) return false; // seq 1 is the first message ever — nothing precedes it
-    const from = Math.max(0, oldest - 1 - page);
-    const older = await fetchMessagesAfter(conversationId, from, page);
-    const fresh = older.filter(m => m.seq < oldest);
-    if (fresh.length === 0) return false;
-    await applyServerMessages(fresh);
-    return true;
+    // The backend's history filters `deleted:false`, so a contiguous deleted run WIDER than one
+    // page comes back completely empty — that means "nothing non-deleted in this window", not
+    // "nothing older exists". Treating it as end-of-history stranded the UI permanently: the
+    // window never grows, so there is no further "scrolled past the oldest bubble" event left to
+    // retry with (VC-027). Step back over the hole instead, page by page, until a page actually
+    // has something in it or we truly reach the start of the conversation.
+    let oldest = await minSeqForConversation(conversationId);
+    for (let hop = 0; hop < MAX_HOLE_HOPS; hop++) {
+      if (oldest <= 1) return false; // seq 1 is the first message ever — nothing precedes it
+      const from = Math.max(0, oldest - 1 - page);
+      const older = await fetchMessagesAfter(conversationId, from, page);
+      const fresh = older.filter(m => m.seq < oldest);
+      if (fresh.length > 0) {
+        await applyServerMessages(fresh);
+        return true;
+      }
+      oldest = from + 1; // this whole window was a hole — the next hop starts just before it
+    }
+    return false;
   }
 
   /**
@@ -1159,10 +1439,65 @@ class SyncEngine {
    * read up to the latest seq we hold (§F2/§5). Best-effort: the read frame only goes out
    * when the socket is up; the local badge clears regardless (offline-first).
    */
+  /**
+   * A cumulative watermark for an arriving frame, held back to what this device actually has.
+   *
+   * The frame that skips ahead of `localMax` is the one that OPENS a hole, and acknowledging its
+   * own seq would claim every message it skipped (VC-069). `localMax` is read before the message
+   * is applied, so this costs nothing on the inbound hot path — no DB scan. `localMax === 0` is
+   * a conversation we hold nothing for, where the skipped range is unloaded history, not a hole.
+   */
+  private clampToHeld(incomingSeq: number, localMax: number): number {
+    if (localMax === 0 || incomingSeq <= localMax + 1) return incomingSeq;
+    return localMax;
+  }
+
+  /** Remember that the server has been asked up to `seq` and had nothing more to give. */
+  private noteProvenFloor(conversationId: string, seq: number): void {
+    if (seq <= 0) return;
+    const previous = this.provenFloor.get(conversationId) ?? 0;
+    if (seq > previous) this.provenFloor.set(conversationId, seq);
+  }
+
+  /**
+   * The highest seq this device may honestly acknowledge (VC-069).
+   *
+   * The contiguous max, lifted past any hole a completed catch-up has already proven the server
+   * cannot fill, and never above what we actually hold.
+   */
+  private async honestWatermark(conversationId: string): Promise<number> {
+    const [contiguous, max] = await Promise.all([
+      maxContiguousSeqForConversation(conversationId),
+      maxSeqForConversation(conversationId),
+    ]);
+    const proven = this.provenFloor.get(conversationId) ?? 0;
+    return Math.min(max, Math.max(contiguous, proven));
+  }
+
+  /**
+   * The same rule, but skipped entirely for a conversation no hole has ever been detected in.
+   *
+   * `maxContiguousSeqForConversation` materialises up to 500 rows, and the backfill calls this
+   * once PER PAGE, inside a loop that runs for several conversations at a time on reconnect —
+   * on the 3 GB reference device (§R5) that is real work to spend on a question whose answer is
+   * almost always "nothing is missing". A conversation the gap probe has never fired for has no
+   * known hole, so `candidate` is already honest.
+   */
+  private async honestWatermarkIfHoled(
+    conversationId: string,
+    candidate: number,
+  ): Promise<number> {
+    if (!this.gapProbedFrom.has(conversationId)) return candidate;
+    return Math.min(candidate, await this.honestWatermark(conversationId));
+  }
+
   async markConversationRead(conversationId: string): Promise<void> {
     await clearUnread(conversationId);
     try {
-      const seq = await maxSeqForConversation(conversationId);
+      // The CONTIGUOUS max, not the plain one. A `read` frame is cumulative — it covers every
+      // message at or below its seq — so sending the local maximum across a hole told the
+      // sender their message had been read when this device never received it (VC-069).
+      const seq = await this.honestWatermark(conversationId);
       // Record it even with the socket down: the ledger is durable, so opening a chat offline
       // still turns the sender's ticks blue as soon as we reconnect.
       if (seq > 0) this.noteRead(conversationId, seq);
@@ -1201,16 +1536,16 @@ class SyncEngine {
       typeof d.conversationId === 'string'
         ? d.conversationId
         : typeof d.conversation_id === 'string'
-        ? d.conversation_id
-        : undefined;
+          ? d.conversation_id
+          : undefined;
     const userId =
       typeof d.userId === 'string'
         ? d.userId
         : typeof d.user_id === 'string'
-        ? d.user_id
-        : typeof d.account_id === 'string'
-        ? d.account_id
-        : undefined;
+          ? d.user_id
+          : typeof d.account_id === 'string'
+            ? d.account_id
+            : undefined;
     if (conversationId === undefined || userId === undefined) return;
     if (state === 'stop') {
       this.clearTyping(conversationId);
@@ -1345,6 +1680,48 @@ class SyncEngine {
   }
 
   /**
+   * Put the open chat's presence poll back after an interruption took it away (VC-046).
+   *
+   * Every path that releases the link tears the poll down — `onNetwork(false)` and the §M13
+   * background suspend both call `clearPeerPresenceTimer` — and that half is right: polling a
+   * link that is gone is pure battery. What was missing is the other half. The ONLY caller of
+   * `activatePresence` is the chat header's mount effect, and neither returning from the
+   * background nor returning from a tunnel remounts a screen, so the poll simply never came
+   * back: a chat held open across one interruption showed the presence it had read before the
+   * interruption for as long as the user stayed in it. Reported as "presence updates with a
+   * noticeable delay"; it was actually "presence stops updating".
+   *
+   * Keyed off `activePresencePeers`, NOT `activeConversationId`. The chat screen withdraws its
+   * active id when the app leaves the foreground and re-asserts it on return, and it registers
+   * its AppState listener after the engine's — so at the instant this runs the active id is
+   * still null and a resume keyed on it would do nothing on the one transition that needs it
+   * most. `activePresencePeers` is the registration `activatePresence` / `deactivatePresence`
+   * own, which is the honest answer to "is a presence line on screen right now": empty means
+   * nobody is watching, and then this must stay silent (§M20.3, VC-065).
+   *
+   * The leading read is as much of the fix as the timer. There is no live `presence.changed`
+   * frame to correct a stale value (the gateway fans out message/receipt/caption only), so
+   * without it the user would stare at a known-stale line for a full interval after coming
+   * back. One extra GET per resume is nothing against §R6 — unlike shortening the interval,
+   * which would pay for that latency every 20 s of every open chat, forever.
+   */
+  private resumePeerPresence(): void {
+    if (this.stopped || this.suspended || !this.online) return;
+    const me = getAccountId();
+    if (!me) return;
+    // Insertion-ordered, so the last entry is the most recently opened chat — the same one
+    // `activatePresence` would have left the single poll pointed at.
+    const watching = [...this.activePresencePeers.values()];
+    const peer = watching[watching.length - 1];
+    if (peer === undefined) return;
+    // The server's `subscribers:{u}` set expires after 300s, so an outage long enough to stop
+    // the poll is long enough to have dropped us out of it too.
+    void subscribePresence(me, [peer]).catch(() => undefined);
+    void this.refreshPeerPresence(peer);
+    this.startPeerPresencePolling(peer);
+  }
+
+  /**
    * A chat became active → resolve its DM peer (members − me), subscribe to the peer's live presence
    * (fan-out targets subscribers only), and fetch the current snapshot into the store. Returns the
    * peerId, or `null` for a group / note-to-self (no single-peer presence line). Never blocks the UI:
@@ -1353,30 +1730,51 @@ class SyncEngine {
   async activatePresence(conversationId: string): Promise<string | null> {
     const me = getAccountId();
     if (!me) return null;
+    const epoch = this.presenceEpoch;
     let peerId: string | null = null;
     // The inbox sync already resolved this DM's peer onto the row, so opening a chat should not
     // pay a members round-trip to learn something we stored. Falling back to the network only
     // covers a conversation that arrived before that field existed (or a group).
     const stored = await peerIdFor(conversationId).catch(() => undefined);
+    // The chat closed while we were reading the row. Returning HERE is what stops the ghost:
+    // anything past this point writes to `activePresencePeers`.
+    if (epoch !== this.presenceEpoch) return null;
     if (stored) {
       peerId = stored;
     } else {
       try {
         const members = await getConversationMembers(conversationId);
         const others = members.filter(m => m !== me);
-        peerId = others.length === 1 ? others[0] ?? null : null;
+        peerId = others.length === 1 ? (others[0] ?? null) : null;
       } catch (e) {
         log.warn('presence members resolve failed', { reason: String(e) });
         return null;
       }
+      if (epoch !== this.presenceEpoch) return null;
     }
     if (peerId === null) return null;
     this.activePresencePeers.set(conversationId, peerId);
+    this.presenceOwner.set(conversationId, epoch);
     const peer = peerId;
     void subscribePresence(me, [peer]).catch((e: unknown) => {
       log.warn('presence subscribe failed', { reason: String(e) });
     });
     await this.refreshPeerPresence(peer);
+    // Checked AGAIN, because that fetch is a network round trip and the user can close the chat
+    // inside it. Starting the poll here is what left an invisible interval waking the JS thread
+    // every 20s for a chat that is gone — all night, when push is unavailable and the suspend
+    // never runs (§M13). Undo the registration too: this call no longer owns anything.
+    if (epoch !== this.presenceEpoch) {
+      // Undo only what is still OURS. A newer activate for the same chat may have registered
+      // while this one was awaiting, and tearing down its live registration would stop the poll
+      // for a conversation the user is looking at.
+      if (this.presenceOwner.get(conversationId) === epoch) {
+        this.presenceOwner.delete(conversationId);
+        this.activePresencePeers.delete(conversationId);
+        if (this.activePresencePeers.size === 0) this.clearPeerPresenceTimer();
+      }
+      return null;
+    }
     // The snapshot alone is a single point-in-time reading and there is no live presence frame
     // to correct it, so keep re-reading it while this chat is on screen.
     this.startPeerPresencePolling(peer);
@@ -1385,6 +1783,10 @@ class SyncEngine {
 
   /** A chat closed → stop tracking its peer (the last-known snapshot may stay in the store). */
   deactivatePresence(conversationId: string): void {
+    // Before the delete, so an activate still awaiting sees the move and bails instead of
+    // re-registering the peer we are about to forget.
+    this.presenceEpoch += 1;
+    this.presenceOwner.delete(conversationId);
     this.activePresencePeers.delete(conversationId);
     // §M7: the poll belongs to the open chat — it must not outlive it.
     if (this.activePresencePeers.size === 0) this.clearPeerPresenceTimer();
@@ -1414,6 +1816,8 @@ class SyncEngine {
     draining: boolean;
     outboxTimerActive: boolean;
     reconnectTimerActive: boolean;
+    /** Whether the OPEN chat's peer-presence poll is currently armed (§M20.3 ownership). */
+    peerPresencePollActive: boolean;
     activePresencePeers: number;
     typingTimers: number;
   } {
@@ -1427,6 +1831,7 @@ class SyncEngine {
       draining: this.draining,
       outboxTimerActive: this.outboxTimer !== null,
       reconnectTimerActive: this.reconnectTimer !== null,
+      peerPresencePollActive: this.peerPresenceTimer !== null,
       activePresencePeers: this.activePresencePeers.size,
       typingTimers: this.typingTimers.size,
     };

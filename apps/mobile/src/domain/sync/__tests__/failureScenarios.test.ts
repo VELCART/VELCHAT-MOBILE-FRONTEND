@@ -99,8 +99,63 @@ jest.mock('../../../infra/network/chat', () => {
       >,
     sendChatMessage: (input: SendMessageInput): Promise<SendAck> =>
       mockSendChat(input) as Promise<SendAck>,
+    fetchPeerReceipts: (conversationId: string): Promise<unknown[]> =>
+      Promise.resolve(mockServerReceipts.get(conversationId) ?? []),
   };
 });
+
+/**
+ * The presence REST surface. Faked for the same reason the chat calls are: `activatePresence`
+ * and the poll behind it are pure network, and the whole point of these cases is to count what
+ * the engine ASKS the server, not what a server would answer.
+ */
+const mockGetPresence: jest.Mock = jest.fn(() =>
+  Promise.resolve({ status: 'online', lastSeen: null }),
+);
+const mockSubscribePresence: jest.Mock = jest.fn(() => Promise.resolve());
+
+jest.mock('../../../infra/network/presence', () => {
+  const actual: Record<string, unknown> = jest.requireActual(
+    '../../../infra/network/presence',
+  );
+  return {
+    ...actual,
+    getPresence: (...a: unknown[]) => mockGetPresence(...a) as unknown,
+    subscribePresence: (...a: unknown[]) =>
+      mockSubscribePresence(...a) as unknown,
+    // Our OWN presence is not what these cases are about; stubbed so the engine's keepalive
+    // never reaches a real axios adapter and fills the run with connection failures.
+    presenceOnline: () => Promise.resolve(),
+    presenceOffline: () => Promise.resolve(),
+    presenceHeartbeat: () => Promise.resolve(),
+  };
+});
+
+/**
+ * What the DURABLE receipt store holds, per conversation — the answer a client gets when it asks
+ * the server instead of waiting for a socket frame that may never come.
+ */
+const mockServerReceipts = new Map<
+  string,
+  { userId: string; state: 'delivered' | 'read'; upToSeq: number }[]
+>();
+
+/**
+ * The app's foreground/background seam. Faked rather than reached through `react-native`,
+ * because §M3 forbids the domain layer — tests included — from importing it: `subscribeAppState`
+ * is the typed wrapper the engine consumes, so this is the honest seam anyway.
+ */
+const mockAppStateListeners = new Set<(s: string) => void>();
+
+jest.mock('../../../infra/native/appState', () => ({
+  getAppState: () => 'active',
+  subscribeAppState: (cb: (s: string) => void): (() => void) => {
+    mockAppStateListeners.add(cb);
+    return () => {
+      mockAppStateListeners.delete(cb);
+    };
+  },
+}));
 
 interface NetSnapshot {
   isConnected: boolean;
@@ -136,7 +191,7 @@ import {
   upsertConversation,
 } from '../../../infra/db/queries';
 import { applyServerMessages } from '../../../infra/db/messages';
-import { clearAllReceipts } from '../../../infra/db/receiptStore';
+import { clearAllReceipts, noteDesired } from '../../../infra/db/receiptStore';
 import { kv, KVKeys } from '../../../infra/kv';
 import { AppError } from '../../../infra/network/errors';
 
@@ -184,6 +239,11 @@ function setNetwork(connected: boolean): void {
   for (const listener of [...mockNet.listeners]) {
     listener({ isConnected: connected, type: 'wifi', details: null });
   }
+}
+
+/** Drive the app's foreground/background transitions the way the OS would. */
+function setAppState(state: 'active' | 'background'): void {
+  for (const listener of [...mockAppStateListeners]) listener(state);
 }
 
 function latestSocket(): MockSocket {
@@ -259,6 +319,9 @@ beforeEach(async () => {
       Promise.resolve(serveAfter(conversationId, afterSeq, limit)),
   );
   mockSendChat.mockReset();
+  // `mockClear`, not `mockReset`: these two keep their default answers for every case.
+  mockGetPresence.mockClear();
+  mockSubscribePresence.mockClear();
   mockNet.connected = true;
   mockNet.listeners.clear();
 
@@ -786,6 +849,33 @@ describe('a send the server refuses', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]?.state).toBe('sending');
   });
+
+  // VC-022: a 2xx SendAck with no usable seq (missing/NaN, normalizeSendAck defaults to 0) used
+  // to be treated as a full success — the row flipped to `sent` with seq 0. The `seq > 0` filters
+  // elsewhere (the cursor, applyReceipt) then made that row invisible forever: it could never be
+  // ticked again, and the WS echo for the same message could never collapse into it either,
+  // leaving a permanent phantom duplicate. It must be treated exactly like any other send the
+  // engine cannot trust — retryable, clock icon, never silently "succeeded".
+  it('treats a SendAck with no usable seq as a retryable failure, not a silent success', async () => {
+    mockSendChat.mockImplementation(() =>
+      Promise.resolve({ messageId: 'srv_no_seq', seq: 0, serverTs: T0 }),
+    );
+    await bootConnected();
+
+    await syncEngine.sendText(conv, ME, 'ack with no seq');
+    await until(
+      () => mockSendChat.mock.calls.length >= 1,
+      'the first transmit attempt',
+    );
+    await settle();
+
+    const rows = await messagesOf(conv);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.state).not.toBe('sent');
+    // The row is never ticked from an unusable ack — its seq stays whatever it was before the
+    // attempt (unset), never a false positive value.
+    expect((rows[0]?.seq ?? 0) > 0).toBe(false);
+  });
 });
 
 // ── 7. unread counts ─────────────────────────────────────────────────────────
@@ -913,6 +1003,68 @@ describe('read receipts', () => {
     expect(rows.map(r => r.state)).toEqual(['read', 'read', 'read', 'sent']);
   });
 
+  it('flushOutboxNow waits for a send already in flight', async () => {
+    // The reply-from-a-notification bug, reduced to one assertion.
+    //
+    // A headless task is killed the INSTANT its promise resolves. `sendText` kicks a drain of its
+    // own and returns, so `flushOutboxNow` saw `draining` and returned immediately: the task
+    // completed, the foreground service stopped, and the HTTP send died in flight. The reply then
+    // sat in the outbox until the app was next opened — from the user's side, indistinguishable
+    // from a reply that never sent. Measured on a real device: the service stopped 164 ms after
+    // JS began draining.
+    let release: (() => void) | undefined;
+    mockSendChat.mockImplementationOnce(
+      (input: SendMessageInput) =>
+        new Promise(resolve => {
+          release = () =>
+            resolve({
+              messageId: 'srv_slow',
+              seq: 1,
+              clientMsgId: input.clientMsgId,
+            });
+        }),
+    );
+
+    await bootConnected();
+    // Starts the drain that used to make the flush a no-op.
+    await syncEngine.sendText(conv, ME, 'slow one');
+
+    let flushed = false;
+    const flush = syncEngine.flushOutboxNow().then(() => {
+      flushed = true;
+    });
+    await new Promise(r => setTimeout(r, 50));
+    expect(flushed).toBe(false); // the send is still in flight
+
+    release?.();
+    await flush;
+    expect(flushed).toBe(true);
+  });
+
+  it('repairs a tick from the durable store when the socket frame never arrived', async () => {
+    // The gap this closes. Receipts travel as live socket frames, and a frame missed is a frame
+    // lost: if the peer reads while this device is reconnecting, nothing ever re-derives it and
+    // the bubble keeps ONE tick however long ago it was really read. The server has held the
+    // answer all along (the receipts store, §B4.4) and nothing ever asked it.
+    serverHistory.set(
+      conv,
+      [1, 2, 3].map(seq => serverMsg(conv, seq, { senderId: ME })),
+    );
+    // No onReceipt is ever fired for this conversation — that is the point.
+    mockServerReceipts.set(conv, [
+      { userId: 'peer', state: 'read', upToSeq: 2 },
+    ]);
+
+    await bootConnected();
+
+    await until(
+      async () => (await rowsBySeq(conv))[1]?.state === 'read',
+      'the durable read watermark to repair the ticks',
+    );
+    const rows = await rowsBySeq(conv);
+    expect(rows.map(r => r.state)).toEqual(['read', 'read', 'sent']);
+  });
+
   it('never regress when a stale watermark arrives after a newer one', async () => {
     serverHistory.set(
       conv,
@@ -967,6 +1119,42 @@ describe('read receipts', () => {
     await until(
       async () => (await rowsBySeq(conv)).every(r => r.state === 'read'),
       'the remembered watermark to be re-applied',
+    );
+  });
+});
+
+// ── 8b. receipt reassertion on reconnect must respect the gateway's inbound budget (VC-025) ──
+
+describe('receipt reassertion after a reconnect with many owed conversations', () => {
+  const COUNT = 60; // well past the gateway's ~40/sec inbound budget (ws-fabric.ts)
+
+  beforeEach(() => {
+    for (let i = 0; i < COUNT; i++) {
+      noteDesired(`owed_${i}`, { read: 5 });
+    }
+  });
+
+  function receiptFramesSent(socket: MockSocket): number {
+    return socket.sent.filter(f => f.type === 'read' || f.type === 'delivered')
+      .length;
+  }
+
+  it('does not dump every owed receipt in one unchunked burst', async () => {
+    const socket = await bootConnected();
+
+    // The FIRST synchronous flush (onConnected -> reassertReceipts -> flushReceipts) must stay
+    // within budget — the exact defect was one frame per owed conversation in a single tick.
+    expect(receiptFramesSent(socket)).toBeLessThan(COUNT);
+    expect(receiptFramesSent(socket)).toBeGreaterThan(0);
+  });
+
+  it('eventually sends every owed receipt across later chunks — nothing is silently dropped', async () => {
+    const socket = await bootConnected();
+
+    await until(
+      () => receiptFramesSent(socket) === COUNT,
+      'every owed conversation to be reasserted, across as many chunks as it takes',
+      10_000,
     );
   });
 });
@@ -1035,5 +1223,588 @@ describe('loading older history', () => {
     const seqs = rows.map(r => r.seq ?? 0);
     expect(new Set(seqs).size).toBe(seqs.length);
     expect(seqs).toEqual([...seqs].sort((x, y) => x - y));
+  });
+});
+
+// ── 9b. a deletion hole wider than one page must not dead-end pagination (VC-027) ────
+
+describe('loading older history across a wide deletion hole', () => {
+  const conv = 'hole_conv';
+  const PAGE = 50;
+
+  beforeEach(async () => {
+    await upsertConversation(conv, { type: 'dm', name: 'Peer' });
+    // seq 1..20 and 91..120 exist; 21..90 (70 messages — wider than one page) are deleted, so
+    // the server never returns them at all (exactly like chat.repository.ts's deleted:false
+    // filter — the mock just omits them from serverHistory rather than modelling a flag).
+    const present = [
+      ...Array.from({ length: 20 }, (_, i) => serverMsg(conv, i + 1)),
+      ...Array.from({ length: 30 }, (_, i) => serverMsg(conv, i + 91)),
+    ];
+    serverHistory.set(conv, present);
+  });
+
+  it('steps over the hole instead of reporting end-of-history', async () => {
+    await applyServerMessages(
+      (serverHistory.get(conv) ?? []).filter(m => m.seq >= 91),
+    );
+    expect(await messagesOf(conv)).toHaveLength(30); // holds 91..120
+
+    // ONE call must reach past the 70-wide hole — the UI has no way to trigger a second
+    // attempt when the window did not grow (§useMessages.ts: no new "scrolled past the
+    // oldest bubble" event without new rows).
+    const grew = await syncEngine.loadOlderMessages(conv, PAGE);
+
+    expect(grew).toBe(true);
+    const rows = await rowsBySeq(conv);
+    expect(rows.map(r => r.seq)).toEqual([
+      ...Array.from({ length: 20 }, (_, i) => i + 1),
+      ...Array.from({ length: 30 }, (_, i) => i + 91),
+    ]);
+  });
+
+  it('still reports genuine end-of-history once nothing precedes what remains', async () => {
+    await applyServerMessages(serverHistory.get(conv) ?? []); // everything reachable is held
+    expect(await syncEngine.loadOlderMessages(conv, PAGE)).toBe(false);
+  });
+});
+
+// ── 10. concurrent applyServerMessages on the same conversation (VC-020) ─────
+//
+// `applyServerMessages` reads `existingByClient`/`existingBySeq`/`existingConvs` OUTSIDE
+// `db.write` (a deliberate perf fix — seeing the comment above that Promise.all in messages.ts).
+// WatermelonDB serializes `db.write` calls against each other, but NOT the reads before them, so
+// two legitimately different callers for the SAME conversation — `resyncAll`'s page walk and an
+// inbound gap-probe's `backfillConversation`, say — can each read "nothing exists yet" and both
+// decide to INSERT the same logical message.
+
+describe('overlapping applyServerMessages for one conversation', () => {
+  const conv = 'race_batch_conv';
+
+  beforeEach(async () => {
+    await upsertConversation(conv, { type: 'dm', name: 'Peer' });
+  });
+
+  it('does not duplicate a batch when two callers race to apply the same window', async () => {
+    const batch = [serverMsg(conv, 1), serverMsg(conv, 2), serverMsg(conv, 3)];
+
+    await Promise.all([applyServerMessages(batch), applyServerMessages(batch)]);
+
+    const rows = await rowsBySeq(conv);
+    expect(rows.map(r => r.seq)).toEqual([1, 2, 3]);
+  });
+
+  it('does not drop the second caller’s extra messages when both also race to create the same new-conversation stub', async () => {
+    const stub = 'race_stub_conv';
+    // Neither caller holds this conversation locally yet, so both also try to create the SAME
+    // stub row (a brand-new DM). `pageA` is resyncAll's page; `pageB` is a gap-probe that fetched
+    // a touch later and saw two more messages that had landed in the meantime.
+    const pageA = [serverMsg(stub, 1), serverMsg(stub, 2), serverMsg(stub, 3)];
+    const pageB = [
+      serverMsg(stub, 1),
+      serverMsg(stub, 2),
+      serverMsg(stub, 3),
+      serverMsg(stub, 4),
+      serverMsg(stub, 5),
+    ];
+
+    const results = await Promise.allSettled([
+      applyServerMessages(pageA),
+      applyServerMessages(pageB),
+    ]);
+    for (const r of results) {
+      if (r.status === 'rejected') throw r.reason;
+    }
+
+    const rows = await rowsBySeq(stub);
+    expect(rows.map(r => r.seq)).toEqual([1, 2, 3, 4, 5]);
+    expect((await conversationRow(stub)).unreadCount).toBe(5);
+  });
+});
+
+// ── 11. concurrent receipts for the same message must never regress (VC-021) ─
+//
+// Monotonicity ("only move a message to a HIGHER state") is enforced only in the query
+// predicate of `applyReceipt`, which is evaluated in a `.fetch()` OUTSIDE `db.write`. Two
+// independent, un-awaited receipt frames — a live `read` and a late/reconciled `delivered` for
+// the same watermark — can each read the row's stale pre-write state and race to write.
+
+describe('concurrent receipts for the same message', () => {
+  const conv = 'concurrent_receipt_conv';
+
+  beforeEach(async () => {
+    await upsertConversation(conv, { type: 'dm', name: 'Peer' });
+  });
+
+  it('leaves the row at read, never regressed to delivered, when both arrive together', async () => {
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4].map(seq => serverMsg(conv, seq, { senderId: ME })),
+    );
+    const socket = await bootConnected();
+    await until(
+      async () => (await messagesOf(conv)).length === 4,
+      'our four messages to exist locally',
+    );
+
+    // Fired back to back, un-awaited: `onInboundReceipt` awaits `peerIdFor` before it ever
+    // reaches `applyReceipt`, so both handlers' read phases are in flight at once.
+    socket.cb.onReceipt?.({ conversationId: conv, upToSeq: 4, state: 'read' });
+    socket.cb.onReceipt?.({
+      conversationId: conv,
+      upToSeq: 4,
+      state: 'delivered',
+    });
+
+    await until(
+      async () => (await rowsBySeq(conv)).every(r => r.state !== 'sent'),
+      'both receipts to be applied',
+    );
+    await settle();
+
+    expect((await rowsBySeq(conv)).map(r => r.state)).toEqual([
+      'read',
+      'read',
+      'read',
+      'read',
+    ]);
+  });
+});
+
+// ── 12. a reconnect backfill into the OPEN conversation (VC-026) ─────────────
+//
+// The live-message path treats a message landing in the conversation on screen as read at once
+// (§ "unread badge" above). A reconnect's catch-up backfill for that same conversation must do
+// the same — otherwise the badge climbs, and the peer never learns we've read it, until the user
+// leaves and re-enters the chat.
+
+describe('backfill into the conversation on screen', () => {
+  const conv = 'active_backfill_conv';
+
+  beforeEach(async () => {
+    await upsertConversation(conv, { type: 'dm', name: 'Peer' });
+  });
+
+  it('does not stall unread/read state when the reconnect backfill lands in the open chat', async () => {
+    syncEngine.setActiveConversation(conv);
+    serverHistory.set(
+      conv,
+      [1, 2, 3].map(seq => serverMsg(conv, seq)),
+    );
+
+    const socket = await bootConnected();
+
+    await until(
+      async () => (await messagesOf(conv)).length === 3,
+      'the backfill to land',
+    );
+    await settle();
+
+    expect((await conversationRow(conv)).unreadCount).toBe(0);
+    await until(
+      () => socket.sent.some(f => f.type === 'read'),
+      'the read receipt for the backfilled messages',
+    );
+    expect(socket.sent.find(f => f.type === 'read')?.data).toEqual({
+      conversationId: conv,
+      seq: 3,
+    });
+  });
+});
+
+// ── a hole below the newest message must be repairable ───────────────────────
+
+/**
+ * VC-051. Two messages were sent, the recipient was woken by push for one of them, and it never
+ * reached the chat — permanently, across cold starts, while the sender showed blue read ticks.
+ *
+ * The client cannot heal a hole because every backfill cursor it has is MAX(seq): once anything
+ * newer lands, the missing seq is below the cursor and no `afterSeq` request can ever reach it
+ * again. `onInboundMessage` already does the hard part — it reads `localMax` BEFORE applying, and
+ * `shouldProbeGap` correctly proves a hole exists — and then asks the wrong question: it calls the
+ * ordinary backfill, which re-reads MAX *after* the new message has been applied and therefore
+ * fetches from ABOVE the hole it just detected.
+ *
+ * Each test brings the socket up while the device is ALREADY caught up, so the reconnect backfill
+ * has nothing to fetch and cannot heal the hole on the gap probe's behalf — otherwise these pass
+ * for the wrong reason (they did, on the first writing).
+ */
+describe('a message dropped by fan-out', () => {
+  const conv = 'gap_conv';
+
+  /** Caught up at seq 3 on both sides, socket live, nothing left for the reconnect backfill. */
+  async function caughtUpAtThree(): Promise<MockSocket> {
+    serverHistory.set(
+      conv,
+      [1, 2, 3].map(s => serverMsg(conv, s)),
+    );
+    await applyServerMessages([1, 2, 3].map(s => serverMsg(conv, s)));
+    const socket = await bootConnected();
+    await settle();
+    mockFetchAfter.mockClear();
+    return socket;
+  }
+
+  beforeEach(async () => {
+    await upsertConversation(conv, { type: 'dm', name: 'Peer' });
+  });
+
+  it('is recovered when a later message reveals the hole', async () => {
+    const socket = await caughtUpAtThree();
+    // 4, 5 and 6 are written server-side; 4 and 5 are dropped by best-effort fan-out and only
+    // seq 6 is delivered over the socket.
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4, 5, 6].map(s => serverMsg(conv, s)),
+    );
+    socket.cb.onMessage?.(serverMsg(conv, 6));
+
+    await until(
+      async () => (await messagesOf(conv)).length === 6,
+      'the hole to be repaired',
+    );
+    expect((await rowsBySeq(conv)).map(m => m.seq)).toEqual([1, 2, 3, 4, 5, 6]);
+  });
+
+  it('asks the server from the LOWER edge of the hole, not from the newest message', async () => {
+    const socket = await caughtUpAtThree();
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4, 5, 6].map(s => serverMsg(conv, s)),
+    );
+    socket.cb.onMessage?.(serverMsg(conv, 6));
+
+    await until(
+      async () => (await messagesOf(conv)).length === 6,
+      'the hole to be repaired',
+    );
+    // The cursor is the whole bug: asking from 6 — the seq that REVEALED the hole — can only
+    // ever return nothing, however many times it is retried.
+    const cursors = mockFetchAfter.mock.calls.map(c => c[1] as number);
+    expect(cursors.length).toBeGreaterThan(0);
+    expect(Math.min(...cursors)).toBeLessThan(6);
+  });
+
+  it('leaves a contiguous conversation alone — no hole, no extra fetch', async () => {
+    const socket = await caughtUpAtThree();
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4].map(s => serverMsg(conv, s)),
+    );
+    socket.cb.onMessage?.(serverMsg(conv, 4));
+    await settle();
+
+    expect((await rowsBySeq(conv)).map(m => m.seq)).toEqual([1, 2, 3, 4]);
+    // seq 4 follows seq 3 with nothing missing, so the gap probe must not fire at all.
+    expect(mockFetchAfter).not.toHaveBeenCalled();
+  });
+});
+
+// ── a realtime frame that carries no body (VC-063) ───────────────────────────
+
+/**
+ * The gateway's fan-out payload carries `text` only when the message is server-readable, so a
+ * frame routinely arrives as metadata alone — and at the E2EE phase every frame will. The engine
+ * already answers that by pulling the message over REST (which does carry the body) and applying
+ * it, but the reconcile treated the refill as a duplicate of the row it had just inserted and
+ * dropped it, so the bubble stayed blank for the life of the install.
+ *
+ * As with the gap tests above, the socket comes up while the device is ALREADY caught up, so the
+ * reconnect backfill has nothing to fetch and cannot fill the body on the refill's behalf.
+ */
+describe('a realtime frame with no body', () => {
+  const conv = 'bodyless_conv';
+
+  /** Caught up at seq 3 on both sides, socket live, nothing left for the reconnect backfill. */
+  async function caughtUpAtThree(): Promise<MockSocket> {
+    serverHistory.set(
+      conv,
+      [1, 2, 3].map(s => serverMsg(conv, s)),
+    );
+    await applyServerMessages([1, 2, 3].map(s => serverMsg(conv, s)));
+    const socket = await bootConnected();
+    await settle();
+    return socket;
+  }
+
+  /** The same message the server holds, as the gateway relays it: metadata, no `text`. */
+  function bodylessFrame(seq: number): Record<string, unknown> {
+    return {
+      messageId: `srv_${conv}_${String(seq)}`,
+      conversationId: conv,
+      seq,
+      senderId: PEER,
+      type: 'text',
+      serverTs: T0 + seq * 1000,
+    };
+  }
+
+  beforeEach(async () => {
+    await upsertConversation(conv, { type: 'dm', name: 'Peer' });
+  });
+
+  it('fills the body from REST instead of leaving a permanently blank bubble', async () => {
+    const socket = await caughtUpAtThree();
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4].map(s => serverMsg(conv, s)),
+    );
+    socket.cb.onMessage?.(bodylessFrame(4));
+
+    await until(
+      async () => (await messagesOf(conv)).length === 4,
+      'the metadata row to land',
+    );
+    // The refill is requested from just below the message, so the response carries it…
+    await until(
+      () => mockFetchAfter.mock.calls.some(c => c[1] === 3),
+      'the REST refill to be requested',
+    );
+    // …and it has to reach the row. This is the half that was dead: the refill answered with
+    // the body and the reconcile threw it away as a duplicate of the row inserted a moment
+    // earlier, so no later catch-up could ever fill it either.
+    await until(
+      async () =>
+        (await rowsBySeq(conv)).find(r => r.seq === 4)?.contentPlain ===
+        'body 4',
+      'the body to be filled in from REST',
+    );
+  });
+
+  it('repairs the empty chat-list preview the bodyless frame wrote', async () => {
+    const socket = await caughtUpAtThree();
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4].map(s => serverMsg(conv, s)),
+    );
+    socket.cb.onMessage?.(bodylessFrame(4));
+
+    await until(
+      async () => (await conversationRow(conv)).lastMessagePreview === 'body 4',
+      'the preview to be repaired',
+    );
+    expect((await conversationRow(conv)).lastMessageSeq).toBe(4);
+  });
+
+  it('does not count the refill as a second unread message', async () => {
+    const socket = await caughtUpAtThree();
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4].map(s => serverMsg(conv, s)),
+    );
+    socket.cb.onMessage?.(bodylessFrame(4));
+
+    await until(
+      async () =>
+        (await rowsBySeq(conv)).find(r => r.seq === 4)?.contentPlain ===
+        'body 4',
+      'the body to be filled in from REST',
+    );
+    await settle();
+    // Three from the catch-up plus this one. Filling a body is a correction, not an arrival —
+    // the badge must not move, and there must still be exactly one row per seq.
+    expect((await conversationRow(conv)).unreadCount).toBe(4);
+    expect((await rowsBySeq(conv)).map(r => r.seq)).toEqual([1, 2, 3, 4]);
+  });
+
+  it('still skips a genuine duplicate — a frame that repeats a body we already hold', async () => {
+    const socket = await caughtUpAtThree();
+    const frame = serverMsg(conv, 4);
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 4].map(s => serverMsg(conv, s)),
+    );
+    socket.cb.onMessage?.(frame);
+    await until(
+      async () => (await messagesOf(conv)).length === 4,
+      'the message to land',
+    );
+
+    socket.cb.onMessage?.(frame);
+    socket.cb.onMessage?.(frame);
+    await settle();
+
+    expect((await rowsBySeq(conv)).map(r => r.seq)).toEqual([1, 2, 3, 4]);
+    expect((await conversationRow(conv)).unreadCount).toBe(4);
+  });
+});
+
+// ── a hole the server can never fill must not freeze the ticks ───────────────
+
+/**
+ * The contiguity clamp (VC-069) must not outlive its usefulness.
+ *
+ * A cumulative `read` may not cover a message this device never received, so the watermark stops
+ * below a hole. On its own that assumes every hole is FILLABLE, and on this backend it is not:
+ * chat history filters `deleted:false`, so a delete-for-everyone leaves a seq that can never be
+ * served again, and the seq counter is incremented before the insert with no release path, so a
+ * failed send burns one permanently. Clamping on a hole like that would hold the watermark below
+ * it for the life of the install — every later message stuck on a grey tick, unrepairable,
+ * because the server takes `$max` of what it is told.
+ *
+ * A completed catch-up is the proof that a hole is legitimate: we asked for everything after a
+ * cursor and the server ran out. These tests pin both directions — still clamped while the hole
+ * might yet arrive, free to pass it once the server has answered.
+ */
+/** The highest seq this device has acknowledged as read over the socket. */
+function highestReadSeq(socket: MockSocket): number {
+  return socket.sent
+    .filter(f => f.type === 'read')
+    .reduce(
+      (max, f) => Math.max(max, Number((f.data as { seq?: number }).seq ?? 0)),
+      0,
+    );
+}
+
+describe('a hole the server will never fill', () => {
+  const conv = 'perm_gap';
+
+  beforeEach(async () => {
+    await upsertConversation(conv, { type: 'dm', name: 'Peer' });
+  });
+
+  it('does not hold the read watermark below it once a catch-up has proven it', async () => {
+    // The server's own history has no seq 4 — deleted for everyone, or a burned counter.
+    serverHistory.set(
+      conv,
+      [1, 2, 3, 5, 6].map(s => serverMsg(conv, s)),
+    );
+    await applyServerMessages([1, 2, 3].map(s => serverMsg(conv, s)));
+
+    syncEngine.setActiveConversation(conv);
+    const socket = await bootConnected();
+    // The catch-up pages from 3, receives 5 and 6, and runs out — so seq 4 is proven absent.
+    await until(
+      async () => (await messagesOf(conv)).length === 5,
+      'the catch-up to land',
+    );
+    await settle();
+
+    await syncEngine.markConversationRead(conv);
+    // The receipt flush is scheduled, not synchronous, so wait for the frame rather than for a
+    // fixed delay. 6, not 3 — stopping at 3 would leave the peer's 5 and 6 grey forever.
+    await until(
+      () => highestReadSeq(socket) === 6,
+      'the honest watermark to go out',
+    );
+    expect(highestReadSeq(socket)).toBe(6);
+  });
+
+  it('still refuses to acknowledge across a hole that has NOT been proven', async () => {
+    // Caught up at 3 on both sides, so the reconnect backfill proves nothing beyond it.
+    serverHistory.set(
+      conv,
+      [1, 2, 3].map(s => serverMsg(conv, s)),
+    );
+    await applyServerMessages([1, 2, 3].map(s => serverMsg(conv, s)));
+    syncEngine.setActiveConversation(conv);
+    const socket = await bootConnected();
+    await settle();
+
+    // seq 5 arrives live while 4 is still in flight somewhere. Nothing has proven 4 is gone.
+    mockFetchAfter.mockImplementation(() => Promise.resolve([]));
+    socket.cb.onMessage?.(serverMsg(conv, 5));
+    await settle();
+    socket.sent.length = 0;
+
+    await syncEngine.markConversationRead(conv);
+    await settle(400);
+    expect(highestReadSeq(socket)).toBeLessThan(5);
+  });
+});
+
+// ── 8. presence: the open chat's poll has to survive an interruption ─────────
+
+/**
+ * VC-046. The presence line was reported as "updates with a noticeable delay"; the architectural
+ * half of that is real and backend-bound (the realtime gateway's FanoutConsumer subscribes to
+ * message/receipt/caption and never to `presence.changed`, so there is NO live presence frame and
+ * the client can only poll a REST snapshot). But under that ceiling the client had a defect of its
+ * own: the poll is torn down by every path that releases the link — a network drop and the §M13
+ * background suspend both call `clearPeerPresenceTimer` — and NOTHING ever started it again. The
+ * only caller of `activatePresence` is the chat header's mount effect, and neither coming back
+ * from a tunnel nor coming back from the home screen remounts a screen. So one interruption froze
+ * the presence line at its last value for as long as the user stayed in that chat: not a delay, a
+ * stop.
+ *
+ * Driven here through the engine's real transitions — the NetInfo seam these tests already own,
+ * and the app's own AppState listener — because that ordering is the whole bug.
+ */
+describe('the open chat keeps reading its peer after an interruption', () => {
+  const conv = 'presence_conv';
+
+  beforeEach(async () => {
+    // The peer is stored on the row, so `activatePresence` resolves it without a members call.
+    await upsertConversation(conv, { type: 'dm', name: 'Peer', peerId: PEER });
+  });
+
+  /** Open the chat the way the screen does: active id + presence activation. */
+  async function openChat(): Promise<void> {
+    syncEngine.setActiveConversation(conv);
+    await syncEngine.activatePresence(conv);
+  }
+
+  it('re-arms the poll when the link comes back', async () => {
+    await bootConnected();
+    await openChat();
+    expect(syncEngine.getDiagnostics().peerPresencePollActive).toBe(true);
+    const readsBefore = mockGetPresence.mock.calls.length;
+
+    // Into a tunnel. Dropping the poll here is CORRECT — polling a link that is gone is pure
+    // battery — so this half is asserted, not changed.
+    setNetwork(false);
+    await settle();
+    expect(syncEngine.getDiagnostics().peerPresencePollActive).toBe(false);
+
+    // Out of the tunnel, still sitting in the same chat.
+    setNetwork(true);
+    await until(
+      () => syncEngine.getDiagnostics().peerPresencePollActive,
+      'the presence poll to be re-armed when the link returns',
+    );
+    // And it must not wait a whole interval to say something: the value on screen has been
+    // wrong for the length of the outage.
+    expect(mockGetPresence.mock.calls.length).toBeGreaterThan(readsBefore);
+  });
+
+  it('re-reads the peer the moment the app comes back to the foreground', async () => {
+    await bootConnected();
+    await openChat();
+    const readsBefore = mockGetPresence.mock.calls.length;
+
+    // The chat screen withdraws its active id on background and re-asserts it on return, and it
+    // registers its AppState listener AFTER the engine's — so when the engine handles 'active'
+    // the active id is still null. Reproduced exactly, because a resume keyed on that id would
+    // pass here for the wrong reason.
+    setAppState('background');
+    syncEngine.setActiveConversation(null);
+    await settle();
+
+    setAppState('active');
+    await until(
+      () => mockGetPresence.mock.calls.length > readsBefore,
+      "the peer's presence to be re-read on return to the foreground",
+    );
+    expect(syncEngine.getDiagnostics().peerPresencePollActive).toBe(true);
+  });
+
+  it('does not resume a poll for a chat the user has closed', async () => {
+    await bootConnected();
+    await openChat();
+    syncEngine.deactivatePresence(conv);
+    syncEngine.setActiveConversation(null);
+    const readsBefore = mockGetPresence.mock.calls.length;
+
+    setNetwork(false);
+    await settle();
+    setNetwork(true);
+    setAppState('background');
+    setAppState('active');
+    await settle(200);
+
+    // Nothing is on screen, so nothing may be polled — this is the §M13/§M20.3 half that the
+    // resume must not undo (VC-065).
+    expect(mockGetPresence.mock.calls.length).toBe(readsBefore);
+    expect(syncEngine.getDiagnostics().peerPresencePollActive).toBe(false);
   });
 });

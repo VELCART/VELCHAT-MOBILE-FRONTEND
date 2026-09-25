@@ -4,6 +4,8 @@
     <!-- Runtime notification permission (Android 13+ / API 33). Requested on the
          Notifications onboarding step via PermissionsAndroid. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- The reply-sending service above. Required since API 28 to call startForeground at all. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <!-- Light haptic feedback on step/tab transitions (Vibration API). -->
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Media capture + voice/video calls. -->
@@ -22,6 +24,17 @@
     <!-- Bluetooth audio routing during calls (Android 12+ runtime permission). -->
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
+    <!-- ── Transport security (VC-018, §A1/§D4) ───────────────────────────
+         `android:networkSecurityConfig` below is the app's whole pinning mechanism: the
+         platform applies it to every TLS socket in the process, including the raw
+         HttpURLConnection in `push/PushAckClient.kt` that runs with no React context. The
+         pin-sets it declares are EMPTY and enforce nothing yet — see ADR 0009 for why, and for
+         the command that produces a real pin.
+
+         `android:usesCleartextTraffic` is kept for the record only. Once a network security
+         config exists the platform IGNORES that attribute on every API level this app supports
+         (minSdk 24); the cleartext policy — including the loopback hosts the Metro dev loop
+         needs — is restated inside the config instead. -->
     <application
       android:name=".MainApplication"
       android:label="@string/app_name"
@@ -30,6 +43,7 @@
       android:allowBackup="false"
       android:theme="@style/AppTheme"
       android:usesCleartextTraffic="${usesCleartextTraffic}"
+      android:networkSecurityConfig="@xml/network_security_config"
       android:supportsRtl="true">
       <activity
         android:name=".MainActivity"
@@ -76,9 +90,15 @@
 
       <!-- Boots JS only for an action the user deliberately took (a reply needs the
            real session; an incoming push does not). Bounded to 30 s. -->
+      <!-- Promotes itself to the foreground the moment it starts. A notification action only
+           grants a few seconds of background-start allowlist, and a reply sent after that was
+           refused and left queued until the next app launch. 'shortService' is the platform type
+           for exactly this: brief work the user just asked for, and the only one that needs no
+           additional type permission. -->
       <service
         android:name=".push.PushHeadlessService"
-        android:exported="false" />
+        android:exported="false"
+        android:foregroundServiceType="shortService" />
 
       <!-- Applied by FCM when a notification-type push arrives with no handler. The
            backend sends data-only messages so these should never be used, but a

@@ -778,3 +778,61 @@ export function DialpadIcon({
     </Svg>
   );
 }
+
+/**
+ * Send-status ticks. A wide viewBox (17x11) rather than the usual 24x24 square: these sit
+ * inline with an 11px timestamp, and a square box would force the checks to be drawn tiny to
+ * fit their own height. Until these existed the bubble typeset the literal characters "✓" and
+ * "✓✓", which renders at a different weight and baseline on every Android OEM font.
+ */
+
+/** One check — the server accepted the message (`sent`). */
+export function CheckIcon({
+  size = 16,
+  color = '#000',
+  strokeWidth = 1.8,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={(size * 11) / 17} viewBox="0 0 17 11">
+      <Path d="M1 6.1 4.3 9.4 10.6 1.6" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** Two checks — `delivered`, and `read` when the caller passes the info colour. */
+export function DoubleCheckIcon({
+  size = 16,
+  color = '#000',
+  strokeWidth = 1.8,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={(size * 11) / 17} viewBox="0 0 17 11">
+      <Path d="M1 6.1 4.3 9.4 10.6 1.6" {...stroke(color, strokeWidth)} />
+      <Path d="M6.4 6.1 9.7 9.4 16 1.6" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/**
+ * Filled alert disc — a send that FAILED and can be retried by tapping it. Solid rather than
+ * outlined (the only filled icon here) because it is the one state the user must not scroll
+ * past, and it replaces a red circle that contained the typed letter "!".
+ */
+export function AlertCircleIcon({
+  size = 16,
+  color = '#FF3B30',
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Circle cx={12} cy={12} r={9.5} fill={color} />
+      <Path
+        d="M12 7.2v6.1"
+        stroke="#FFFFFF"
+        strokeWidth={2.2}
+        strokeLinecap="round"
+        fill="none"
+      />
+      <Circle cx={12} cy={16.6} r={1.25} fill="#FFFFFF" />
+    </Svg>
+  );
+}

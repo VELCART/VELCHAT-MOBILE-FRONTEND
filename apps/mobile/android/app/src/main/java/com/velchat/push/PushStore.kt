@@ -2,6 +2,7 @@ package com.velchat.push
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.velchat.securestore.SecureKeyStore
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -20,10 +21,20 @@ import org.json.JSONObject
  * exactly the low-end devices this app targets (§M0.1), to protect a value the FCM SDK stores
  * beside it in the clear anyway.
  *
- * Every accessor is safe to call from any thread; SharedPreferences is internally synchronised
- * and the writes here are small enough that `apply()` is the right trade — except the ack
- * credentials, which use `commit()` because a process killed a millisecond later must not lose
- * the only thing that lets it authenticate.
+ * Every accessor is safe to call from any thread — but NOT for the reason this comment used to
+ * give. SharedPreferences being internally synchronised makes a single `getString` or `putString`
+ * atomic, and almost nothing here is a single one: each of these maps is ONE string holding every
+ * conversation, read whole and written back whole. Three threads do that in one process (FCM's
+ * delivery thread, the receiver's main thread, the RN native-modules thread), and two that read
+ * before either writes leave the later write silently discarding the earlier — a just-arrived
+ * line lost, or lines the user already read resurrected (VC-066). So every read-modify-write
+ * holds {@link WRITE_LOCK}.
+ *
+ * The writes are small enough that `apply()` is the right trade — except the ack credentials and
+ * the active conversation, which use `commit()` because a process killed a millisecond later must
+ * not lose them. Those are blind writes with nothing to read first, and they stay OUTSIDE the
+ * lock on purpose: `commit()` blocks on disk, and nothing here is worth holding a monitor across
+ * a disk sync for.
  */
 internal class PushStore(context: Context) {
 
@@ -94,6 +105,7 @@ internal class PushStore(context: Context) {
         .remove(KEY_ACTIVE_CONVO)
         .remove(KEY_AVATARS)
         .remove(KEY_LAST_SEQ)
+        .remove(KEY_SEEN)
         .commit()
   }
 
@@ -153,10 +165,14 @@ internal class PushStore(context: Context) {
 
   fun putPersonAvatar(accountId: String, url: String, file: String) {
     if (accountId.isBlank()) return
-    val all = readJson(KEY_AVATARS)
-    all.put(accountId, JSONObject().put("url", url).put("file", file))
-    trimOldest(all, MAX_NAMES)
-    prefs.edit().putString(KEY_AVATARS, all.toString()).apply()
+    // The download that produced `file` happened before this call, not inside it — the lock never
+    // covers the network.
+    synchronized(WRITE_LOCK) {
+      val all = readJson(KEY_AVATARS)
+      all.put(accountId, JSONObject().put("url", url).put("file", file))
+      trimOldest(all, MAX_NAMES)
+      writeRaw(KEY_AVATARS, all.toString())
+    }
   }
 
   // ── the last seq we notified about ─────────────────────────────────────────
@@ -172,13 +188,48 @@ internal class PushStore(context: Context) {
   fun lastSeq(conversationId: String): Long =
       readJson(KEY_LAST_SEQ).optLong(conversationId, 0L)
 
+  /**
+   * Record that a notification is about to be built for this (conversation, seq), and say
+   * whether it is NEW. `false` means we have already notified about this exact message.
+   *
+   * FCM is at-least-once, so the same data message genuinely arrives twice — and without this
+   * the second copy appended a second identical line to the thread and bumped the count, so one
+   * message read as two (VC-032).
+   *
+   * A high-water mark is the obvious way to do this and it is WRONG here. FCM gives no ordering
+   * guarantee, so a genuinely new message with a LOWER seq than one already delivered is
+   * ordinary — the whole reason notification lines are sorted by seq rather than by arrival
+   * (VC-056). A watermark would silently swallow that message's notification entirely, which is
+   * a far worse failure than showing a duplicate. So this remembers the actual seqs.
+   *
+   * A seq of 0 means the push carried none: nothing to compare, so it always counts as new.
+   */
+  fun markSeen(conversationId: String, seq: Long): Boolean {
+    if (conversationId.isBlank() || seq <= 0L) return true
+    synchronized(WRITE_LOCK) {
+      val all = readJson(KEY_SEEN)
+      val seen = all.optJSONArray(conversationId) ?: JSONArray()
+      for (i in 0 until seen.length()) {
+        if (seen.optLong(i, 0L) == seq) return false
+      }
+      seen.put(seq)
+      while (seen.length() > MAX_SEEN_PER_CONV) seen.remove(0)
+      all.put(conversationId, seen)
+      trimOldest(all, MAX_NAMES)
+      prefs.edit().putString(KEY_SEEN, all.toString()).apply()
+      return true
+    }
+  }
+
   fun setLastSeq(conversationId: String, seq: Long) {
     if (conversationId.isBlank() || seq <= 0L) return
-    val all = readJson(KEY_LAST_SEQ)
-    if (all.optLong(conversationId, 0L) >= seq) return // watermarks only move forward
-    all.put(conversationId, seq)
-    trimOldest(all, MAX_NAMES)
-    prefs.edit().putString(KEY_LAST_SEQ, all.toString()).apply()
+    synchronized(WRITE_LOCK) {
+      val all = readJson(KEY_LAST_SEQ)
+      if (all.optLong(conversationId, 0L) >= seq) return // watermarks only move forward
+      all.put(conversationId, seq)
+      trimOldest(all, MAX_NAMES)
+      prefs.edit().putString(KEY_LAST_SEQ, all.toString()).apply()
+    }
   }
 
   private fun readName(key: String, id: String): String? =
@@ -186,13 +237,15 @@ internal class PushStore(context: Context) {
 
   private fun putNames(key: String, names: Map<String, String>) {
     if (names.isEmpty()) return
-    val merged = readJson(key)
-    for ((id, name) in names) {
-      if (id.isBlank()) continue
-      if (name.isBlank()) merged.remove(id) else merged.put(id, name)
+    synchronized(WRITE_LOCK) {
+      val merged = readJson(key)
+      for ((id, name) in names) {
+        if (id.isBlank()) continue
+        if (name.isBlank()) merged.remove(id) else merged.put(id, name)
+      }
+      trimOldest(merged, MAX_NAMES)
+      writeRaw(key, merged.toString())
     }
-    trimOldest(merged, MAX_NAMES)
-    prefs.edit().putString(key, merged.toString()).apply()
   }
 
   /**
@@ -231,6 +284,12 @@ internal class PushStore(context: Context) {
        * from the conversation instead would put one member's face on everybody's messages.
        */
       val senderId: String? = null,
+      /**
+       * The message's own `seq`, which is what puts the thread in order — see {@link sortBySeq}.
+       * Zero for a line that has none: an inline reply the user typed, which the server has not
+       * sequenced yet, and every line written by a build that predates this field.
+       */
+      val seq: Long = 0L,
   )
 
   /**
@@ -246,40 +305,92 @@ internal class PushStore(context: Context) {
    * caches"). The DB remains the source of truth for everything real.
    */
   fun appendLine(conversationId: String, line: Line): List<Line> {
-    val all = readJson(KEY_LINES)
-    val existing = all.optJSONArray(conversationId) ?: JSONArray()
-    existing.put(
-        JSONObject()
-            .put("s", line.sender ?: JSONObject.NULL)
-            .put("t", line.text)
-            .put("at", line.at)
-            .put("me", line.mine)
-            .put("sid", line.senderId ?: JSONObject.NULL))
-    while (existing.length() > MAX_LINES) existing.remove(0)
-    all.put(conversationId, existing)
-    while (all.length() > MAX_LINE_CONVOS) {
-      val it = all.keys()
-      if (!it.hasNext()) break
-      val oldest = it.next()
-      if (oldest == conversationId) {
+    synchronized(WRITE_LOCK) {
+      val all = readJson(KEY_LINES)
+      val existing = all.optJSONArray(conversationId) ?: JSONArray()
+      existing.put(
+          JSONObject()
+              .put("s", line.sender ?: JSONObject.NULL)
+              .put("t", line.text)
+              .put("at", line.at)
+              .put("me", line.mine)
+              .put("sid", line.senderId ?: JSONObject.NULL)
+              .put("q", line.seq))
+      // Order BEFORE capping, so "drop the oldest" drops the oldest MESSAGE rather than whichever
+      // one FCM happened to deliver first.
+      val ordered = sortBySeq(existing)
+      while (ordered.length() > MAX_LINES) ordered.remove(0)
+      all.put(conversationId, ordered)
+      while (all.length() > MAX_LINE_CONVOS) {
+        val it = all.keys()
         if (!it.hasNext()) break
-        all.remove(it.next())
-      } else {
-        all.remove(oldest)
+        val oldest = it.next()
+        if (oldest == conversationId) {
+          if (!it.hasNext()) break
+          all.remove(it.next())
+        } else {
+          all.remove(oldest)
+        }
       }
+      writeRaw(KEY_LINES, all.toString())
+      return toLines(ordered)
     }
-    prefs.edit().putString(KEY_LINES, all.toString()).apply()
-    return toLines(existing)
   }
 
   fun lines(conversationId: String): List<Line> =
-      toLines(readJson(KEY_LINES).optJSONArray(conversationId) ?: JSONArray())
+      toLines(sortBySeq(readJson(KEY_LINES).optJSONArray(conversationId) ?: JSONArray()))
 
   fun clearLines(conversationId: String) {
-    val all = readJson(KEY_LINES)
-    if (!all.has(conversationId)) return
-    all.remove(conversationId)
-    prefs.edit().putString(KEY_LINES, all.toString()).apply()
+    synchronized(WRITE_LOCK) {
+      val all = readJson(KEY_LINES)
+      if (!all.has(conversationId)) return
+      all.remove(conversationId)
+      writeRaw(KEY_LINES, all.toString())
+    }
+  }
+
+  /**
+   * Drop every conversation's lines at once.
+   *
+   * For the group summary: it stands for all of them, so dismissing it dismisses all of them, and
+   * clearing only their counts would leave the next single message rebuilding a thread out of
+   * lines the user has already swept away (VC-067).
+   */
+  fun clearAllLines() {
+    synchronized(WRITE_LOCK) { prefs.edit().remove(KEY_LINES).apply() }
+  }
+
+  /**
+   * Put a conversation's stored lines in message order.
+   *
+   * FCM guarantees no ordering, so arrival order is not message order: a push held back while the
+   * package was stopped lands after a later one, and the thread then advertises an older message
+   * as the newest one (VC-056). `at` cannot arbitrate — it records when the push reached this
+   * device, not when the message was sent — so `seq`, the per-conversation counter the actions
+   * already carry, is the only signal there is.
+   *
+   * A line with no seq inherits the rank of the line before it, which is right for both kinds
+   * that exist: an inline reply belongs immediately after the message it answered, and a thread
+   * written by a build that predates this field ranks entirely at zero, where a STABLE sort
+   * leaves it exactly as stored — the only order anyone ever knew for it. That is the migration:
+   * old lines keep their old order instead of crashing or being dropped.
+   */
+  private fun sortBySeq(arr: JSONArray): JSONArray {
+    if (arr.length() < 2) return arr
+    var rank = 0L
+    val ranked = ArrayList<Pair<Long, JSONObject>>(arr.length())
+    for (i in 0 until arr.length()) {
+      val o = arr.optJSONObject(i) ?: continue
+      val seq = o.optLong("q", 0L)
+      if (seq > 0L) rank = seq
+      ranked.add(rank to o)
+    }
+    val sorted = JSONArray()
+    // `sortedBy` is stable, and that is load-bearing rather than incidental: equal ranks — a reply
+    // beside the message it answers, or a whole pre-seq thread — must come back in the order they
+    // were stored and not in an arbitrary one.
+    for ((_, o) in ranked.sortedBy { it.first }) sorted.put(o)
+    return sorted
   }
 
   private fun toLines(arr: JSONArray): List<Line> {
@@ -295,6 +406,7 @@ internal class PushStore(context: Context) {
               o.optLong("at", 0L),
               o.optBoolean("me", false),
               o.optString("sid", "").takeIf { it.isNotBlank() },
+              o.optLong("q", 0L),
           ))
     }
     return out
@@ -329,10 +441,12 @@ internal class PushStore(context: Context) {
   }
 
   fun setMuted(conversationId: String, untilMillis: Long) {
-    val muted = readJson(KEY_MUTED)
-    if (untilMillis <= System.currentTimeMillis()) muted.remove(conversationId)
-    else muted.put(conversationId, untilMillis)
-    prefs.edit().putString(KEY_MUTED, muted.toString()).apply()
+    synchronized(WRITE_LOCK) {
+      val muted = readJson(KEY_MUTED)
+      if (untilMillis <= System.currentTimeMillis()) muted.remove(conversationId)
+      else muted.put(conversationId, untilMillis)
+      prefs.edit().putString(KEY_MUTED, muted.toString()).apply()
+    }
   }
 
   // ── per-conversation notification counters ─────────────────────────────────
@@ -345,11 +459,13 @@ internal class PushStore(context: Context) {
    * describes what is on screen, not what is unread.
    */
   fun bumpCount(conversationId: String): Int {
-    val counts = readJson(KEY_COUNTS)
-    val next = counts.optInt(conversationId, 0) + 1
-    counts.put(conversationId, next)
-    prefs.edit().putString(KEY_COUNTS, counts.toString()).apply()
-    return next
+    synchronized(WRITE_LOCK) {
+      val counts = readJson(KEY_COUNTS)
+      val next = counts.optInt(conversationId, 0) + 1
+      counts.put(conversationId, next)
+      prefs.edit().putString(KEY_COUNTS, counts.toString()).apply()
+      return next
+    }
   }
 
   /**
@@ -371,14 +487,37 @@ internal class PushStore(context: Context) {
     return n
   }
 
-  fun clearCount(conversationId: String) {
+  /**
+   * How many MESSAGES are stacked across every conversation that currently has a notification.
+   *
+   * The group summary used `countedConversations()` and formatted it with "%d new messages", so
+   * it reported the number of chats while naming messages — it read "5 new messages" for a burst
+   * of eight and "5 new messages" again for a single one (VC-054). The per-conversation counts
+   * were already here; this just adds them up instead of discarding them.
+   */
+  fun countedMessages(): Int {
     val counts = readJson(KEY_COUNTS)
-    counts.remove(conversationId)
-    prefs.edit().putString(KEY_COUNTS, counts.toString()).apply()
+    var n = 0
+    val keys = counts.keys()
+    while (keys.hasNext()) {
+      val c = counts.optInt(keys.next(), 0)
+      if (c > 0) n += c
+    }
+    return n
+  }
+
+  fun clearCount(conversationId: String) {
+    synchronized(WRITE_LOCK) {
+      val counts = readJson(KEY_COUNTS)
+      counts.remove(conversationId)
+      prefs.edit().putString(KEY_COUNTS, counts.toString()).apply()
+    }
   }
 
   fun clearAllCounts() {
-    prefs.edit().remove(KEY_COUNTS).apply()
+    // A blind write, but it still takes the lock: a `bumpCount` that read the map before this and
+    // writes after it would otherwise put back a count the user just cleared.
+    synchronized(WRITE_LOCK) { prefs.edit().remove(KEY_COUNTS).apply() }
   }
 
   // ── events owed to JS ──────────────────────────────────────────────────────
@@ -392,25 +531,59 @@ internal class PushStore(context: Context) {
    * loss; growing without bound in a process that may never start JS again is not.
    */
   fun enqueueEvent(event: JSONObject) {
-    val queue = readArray(KEY_PENDING)
-    queue.put(event)
-    val overflow = queue.length() - MAX_PENDING
-    if (overflow > 0) for (i in 0 until overflow) queue.remove(0)
-    prefs.edit().putString(KEY_PENDING, queue.toString()).apply()
+    synchronized(WRITE_LOCK) {
+      val queue = readArray(KEY_PENDING)
+      queue.put(event)
+      val overflow = queue.length() - MAX_PENDING
+      if (overflow > 0) for (i in 0 until overflow) queue.remove(0)
+      writeRaw(KEY_PENDING, queue.toString())
+    }
   }
 
-  /** Drain — callers must succeed at handling these, because they are gone after this returns. */
+  /**
+   * Drain — callers must succeed at handling these, because they are gone after this returns.
+   *
+   * Under the same lock as {@link enqueueEvent}, and for a sharper reason than the maps: an
+   * action queued on the receiver's thread between this read and its removal would be dropped
+   * without ever being handed to anybody, which is precisely the promise the queue exists to
+   * keep.
+   */
   fun takeEvents(): JSONArray {
-    val queue = readArray(KEY_PENDING)
-    if (queue.length() > 0) prefs.edit().remove(KEY_PENDING).apply()
-    return queue
+    synchronized(WRITE_LOCK) {
+      val queue = readArray(KEY_PENDING)
+      if (queue.length() > 0) prefs.edit().remove(KEY_PENDING).apply()
+      return queue
+    }
   }
 
   // ── internals ──────────────────────────────────────────────────────────────
 
+  /**
+   * Read one entry, unsealing it if it is one of the protected ones (VC-017).
+   *
+   * A value with no seal prefix comes back unchanged, so an install that upgrades keeps working
+   * and is simply re-sealed the next time that entry is written — no migration pass, no flag.
+   */
+  private fun readRaw(key: String, empty: String): String {
+    val stored = prefs.getString(key, null) ?: return empty
+    if (key !in PROTECTED) return stored
+    val plain = SecureKeyStore.unsealText(appContext, stored)
+    return if (plain.isEmpty()) empty else plain
+  }
+
+  /**
+   * Write one entry, sealing it if it is protected. Sealing that fails stores the plaintext:
+   * losing a queued reply is worse than storing it the way the previous build already did.
+   */
+  private fun writeRaw(key: String, value: String) {
+    val toStore =
+        if (key in PROTECTED) SecureKeyStore.sealText(appContext, value) ?: value else value
+    prefs.edit().putString(key, toStore).apply()
+  }
+
   private fun readJson(key: String): JSONObject =
       try {
-        JSONObject(prefs.getString(key, "{}") ?: "{}")
+        JSONObject(readRaw(key, "{}"))
       } catch (_: Throwable) {
         // A corrupt entry must not wedge notifications forever — start over.
         JSONObject()
@@ -418,12 +591,25 @@ internal class PushStore(context: Context) {
 
   private fun readArray(key: String): JSONArray =
       try {
-        JSONArray(prefs.getString(key, "[]") ?: "[]")
+        JSONArray(readRaw(key, "[]"))
       } catch (_: Throwable) {
         JSONArray()
       }
 
   internal companion object {
+    /**
+     * The monitor every read-modify-write in this class holds.
+     *
+     * On the companion rather than the instance, which is the whole trick: `PushStore(context)`
+     * is constructed fresh at each entry point — the FCM service, the broadcast receiver, the RN
+     * module — so an instance monitor would be three separate locks guarding one shared file and
+     * would guard nothing at all. Android hands every one of those instances the SAME
+     * SharedPreferences object for a given file in a given process, so one process-wide monitor
+     * is exactly the scope of the contention. Uncontended in the normal case, and the critical
+     * sections are a parse and a `putString` — never a network call and never a `commit()`.
+     */
+    private val WRITE_LOCK = Any()
+
     private const val FILE = "velchat_push"
     private const val KEY_BASE_URL = "baseUrl"
     private const val KEY_DEVICE_ID = "deviceId"
@@ -441,12 +627,38 @@ internal class PushStore(context: Context) {
     // A new key retires them without needing a migration.
     private const val KEY_AVATARS = "avatars.v2"
     private const val KEY_LAST_SEQ = "lastSeq"
+    private const val KEY_SEEN = "seenSeqs"
+
+    /**
+     * The entries sealed at rest (VC-017).
+     *
+     * These four are the ones that hold CONTENT rather than identifiers: the notification
+     * thread's message bodies, the reply the user typed into a notification while the app was
+     * dead, and the display names mirrored so a notification can say who is writing. All of it
+     * used to sit in SharedPreferences as readable JSON, which on a rooted or backed-up device
+     * is the message history in the clear (§M19).
+     *
+     * The rest stay plain deliberately. Counts, watermarks, mute-untils, seen seqs and the
+     * active conversation id are numbers and opaque ids — sealing them would put an AES
+     * operation on the notification hot path for nothing, and `activeConversationId` in
+     * particular is read on every inbound push. `KEY_AVATARS` is in the list because it carries
+     * URLs and on-disk paths tied to a person.
+     */
+    private val PROTECTED = setOf(KEY_LINES, KEY_PENDING, KEY_NAMES, KEY_PEOPLE, KEY_AVATARS)
 
     private const val MAX_NAMES = 300
     private const val MAX_PENDING = 64
 
     /** Android collapses a MessagingStyle to the last few lines anyway; keeping more is waste. */
     private const val MAX_LINES = 6
+
+    /**
+     * How many recent seqs per conversation are remembered for duplicate suppression.
+     *
+     * Only has to outlast FCM's own retry window, so it is deliberately small — the map is
+     * rewritten whole on every message and a long tail would cost more than the duplicates do.
+     */
+    private const val MAX_SEEN_PER_CONV = 20
     private const val MAX_LINE_CONVOS = 20
   }
 }

@@ -34,6 +34,7 @@ import { nativePush } from './nativePush';
 import {
   INITIAL_PUSH_STATUS,
   isPushAvailable,
+  notificationsGranted,
   reducePush,
   registrationKey,
   shouldRegister,
@@ -172,6 +173,31 @@ export function subscribePushEvents(
 ): () => void {
   eventListeners.add(cb);
   return () => eventListeners.delete(cb);
+}
+
+/**
+ * Drain the native queue and RETURN the events, applying nothing.
+ *
+ * For a caller that must finish the work before it returns — the headless wake, which is killed
+ * the instant its promise resolves. Going through {@link subscribePushEvents} there was the bug:
+ * the wake drained, then awaited a SNAPSHOT of the promises the listener had started, and whether
+ * that snapshot contained anything depended on when the listener happened to run. Measured on a
+ * device, the wake declared its handlers done 38 ms after the drain — too fast for the two SQLite
+ * writes a reply performs — and the reply's send then finished 600 ms after the task had ended,
+ * surviving only because the process had not been reaped yet.
+ *
+ * Handing the events back removes the timing question entirely: the caller awaits each one.
+ *
+ * NOT single-flight with `drainPendingEvents`, and it does not need to be: the native side gives
+ * each queued entry to exactly one caller, and in a headless process nothing else is draining.
+ */
+export async function takeQueuedPushEvents(): Promise<PushPendingEvent[]> {
+  try {
+    return collapsePendingEvents(await nativePush.takePendingEvents());
+  } catch (err) {
+    log.warn('push: taking the queued actions failed', { reason: String(err) });
+    return [];
+  }
 }
 
 /**
@@ -369,7 +395,17 @@ async function askForNotificationsOnce(): Promise<void> {
 
 async function refreshPermission(): Promise<void> {
   if (status.phase === 'unsupported') return;
-  const granted = await hasNotificationPermission();
+  // VC-012: hasNotificationPermission() alone is not enough on Android <33, where there is no
+  // runtime dialog and it unconditionally answers `true` — it cannot see the app-level or
+  // channel-level toggle the user can flip from system Settings at any time. Combine it with
+  // the same native "will a message notification actually display" check the push blocker
+  // banner already uses (getPushBlocker() below), so `permission` genuinely means "the OS will
+  // let us show something" on every API level, matching what `isPushAvailable` requires of it.
+  const [permitted, blocked] = await Promise.all([
+    hasNotificationPermission(),
+    nativePush.areMessageNotificationsBlocked(),
+  ]);
+  const granted = notificationsGranted(permitted, blocked);
   const before = status.permission;
   apply({ type: 'permission', permission: granted ? 'granted' : 'denied' });
   // A re-grant does not need a re-registration (the token never went away), but it DOES change
@@ -560,9 +596,7 @@ export function disposePush(): void {
  * acknowledge delivery.
  */
 export type PushBlocker =
-  | 'notifications-off'
-  | 'battery-restricted'
-  | 'unsupported';
+  'notifications-off' | 'battery-restricted' | 'unsupported';
 
 export async function getPushBlocker(): Promise<PushBlocker | null> {
   if (status.phase === 'unsupported') return 'unsupported';

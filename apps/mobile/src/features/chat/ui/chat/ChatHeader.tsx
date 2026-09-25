@@ -22,7 +22,11 @@ import {
   useChatHeaderPresence,
   type PresenceEntry,
 } from '../../hooks/useChatHeaderPresence';
-import { presenceTimeLabel } from './chatModel';
+import {
+  chatTitle,
+  conversationRowIdentity,
+  presenceTimeLabel,
+} from './chatModel';
 
 const AVATAR = 40;
 
@@ -86,22 +90,37 @@ export function ChatHeader({
   conversationId,
   name,
   onBack,
+  onOpenWallpaper,
 }: {
   conversationId: string;
   name: string | undefined;
   onBack: () => void;
+  /** Overflow (⋯) → the chat wallpaper picker (§F2). */
+  onOpenWallpaper: () => void;
 }): React.JSX.Element {
   const t = useTheme();
   const { t: tr } = useTranslation();
-  const title = name ?? tr('tabs.chats');
-  const initial = (name ?? '').trim().charAt(0).toUpperCase();
   const { typing, presence } = useChatHeaderPresence(conversationId);
   // The photo comes from the conversation row the inbox sync already resolved, so the header is
   // complete on the first frame instead of three round-trips after the tap. Stale entries are
   // revalidated in the background by the hook, and the row is observed, so a changed picture
   // appears without the user doing anything.
-  const { peerAvatarUrl } = useConversationIdentity(conversationId);
+  const { peerAvatarUrl, name: rowName } =
+    useConversationIdentity(conversationId);
   const dp = peerAvatarUrl;
+  // The notification deep link is `chat/:conversationId` and carries no name, so `name` is
+  // undefined on that entry point and the header used to read "Chats" — the tab label — while
+  // the avatar and presence line beside it were right (VC-053). The row already observed here
+  // knows the peer; prefer it over the generic label.
+  // A conversation nothing names is called what it IS, not what tab it came from. The fallback
+  // here used to be `tabs.chats`, so an unidentified chat's header read "Chats" — a label, in
+  // the slot where the person's name goes. That was the best available string when VC-053 was
+  // written; the chat list has since needed the same answer and `chat.unknownContact` exists
+  // for it (VC-070), so both surfaces say the same thing now.
+  const { title, initial } = conversationRowIdentity(
+    chatTitle(name, rowName, ''),
+    tr('chat.unknownContact'),
+  );
   const presenceLine = derivePresenceLine(typing, presence, tr);
   return (
     <View
@@ -111,7 +130,12 @@ export function ChatHeader({
         minHeight: 60,
         paddingLeft: t.spacing.xs,
         paddingRight: t.spacing.xs,
-        backgroundColor: t.colors.surface,
+        // `bgBase`, NOT `surface`: the safe-area inset above this header is painted by `Screen`
+        // (bgBase) and the home header uses bgBase too. In light both tokens are #FFFFFF so the
+        // difference was invisible, but in dark `surface` is #1A1A1C against a #0A0A0B inset —
+        // a visible seam under the status bar, and a chat header that did not match the home
+        // header it was navigated from.
+        backgroundColor: t.colors.bgBase,
         borderBottomWidth: 1,
         borderBottomColor: t.colors.hairline,
       }}
@@ -202,7 +226,7 @@ export function ChatHeader({
       />
       <HeaderIconButton
         label={tr('chat.more')}
-        onPress={noop}
+        onPress={onOpenWallpaper}
         icon={MoreIcon}
       />
     </View>

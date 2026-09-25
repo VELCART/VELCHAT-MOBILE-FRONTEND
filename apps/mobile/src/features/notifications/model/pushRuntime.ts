@@ -23,7 +23,7 @@
  */
 import { log } from '../../../core';
 import {
-  drainPendingEvents,
+  takeQueuedPushEvents,
   getAccountId,
   initPush,
   setNativeMute,
@@ -39,11 +39,14 @@ import {
   refreshSession,
   getRefreshToken,
   accessTokenExpiresInMs,
+  kv,
+  KVKeys,
   subscribeSession,
   type PushPendingEvent,
 } from '../../../infra';
 import { syncEngine } from '../../../domain/sync';
 import { setConversationMute } from '../api/prefs';
+import { runSequentially } from './runSequentially';
 
 /** How many conversation names to mirror natively. Bounded — this is a notification title. */
 const NAME_MIRROR_LIMIT = 200;
@@ -191,8 +194,17 @@ function startNameMirror(): void {
         // The same row already carries the peer photo the chat list draws, so mirroring it costs
         // one more map and no extra query. Native caches it to a file from here — the push path
         // cannot fetch anything.
-        if (row.peerId && row.peerAvatarUrl) faces[row.peerId] = row.peerAvatarUrl;
+        if (row.peerId && row.peerAvatarUrl)
+          faces[row.peerId] = row.peerAvatarUrl;
       }
+      // Our OWN photo, under our own account id.
+      //
+      // A notification thread shows both sides once the user replies inline, and without this
+      // their own line was the only one with no face on it. The native side looks it up by the
+      // account id it already stores for the ack credential, so this needs no new plumbing.
+      const me = getAccountId();
+      const mine = kv.getString(KVKeys.avatarUrl);
+      if (me && mine) faces[me] = mine;
       syncConversationNames(names);
       syncPersonNames(people);
       syncPersonAvatars(faces);
@@ -263,7 +275,17 @@ async function handlePushEvent(event: PushPendingEvent): Promise<void> {
  * `SyncEngine.flushOutboxNow`.
  */
 export async function runQueuedPushActions(): Promise<void> {
-  installEventHandler();
+  // Deliberately NOT `installEventHandler` + `drainPendingEvents`.
+  //
+  // That route applied each event through a subscription and then awaited a snapshot of whatever
+  // promises the listener had started by then — so whether this task waited for the reply at all
+  // came down to timing. On a device it declared the handlers done 38 ms after the drain, which is
+  // not long enough for the two SQLite writes a reply performs, and the send then completed 600 ms
+  // AFTER the task ended and the service stopped. It arrived only because the process happened not
+  // to be reaped yet; on the user's phone it was, and the reply left when the app was next opened.
+  //
+  // Taking the events and awaiting each one removes the timing from the picture: when this
+  // function resolves, the work is genuinely finished.
   // BEFORE anything is sent. A woken process gets one bounded window, and an access token that
   // has already expired turns the reply into 401 -> refresh -> retry inside it. On a phone on
   // mobile data that chain does not always finish: the failure classifies as transient, which
@@ -271,10 +293,29 @@ export async function runQueuedPushActions(): Promise<void> {
   // which is exactly what a reply button is supposed to save them from. Refreshing first spends
   // one round trip instead of three.
   await refreshIfExpiring();
-  await drainPendingEvents();
-  // `allSettled`: one failed handler must not abandon the others, and each already logs itself.
-  await Promise.allSettled([...inflight]);
+  const events = await takeQueuedPushEvents();
+  if (events.length > 0) {
+    log.info('push: applying queued notification actions', {
+      count: events.length,
+    });
+  }
+  // Sequentially, and each one awaited, without letting one failing action abandon the rest — a
+  // reply must still go out if a mute failed. This used to map the events to thunks and then map
+  // again to CALL them, which started every handler before `allSettled` waited on anything, so
+  // the drain was concurrent despite the comment (VC-031).
+  const outcomes = await runSequentially(events, handlePushEvent);
+  for (let i = 0; i < outcomes.length; i++) {
+    const outcome = outcomes[i];
+    if (outcome?.status === 'rejected') {
+      log.warn('push action failed', {
+        type: events[i]?.type,
+        reason: String(outcome.reason),
+      });
+    }
+  }
+  log.info('push: handlers done, flushing the outbox');
   await syncEngine.flushOutboxNow();
+  log.info('push: outbox flushed');
 
   // One more pass, if anything is still queued.
   //
@@ -293,6 +334,15 @@ export async function runQueuedPushActions(): Promise<void> {
   } catch (err) {
     log.info('push: could not re-check the outbox', { reason: String(err) });
   }
+
+  // The task's last act, so a device log can say WHERE it ended.
+  //
+  // Without this, a capture showed the task starting, the database being touched, and then
+  // silence — and the foreground service stopping 187 ms later was consistent with two completely
+  // different stories: the task finishing early, or the OS pulling the service out from under a
+  // task that was still working. Those need opposite fixes, and nothing in the log chose between
+  // them. It does now.
+  log.info('push: queued actions complete');
 }
 
 /**

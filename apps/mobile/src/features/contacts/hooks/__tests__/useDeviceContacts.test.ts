@@ -17,7 +17,10 @@
 import { act, renderHook, waitFor } from '@testing-library/react-native';
 import {
   clearContactsDiscoveryCache,
+  discoveredContacts,
   prewarmContacts,
+  requestContactsRefresh,
+  subscribeDiscoveredContacts,
   useDeviceContacts,
 } from '../useDeviceContacts';
 
@@ -239,3 +242,127 @@ function clearMemOnly(): void {
   if (keep !== undefined) store['contacts.discovery.v1'] = keep;
   if (snap !== undefined) store[SNAPSHOT_KEY] = snap;
 }
+
+/**
+ * VC-044, the DISCOVERY half. The precedence half is done (VC-047): a saved name already wins
+ * over the registered one and resolves at read time. What was left is that a contact saved
+ * WHILE VelChat is running is not in any discovery run yet, so the peer is genuinely unknown to
+ * the client and the chat still renders the number — until something unrelated (a relaunch, or
+ * opening New Chat) happened to sweep the book again. The user's workaround in the report —
+ * "send a message and exit the chat" — is exactly that: doing something else until a sweep ran.
+ *
+ * The refresh has to be cheap enough to be allowed at all (§R4/§R5): it is gated on a peer ON
+ * SCREEN that we cannot already name, it is throttled, it runs off the render path, and the
+ * pipeline underneath it is incremental — an unchanged book costs no crypto and no round trip,
+ * and a grown one costs a round trip for the new numbers only.
+ */
+describe('a contact saved while the app is running (VC-044)', () => {
+  /** The book as it was when the app last swept it — the peer is a stranger in it. */
+  async function settledWithoutThem(): Promise<void> {
+    await act(async () => {
+      await prewarmContacts();
+    });
+    expect(discoveredContacts()).toEqual([]);
+  }
+
+  /** The user leaves, saves the peer in the phone's own contacts, and comes back. */
+  function savedInThePhone(): void {
+    mockReadDeviceContacts.mockResolvedValue([
+      ...book(5),
+      { recordId: 'new', name: 'Tusha', phones: ['+919899999999'] },
+    ]);
+    mockDiscoverContacts.mockResolvedValue(
+      new Map([['+919899999999', 'acc-9']]),
+    );
+  }
+
+  it('the exact defect: the just-saved name reaches an already-mounted screen', async () => {
+    await settledWithoutThem();
+    const woken: number[] = [];
+    const unsubscribe = subscribeDiscoveredContacts(() => woken.push(1));
+
+    savedInThePhone();
+    requestContactsRefresh(['acc-9'], 'app-returned');
+
+    await waitFor(() =>
+      expect(discoveredContacts()?.map(c => c.name)).toEqual(['Tusha']),
+    );
+    // Resolving it is only half the fix — a screen that is already up has to be TOLD, because
+    // the DB row it observes did not change and never will.
+    expect(woken).toHaveLength(1);
+    // And only the new number was paid for; the settled book is not re-blinded.
+    expect(mockDiscoverContacts.mock.calls[1]?.[1]).toEqual(['+919899999999']);
+    unsubscribe();
+  });
+
+  it('does not touch the address book when every peer on screen is already named', async () => {
+    mockDiscoverContacts.mockResolvedValue(
+      new Map([['+919810000000', 'acc-0']]),
+    );
+    await act(async () => {
+      await prewarmContacts();
+    });
+    const reads = mockReadDeviceContacts.mock.calls.length;
+
+    requestContactsRefresh(['acc-0'], 'app-returned');
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 30));
+    });
+
+    // Nothing on screen is unnamed, so a sweep could only confirm what is already drawn.
+    expect(mockReadDeviceContacts).toHaveBeenCalledTimes(reads);
+  });
+
+  it('does not re-sweep for every chat the user taps through', async () => {
+    await settledWithoutThem();
+    savedInThePhone();
+    requestContactsRefresh(['acc-9'], 'app-returned');
+    await waitFor(() => expect(discoveredContacts()).toHaveLength(1));
+    const reads = mockReadDeviceContacts.mock.calls.length;
+
+    // Opening three more chats with peers we still cannot name, one after another.
+    requestContactsRefresh(['acc-77'], 'chat-open');
+    requestContactsRefresh(['acc-78'], 'chat-open');
+    requestContactsRefresh(['acc-79'], 'chat-open');
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 30));
+    });
+
+    expect(mockReadDeviceContacts).toHaveBeenCalledTimes(reads);
+  });
+
+  it('still sweeps on a return from another app, which is where a contact gets saved', async () => {
+    await settledWithoutThem();
+    requestContactsRefresh(['acc-9'], 'chat-open');
+    await waitFor(() =>
+      expect(mockReadDeviceContacts.mock.calls.length).toBeGreaterThan(1),
+    );
+    const reads = mockReadDeviceContacts.mock.calls.length;
+
+    savedInThePhone();
+    // Inside the throttle window a chat-open would be dropped — and dropping THIS one would
+    // swallow precisely the refresh the defect is about.
+    requestContactsRefresh(['acc-9'], 'app-returned');
+    await waitFor(() =>
+      expect(mockReadDeviceContacts.mock.calls.length).toBeGreaterThan(reads),
+    );
+    await waitFor(() =>
+      expect(discoveredContacts()?.map(c => c.name)).toEqual(['Tusha']),
+    );
+  });
+
+  it('does not wake mounted screens for a sweep that learned nothing', async () => {
+    await settledWithoutThem();
+    const woken: number[] = [];
+    const unsubscribe = subscribeDiscoveredContacts(() => woken.push(1));
+
+    // Same book, same answers — the steady state, which is most of the runs.
+    requestContactsRefresh(['acc-9'], 'app-returned');
+    await act(async () => {
+      await new Promise(r => setTimeout(r, 30));
+    });
+
+    expect(woken).toHaveLength(0);
+    unsubscribe();
+  });
+});

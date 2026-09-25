@@ -27,6 +27,8 @@ export class Conversation extends Model {
   @field('unread_count') unreadCount!: number;
   @field('mention_count') mentionCount!: number;
   @text('notif_level') notifLevel!: string;
+  /** Chat wallpaper id (§F2). The column has existed since the v3 schema; empty = `plain`. */
+  @field('wallpaper') wallpaper?: string;
   @field('created_at') createdAt!: number;
   @field('updated_at') updatedAt!: number;
 }

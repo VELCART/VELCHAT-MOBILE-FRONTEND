@@ -40,6 +40,7 @@ import {
 } from '../../../infra';
 import { discoverContacts } from '../../../domain';
 import { contactFingerprint, hashFingerprints } from '../model/fingerprint';
+import { peerDisplayName, sameContactNames } from '../model/peerDisplayName';
 import { mapChunked, whenIdle } from '../model/chunk';
 import {
   buildContactLists,
@@ -142,13 +143,55 @@ interface Snapshot {
 // shows the previous account's contacts.
 let memSnapshot: Snapshot | null = null;
 
+/**
+ * Who to wake when the address-book matches change.
+ *
+ * A DM is titled from this snapshot at READ time (VC-047), and the name lives in the PHONE, not
+ * on the server — so nothing will ever re-emit the DB row to correct a title, and a screen that
+ * is already mounted has no way to learn that a name arrived. That is the second half of VC-044:
+ * discovering the newly saved contact is useless if the chat list the user is staring at never
+ * re-renders. The snapshot therefore has to tell its readers itself.
+ *
+ * A plain callback set, not a store: the value readers want is `discoveredContacts()`, which they
+ * already call, so all this has to carry is "look again".
+ */
+const contactsListeners = new Set<() => void>();
+
+/**
+ * Be told when the discovered address-book matches change. Returns the disposer — every caller
+ * owns its subscription and releases it on unmount (§M20.3).
+ */
+export function subscribeDiscoveredContacts(listener: () => void): () => void {
+  contactsListeners.add(listener);
+  return () => {
+    contactsListeners.delete(listener);
+  };
+}
+
+function notifyContactsChanged(): void {
+  // Copied first: a listener that unsubscribes itself while we iterate must not skip the next.
+  for (const listener of [...contactsListeners]) {
+    try {
+      listener();
+    } catch {
+      // One bad subscriber may not take a discovery run down with it.
+    }
+  }
+}
+
 function persist(s: Snapshot): void {
+  const previous = memSnapshot;
   memSnapshot = s;
   try {
     kv.set(KVKeys.contactsSnapshot, JSON.stringify(s));
   } catch {
     // best-effort cache; a serialization failure just means the next open re-discovers.
   }
+  // Gated on what a TITLE reads. Every run persists — the `at` stamp moves even when the book
+  // came back identical, which is the steady state — and re-titling every mounted chat row for
+  // that is a render nobody asked for on the reference device (§R4).
+  if (previous && sameContactNames(previous.onVelchat, s.onVelchat)) return;
+  notifyContactsChanged();
 }
 
 function readCache(accountId: string | undefined): Snapshot | null {
@@ -197,16 +240,34 @@ function persistDiscoveryCache(cache: DiscoveryCache): void {
 }
 
 /**
+ * The address-book matches this account has already discovered, or `null` when nothing has been
+ * discovered yet (no permission, first run, or still in flight).
+ *
+ * Exposed so anything that titles a DM can prefer the name the USER saved over the one the peer
+ * registered (VC-044 / VC-047) without re-running discovery — it is a cache read, safe to call
+ * on a render or write path. Returns `null` rather than an empty list for "unknown", so callers
+ * can tell "not in your contacts" from "contacts not loaded".
+ */
+export function discoveredContacts(): VelchatContact[] | null {
+  return readCache(getAccountId())?.onVelchat ?? null;
+}
+
+/**
  * Drop this account's remembered discovery outcomes. MUST be called on sign-out — the cache maps
  * E.164 numbers to accountIds and would otherwise outlive the account that built it.
  */
 export function clearContactsDiscoveryCache(): void {
   memSnapshot = null;
+  // The throttle belongs to the account whose book we were sweeping; carrying it across a
+  // sign-out would silently swallow the next account's first refresh.
+  lastRefreshAt = 0;
   try {
     kv.delete(DISCOVERY_CACHE_KEY);
   } catch {
     // nothing to do if the store is unavailable
   }
+  // Anything still mounted is now titling DMs from a book that no longer applies to this device.
+  notifyContactsChanged();
 }
 
 /** Result of one pipeline run, plus how much work it deliberately deferred. */
@@ -390,6 +451,87 @@ function scheduleResume(pending: number): void {
       scheduleResume(res.pending);
     })();
   }, RESUME_DELAY_MS);
+}
+
+/**
+ * How long one sweep satisfies a chat-open request. The pipeline underneath is incremental — an
+ * unchanged book costs no crypto and no round trip — but it is still a native address-book read
+ * plus a normalize + fingerprint pass over every contact. Cheap enough to spend when a name on
+ * screen is wrong; far too often to spend per chat the user taps through (§R4/§R5).
+ */
+const REFRESH_THROTTLE_MS = 60_000;
+
+let lastRefreshAt = 0;
+let refreshInFlight = false;
+
+/**
+ * What prompted a refresh. `chat-open` is a guess (this peer MIGHT be someone you have since
+ * saved); `app-returned` is evidence (the user was in another app, which is the only place a
+ * contact can be saved), so it is the one allowed past the throttle.
+ */
+export type ContactsRefreshTrigger = 'chat-open' | 'app-returned';
+
+/**
+ * Re-check the address book because a peer ON SCREEN is someone we cannot name (VC-044).
+ *
+ * The residual defect this exists for: VC-047 already makes a saved name win and resolve at read
+ * time, but a contact saved WHILE VelChat is running has never been through a discovery sweep, so
+ * the peer is genuinely unknown to the client and the chat honestly renders the number. Until
+ * this, the only things that swept were the launch prewarm and opening New Chat — which is why
+ * the reported workaround was to go and do something unrelated until one of them happened to run.
+ *
+ * Kept affordable by four gates rather than by being rare:
+ *  - NOTHING TO GAIN: if every peer on screen already resolves to a saved name, this returns
+ *    without touching anything. A sweep could only confirm what is already drawn.
+ *  - THROTTLED: a chat-open request inside {@link REFRESH_THROTTLE_MS} of the last sweep is
+ *    dropped, so tapping through a list of strangers costs one sweep, not one per chat.
+ *  - OFF THE RENDER PATH (§M0 rule 2): it waits for idle first, so it can never compete with the
+ *    chat-open transition or the resume that triggered it, and it is fire-and-forget — no caller
+ *    ever awaits it.
+ *  - INCREMENTAL: `runPipeline` is single-flight, an unchanged book short-circuits before any
+ *    crypto, and only numbers with no remembered outcome are sent for OPRF.
+ *
+ * @param peerIds the DM peers currently on screen (`undefined` entries — groups, unresolved
+ *                rows — are ignored)
+ */
+export function requestContactsRefresh(
+  peerIds: readonly (string | undefined)[],
+  trigger: ContactsRefreshTrigger,
+): void {
+  if (refreshInFlight) return;
+  const known = discoveredContacts();
+  const anyUnknown = peerIds.some(
+    id =>
+      id !== undefined && peerDisplayName(known, id, undefined) === undefined,
+  );
+  if (!anyUnknown) return;
+  if (
+    trigger === 'chat-open' &&
+    Date.now() - lastRefreshAt < REFRESH_THROTTLE_MS
+  ) {
+    return;
+  }
+
+  // Claimed synchronously: the chat header and the chat list both ask on a return, and without
+  // this they would both get past the check before either reached its first await.
+  refreshInFlight = true;
+  void (async () => {
+    try {
+      // Never prompts. Without permission there is no book to re-read and nothing to learn.
+      if ((await checkContactsPermission()) !== 'granted') return;
+      await whenIdle();
+      const res = await runPipeline(() => false);
+      if (!res) return;
+      persist(res.snapshot);
+      scheduleResume(res.pending);
+    } catch {
+      // Best-effort: a failed refresh leaves the title exactly as it already was.
+    } finally {
+      // Stamped on the way OUT, so a slow sweep does not immediately earn another one.
+      lastRefreshAt = Date.now();
+      refreshInFlight = false;
+    }
+  })();
 }
 
 /**

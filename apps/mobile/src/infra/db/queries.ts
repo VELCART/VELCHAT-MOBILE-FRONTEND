@@ -95,6 +95,8 @@ export interface ConversationPatch {
   peerId?: string;
   /** That peer's photo URL, so a list row never fetches one while the user is scrolling. */
   peerAvatarUrl?: string;
+  /** Chat wallpaper id (§F2) — per conversation, like WhatsApp. Empty/absent = `plain`. */
+  wallpaper?: string;
 }
 
 /**
@@ -106,13 +108,29 @@ export interface RowStream<T> {
   subscribe(next: (rows: T[]) => void): { unsubscribe: () => void };
 }
 
+/**
+ * Every column the chat screen reads off a conversation row. Kept beside the subscription so
+ * the two cannot drift: `observeWithColumns` only wakes for the columns it is NAMED, so a
+ * field read by the UI but missing here is invisibly stale until the screen is re-entered.
+ */
+export const CONVERSATION_IDENTITY_COLUMNS = [
+  'name',
+  'peer_id',
+  'peer_avatar_url',
+  'wallpaper',
+] as const;
+
+/** What `observeConversation` actually subscribes to. Asserted against the list above. */
+export const CONVERSATION_OBSERVED_COLUMNS: readonly string[] =
+  CONVERSATION_IDENTITY_COLUMNS;
+
 export function observeConversation(
   conversationId: string,
 ): RowStream<Conversation> {
   return getDatabase()
     .get<Conversation>('conversations')
     .query(Q.where('id', conversationId))
-    .observeWithColumns(['name', 'peer_id', 'peer_avatar_url']);
+    .observeWithColumns([...CONVERSATION_IDENTITY_COLUMNS]);
 }
 
 /** The DM peer stored on the row, if the inbox sync has resolved one. No network. */
@@ -189,14 +207,19 @@ export async function upsertConversation(
           c.peerAvatarUrl = patch.peerAvatarUrl;
           c.peerAvatarAt = now;
         }
-        if (patch.lastMessagePreview !== undefined) {
+        if (patch.wallpaper !== undefined) c.wallpaper = patch.wallpaper;
+        // Never move the sort key backwards (a stale patch mustn't reorder the list) — and the
+        // preview is part of the same fact, so it moves with it or not at all (VC-058). It used
+        // to be written unconditionally, which let a late-arriving OLDER message (FCM gives no
+        // ordering guarantee, and a backfill can land after a live message) leave the row
+        // correctly sorted but previewing a message the user had already read.
+        const fresher =
+          patch.lastMessageAt === undefined ||
+          patch.lastMessageAt >= (c.lastMessageAt ?? 0);
+        if (fresher && patch.lastMessagePreview !== undefined) {
           c.lastMessagePreview = patch.lastMessagePreview;
         }
-        // Never move the sort key backwards (a stale patch mustn't reorder the list).
-        if (
-          patch.lastMessageAt !== undefined &&
-          patch.lastMessageAt >= (c.lastMessageAt ?? 0)
-        ) {
+        if (patch.lastMessageAt !== undefined && fresher) {
           c.lastMessageAt = patch.lastMessageAt;
         }
         c.updatedAt = now;

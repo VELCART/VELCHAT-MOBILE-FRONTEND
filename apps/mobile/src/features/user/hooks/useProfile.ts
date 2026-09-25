@@ -27,6 +27,11 @@ import {
   type Profile,
 } from '../api/userApi';
 import { publishProfileChanged } from '../../../core';
+// Cross-feature by design: the email that decides this gate is an auth-service identifier, not
+// a directory-profile field (see `profileShape.ts`). `authApi` depends only on infra, so this
+// does not close an import cycle back into `features/user`.
+import { getAccountInfo } from '../../auth/api/authApi';
+import { shouldPromptForProfile } from '../model/profileGate';
 
 // Re-exported so feature UI gets haptics through the feature layer (UI must not
 // import infra directly — layer boundaries §M3).
@@ -77,9 +82,10 @@ export function useProfileGate(): {
       return undefined;
     }
 
-    // No email yet → we WILL prompt (even if a name already exists). Load the backend
-    // profile first so the sheet can pre-fill the existing name/about and the user only
-    // needs to add the missing email — coming up from the bottom, WhatsApp-style.
+    // No email in the mirror — which, since sign-out wipes the mirror, is ALSO what a returning
+    // user looks like. Load the backend profile so the sheet can pre-fill the existing
+    // name/about, then ask the auth-service whether this account already has an email before
+    // deciding to prompt at all (VC-049).
     let active = true;
     const check = async (): Promise<void> => {
       try {
@@ -89,9 +95,32 @@ export function useProfileGate(): {
         }
         if (profile?.about) kv.set(KVKeys.about, profile.about);
       } catch {
-        // No profile yet (404) or a transient error → still prompt to set it up.
+        // No profile yet (404) or a transient error — the name/about pre-fill is best-effort.
       }
-      if (active) setNeedsSetup(true);
+
+      // The email is NOT part of the directory profile; it is a separately-verified identifier
+      // owned by the auth-service. Asking it is the difference between "this account has no
+      // email" and "this device has not been told the email yet".
+      let accountEmail: string | null | undefined;
+      try {
+        accountEmail = (await getAccountInfo(accountId)).email;
+        // Re-mirror it so the next launch short-circuits above without any network at all.
+        if (accountEmail) kv.set(KVKeys.email, accountEmail);
+      } catch {
+        accountEmail = undefined; // unreachable → "don't know", which must not mean "prompt"
+      }
+      if (!active) return;
+
+      if (
+        !shouldPromptForProfile({
+          mirroredEmail: kv.getString(KVKeys.email) ?? null,
+          accountEmail,
+        })
+      ) {
+        if (accountEmail) kv.set(KVKeys.profileComplete, true);
+        return;
+      }
+      setNeedsSetup(true);
     };
     void check();
     return () => {
