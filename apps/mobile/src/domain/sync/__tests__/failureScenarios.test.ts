@@ -185,12 +185,13 @@ jest.mock('@react-native-community/netinfo', () => ({
 
 import { syncEngine } from '../SyncEngine';
 import { getDatabase } from '../../../infra/db/database';
-import { Message, Conversation } from '../../../infra/db/models';
+import { Message, Conversation, Outbox } from '../../../infra/db/models';
 import {
   purgeAllLocalChat,
   upsertConversation,
 } from '../../../infra/db/queries';
 import { applyServerMessages } from '../../../infra/db/messages';
+import { syntheticMessageId } from '../../../infra/network/chat';
 import { clearAllReceipts, noteDesired } from '../../../infra/db/receiptStore';
 import { kv, KVKeys } from '../../../infra/kv';
 import { AppError } from '../../../infra/network/errors';
@@ -1831,5 +1832,156 @@ describe('the open chat keeps reading its peer after an interruption', () => {
     // resume must not undo (VC-065).
     expect(mockGetPresence.mock.calls.length).toBe(readsBefore);
     expect(syncEngine.getDiagnostics().peerPresencePollActive).toBe(false);
+  });
+});
+
+// ── quoted replies: the id on the wire is resolved at TRANSMIT time ───────────
+/**
+ * A reply names its target with the only id the COMPOSER has: the local record id. The backend
+ * has never heard of that id. The translation therefore has to happen somewhere, and WHERE is
+ * the whole point of these cases.
+ *
+ * It cannot be at compose time. The quoted message is routinely milliseconds old and still
+ * unacked — replying to the message you just sent is ordinary behaviour — so at enqueue time
+ * there is frequently no server id to substitute, and baking that "none" into the durable
+ * payload would make the reply permanently unattributed however many times it is retried.
+ * By transmit time, one or more round trips later, the id usually exists.
+ */
+describe('quoted reply id resolution', () => {
+  const conv = 'quote_conv';
+
+  beforeEach(async () => {
+    await upsertConversation(conv, { type: 'dm', name: 'Peer' });
+  });
+
+  /** The local record id of the single message held for `conv`. */
+  async function onlyRowId(): Promise<string> {
+    const rows = await messagesOf(conv);
+    const id = rows[0]?.id;
+    if (!id) throw new Error('no message row');
+    return id;
+  }
+
+  function lastSentInput(): SendMessageInput {
+    const call = mockSendChat.mock.calls[mockSendChat.mock.calls.length - 1];
+    return call?.[0] as SendMessageInput;
+  }
+
+  it('sends the SERVER id, not the local one the composer quoted', async () => {
+    mockSendChat.mockResolvedValue({ messageId: 'srv_reply', seq: 2 });
+    await bootConnected();
+    // A peer message that carries a real server identity.
+    await applyServerMessages([
+      {
+        messageId: 'mongo_oid_77',
+        conversationId: conv,
+        seq: 1,
+        senderId: PEER,
+        type: 'text',
+        content: 'the original',
+        serverTs: T0 + 1000,
+      },
+    ]);
+    const localId = await onlyRowId();
+
+    await syncEngine.sendText(conv, ME, 'answering that', localId);
+    await until(
+      () => mockSendChat.mock.calls.length > 0,
+      'the reply to be transmitted',
+    );
+
+    expect(lastSentInput().replyTo).toBe('mongo_oid_77');
+  });
+
+  it('leaves the local reply_to_id alone, so the sender still sees their own quote', async () => {
+    mockSendChat.mockResolvedValue({ messageId: 'srv_reply', seq: 2 });
+    await bootConnected();
+    await applyServerMessages([
+      {
+        messageId: 'mongo_oid_78',
+        conversationId: conv,
+        seq: 1,
+        senderId: PEER,
+        type: 'text',
+        content: 'the original',
+        serverTs: T0 + 1000,
+      },
+    ]);
+    const localId = await onlyRowId();
+
+    await syncEngine.sendText(conv, ME, 'answering that', localId);
+    await until(
+      () => mockSendChat.mock.calls.length > 0,
+      'the reply to be transmitted',
+    );
+
+    const reply = (await messagesOf(conv)).find(m => m.senderId === ME);
+    // The wire got the server id; the ROW keeps the local one, which is what the screen
+    // resolves against to draw the quote above the bubble.
+    expect(reply?.replyToId).toBe(localId);
+  });
+
+  it('omits replyTo entirely rather than send an id the server cannot resolve', async () => {
+    mockSendChat.mockResolvedValue({ messageId: 'srv_reply', seq: 2 });
+    await bootConnected();
+    // A frame that carried no id of its own: `normalizeServerMessage` synthesises one, and the
+    // DB refuses to store a synthetic id as a server identity.
+    await applyServerMessages([
+      {
+        messageId: syntheticMessageId(conv, 1),
+        conversationId: conv,
+        seq: 1,
+        senderId: PEER,
+        type: 'text',
+        content: 'no server id',
+        serverTs: T0 + 1000,
+      },
+    ]);
+    const localId = await onlyRowId();
+
+    await syncEngine.sendText(conv, ME, 'answering that', localId);
+    await until(
+      () => mockSendChat.mock.calls.length > 0,
+      'the reply to be transmitted',
+    );
+
+    // Absent, not null and not the local id: a dangling reference is worse than a plain message.
+    expect('replyTo' in lastSentInput()).toBe(false);
+    const reply = (await messagesOf(conv)).find(m => m.senderId === ME);
+    expect(reply?.replyToId).toBe(localId);
+  });
+
+  it('keeps the LOCAL id in the durable payload, so a retry re-resolves it', async () => {
+    // This is what makes transmit-time resolution worth having: the stored payload is never
+    // rewritten, so an attempt made after the quoted message is finally acked picks up the
+    // server id that did not exist on the first attempt.
+    const inFlight = deferred<SendAck>();
+    mockSendChat.mockImplementation(() => inFlight.promise);
+    await bootConnected();
+    await applyServerMessages([
+      {
+        messageId: 'mongo_oid_79',
+        conversationId: conv,
+        seq: 1,
+        senderId: PEER,
+        type: 'text',
+        content: 'the original',
+        serverTs: T0 + 1000,
+      },
+    ]);
+    const localId = await onlyRowId();
+
+    await syncEngine.sendText(conv, ME, 'answering that', localId);
+    await until(
+      () => mockSendChat.mock.calls.length > 0,
+      'the reply to be transmitted',
+    );
+
+    const rows = await getDatabase().get<Outbox>('outbox').query().fetch();
+    const payloads = rows.map(
+      o => JSON.parse(o.payload) as { replyTo?: string },
+    );
+    expect(payloads.some(pl => pl.replyTo === localId)).toBe(true);
+    inFlight.resolve({ messageId: 'srv_reply', seq: 2 });
   });
 });

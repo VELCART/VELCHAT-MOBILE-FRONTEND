@@ -6,6 +6,8 @@
 import {
   dayCategory,
   isSameDay,
+  compactTime,
+  shortDate,
   startsNewDay,
   startsNewRun,
   type GroupableMsg,
@@ -66,5 +68,46 @@ describe('dayCategory', () => {
     expect(dayCategory(new Date(2026, 6, 30, 10, 0).getTime(), now)).toBe(
       'other',
     );
+  });
+});
+
+describe('compactTime respects the locale instead of forcing 12-hour', () => {
+  const noon = new Date(2026, 8, 26, 21, 5).getTime(); // 21:05 local
+
+  it('renders 24-hour for a locale that uses it', () => {
+    // en-GB is 24-hour: the hour must be 21, not 9, and there must be no AM/PM marker.
+    const label = compactTime(noon, 'en-GB');
+    expect(label).toMatch(/21/);
+    expect(label).not.toMatch(/AM|PM/i);
+  });
+
+  it('renders 12-hour for a locale that uses it', () => {
+    const label = compactTime(noon, 'en-US');
+    expect(label).toMatch(/9/);
+  });
+
+  it('is empty for an invalid timestamp', () => {
+    expect(compactTime(NaN, 'en-GB')).toBe('');
+  });
+});
+
+describe('shortDate carries the year only when it is not the current one', () => {
+  const now = new Date(2026, 8, 26).getTime();
+
+  it('omits the year inside the current year', () => {
+    const label = shortDate(new Date(2026, 7, 12).getTime(), now, 'en-GB');
+    expect(label).toMatch(/12/);
+    expect(label).not.toMatch(/2026/);
+  });
+
+  it('carries the year for an older one, so two Augusts are not the same label', () => {
+    const thisYear = shortDate(new Date(2026, 7, 12).getTime(), now, 'en-GB');
+    const lastYear = shortDate(new Date(2024, 7, 12).getTime(), now, 'en-GB');
+    expect(lastYear).toMatch(/2024/);
+    expect(lastYear).not.toBe(thisYear);
+  });
+
+  it('is empty for an invalid timestamp', () => {
+    expect(shortDate(NaN, now, 'en-GB')).toBe('');
   });
 });

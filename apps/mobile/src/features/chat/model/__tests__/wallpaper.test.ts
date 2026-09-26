@@ -67,12 +67,17 @@ describe('wallpaperPaint', () => {
     expect(wallpaperPaint('plain', 'dark').base).toBe('#0A0A0B');
   });
 
-  it('a decorated wallpaper tints the incoming bubble so the ground reads through it', () => {
+  // The thread's bubbles carry WhatsApp's own solid fills and are separated from whatever is
+  // behind them by a shadow, the way WhatsApp separates them from its patterned wallpaper. A
+  // translucent override would undo both the colour and that 3:1 boundary (VC-060), so every
+  // wallpaper now decorates the GROUND and leaves the bubbles alone.
+  it('a decorated wallpaper decorates the ground and never the bubble', () => {
     for (const id of ['frosted', 'blush'] as WallpaperId[]) {
       for (const scheme of ['light', 'dark'] as const) {
         const paint = wallpaperPaint(id, scheme);
         expect(paint.blooms.length).toBeGreaterThan(0);
-        expect(paint.incomingTint).not.toBeNull();
+        expect(paint.incomingTint).toBeNull();
+        expect(paint.incomingBorder).toBeNull();
       }
     }
   });

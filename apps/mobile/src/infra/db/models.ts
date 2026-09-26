@@ -43,6 +43,8 @@ export class Message extends Model {
   @text('type') type!: string;
   @text('content_plain') contentPlain?: string;
   @text('content_encrypted') contentEncrypted?: string;
+  /** The id the SERVER knows this message by — the join key an inbound `reply_to_id` uses. */
+  @text('server_msg_id') serverMsgId?: string;
   @text('reply_to_id') replyToId?: string;
   @text('reactions') reactions?: string;
   @text('attachments') attachments?: string;

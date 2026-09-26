@@ -86,7 +86,28 @@
       "plain": "سادة",
       "frosted": "ضبابي",
       "blush": "وردي"
-    }
+    },
+    "you": "أنت",
+    "reply": "رد",
+    "cancelReply": "إلغاء الرد",
+    "a11yQuoting": "رد على {{author}}",
+    "state": {
+      "sending": "جارٍ الإرسال",
+      "sent": "تم الإرسال",
+      "delivered": "تم التسليم",
+      "read": "تمت القراءة",
+      "failed": "لم يُرسل، اضغط لإعادة المحاولة"
+    },
+    "quoted": {
+      "photo": "صورة",
+      "video": "فيديو",
+      "audio": "صوت",
+      "document": "مستند",
+      "message": "رسالة"
+    },
+    "threadEmpty": "لا توجد رسائل بعد",
+    "threadEmptySub": "ابدأ المحادثة بإلقاء التحية.",
+    "replyHint": "اضغط مطولاً للرد"
   },
   "newChat": {
     "title": "محادثة جديدة",

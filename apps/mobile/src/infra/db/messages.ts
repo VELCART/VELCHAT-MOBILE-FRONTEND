@@ -9,6 +9,7 @@ import { getDatabase } from './database';
 import { Message, Conversation } from './models';
 import { reconcileDecision } from './syncLogic';
 import { getAccountId } from '../network/tokens';
+import { syntheticMessageId } from '../network/chat';
 import type { ServerMessage, SendAck } from '../network/chat';
 
 /** Newest-N window loaded into the chat view (§R5 — bound memory/open cost; a full
@@ -74,6 +75,65 @@ export function observeMessages(
 
 /** How many more messages a "load older" step reveals. */
 export const MESSAGE_PAGE = MESSAGE_WINDOW;
+
+/**
+ * Ceiling on one {@link findQuotedMessages} lookup. The caller is a rendered window (~50 rows),
+ * so anything beyond this is a bug in the caller rather than a request worth serving: a
+ * `Q.oneOf` of unbounded width is exactly the "no unbounded query" rule this layer exists to
+ * keep, and on the 3 GB reference device it is also a real stall.
+ */
+const MAX_ID_LOOKUP = 200;
+
+/**
+ * The server identity of a message, or undefined when it has none worth storing.
+ *
+ * Rejects the id `normalizeServerMessage` SYNTHESISES for a frame that carried none. Persisting
+ * that would be actively harmful rather than merely useless: the outbox resolves `replyTo` from
+ * this column at transmit time, so a synthetic id would be sent to a backend that cannot resolve
+ * it — reintroducing the dangling reference this column exists to eliminate.
+ */
+function realServerMsgId(s: ServerMessage): string | undefined {
+  const id = s.messageId;
+  if (!id) return undefined;
+  if (id === syntheticMessageId(s.conversationId, s.seq)) return undefined;
+  return id;
+}
+
+/**
+ * Fetch the messages a set of quotes refers to, in ONE query (§L7).
+ *
+ * Matches EITHER identity, and both are load-bearing. A reply composed against a message that
+ * has not been acked yet can only name the LOCAL record id — that is all the screen has, and it
+ * is what lets the sender's own quote render instantly. A reply arriving from a peer names the
+ * SERVER id, because that is the only identity the two devices share. Resolving one column and
+ * not the other is precisely the bug this replaced: inbound quotes rendered as unavailable
+ * forever, because a server messageId can never equal a Watermelon-random record id.
+ *
+ * Deliberately forgiving: a quoted target can legitimately be gone (deleted for everyone, or
+ * older than the local window), so the result is simply whatever exists. A miss is a "message
+ * unavailable" placeholder, never a throw on the render path.
+ */
+export async function findQuotedMessages(
+  ids: readonly string[],
+): Promise<Message[]> {
+  // No ids = no work. Returning before touching the database keeps the common case — a window
+  // with no replies in it — entirely off the query path.
+  if (ids.length === 0) return [];
+  const unique = [...new Set(ids.filter(id => id !== ''))].slice(
+    0,
+    MAX_ID_LOOKUP,
+  );
+  if (unique.length === 0) return [];
+  return getDatabase()
+    .get<Message>('messages')
+    .query(
+      Q.or(
+        Q.where('id', Q.oneOf(unique)),
+        Q.where('server_msg_id', Q.oneOf(unique)),
+      ),
+    )
+    .fetch();
+}
 
 /** Total messages held locally for a conversation — tells the UI whether older ones exist. */
 export function countMessages(conversationId: string): Promise<number> {
@@ -387,6 +447,11 @@ export async function applyServerMessages(
             m.seq = s.seq;
             if (s.serverTs !== undefined) m.serverTs = s.serverTs;
             if (s.content !== undefined) m.contentPlain = s.content;
+            // A row we composed locally learns its server identity here, when its own echo comes
+            // back. Written only when the echo actually carries one, so a later bodiless frame
+            // can never erase an id an earlier one taught us.
+            const sid = realServerMsgId(s);
+            if (sid !== undefined) m.serverMsgId = sid;
             // don't downgrade a delivered/read receipt back to sent
             if (m.state === 'sending' || m.state === 'failed')
               m.state = nextState;
@@ -406,6 +471,9 @@ export async function applyServerMessages(
             m.senderId = s.senderId;
             m.type = s.type;
             if (s.content !== undefined) m.contentPlain = s.content;
+            // The identity a peer's reply will quote this row by — see `findQuotedMessages`.
+            const sid = realServerMsgId(s);
+            if (sid !== undefined) m.serverMsgId = sid;
             if (s.replyToId !== undefined) m.replyToId = s.replyToId;
             m.state = nextState;
             m.deleted = false;
@@ -502,6 +570,10 @@ export async function markMessageSent(
     ops.push(
       row.prepareUpdate(m => {
         m.seq = ack.seq;
+        // Usually the FIRST place our own row hears its server identity — the ack beats the
+        // echo. Guarded because `normalizeSendAck` defaults a missing id to '', and an
+        // idempotent re-send of an already-acked message must not erase what we know.
+        if (ack.messageId !== '') m.serverMsgId = ack.messageId;
         if (ack.serverTs !== undefined) {
           m.serverTs = ack.serverTs;
           // Re-stamp the ordering key to the SERVER clock, in EITHER direction. `created_at` is

@@ -21,16 +21,25 @@ export function useMessages(conversationId: string): {
   meId: string;
   /** Reveal the previous page of history — call when the user scrolls past the oldest bubble. */
   loadOlder: () => void;
+  /**
+   * Is the oldest loaded message the oldest that exists? Only true once a page attempt has
+   * come back empty. The date separator needs it: "oldest LOADED" is not "oldest of its day",
+   * so a chip drawn on the window boundary is a guess that gets contradicted — it appears on
+   * one bubble, then jumps to another the moment more history arrives.
+   */
+  atOldest: boolean;
 } {
   const meId = useMemo(() => getAccountId() ?? 'me', []);
   const [messages, setMessages] = useState<Message[]>([]);
   // The window grows; it never shrinks while the chat is open, so scrolling back up does not
   // re-drop history the user just pulled in.
   const [limit, setLimit] = useState(MESSAGE_PAGE);
+  const [atOldest, setAtOldest] = useState(false);
   const loadingOlder = useRef(false);
 
   useEffect(() => {
     setLimit(MESSAGE_PAGE); // a different conversation starts from one page again
+    setAtOldest(false);
   }, [conversationId]);
 
   /**
@@ -53,6 +62,7 @@ export function useMessages(conversationId: string): {
           MESSAGE_PAGE,
         );
         if (grew) setLimit(l => l + MESSAGE_PAGE);
+        else setAtOldest(true);
       } catch {
         // Offline or the server has nothing older — the window simply stays where it is.
       } finally {
@@ -128,7 +138,7 @@ export function useMessages(conversationId: string): {
     }
     return () => sub?.unsubscribe();
   }, [conversationId, limit]);
-  return { messages, meId, loadOlder };
+  return { messages, meId, loadOlder, atOldest };
 }
 
 /** Retry a permanently-failed send (tapped from the bubble) — re-queues the same message. */
@@ -138,13 +148,19 @@ export function useRetrySend(): (clientMsgId: string) => void {
   }, []);
 }
 
-export function useSendMessage(conversationId: string): (text: string) => void {
+/**
+ * Send into this conversation. `replyToId` quotes an existing message — omitted, the send is an
+ * ordinary one and nothing about the reply path is touched.
+ */
+export function useSendMessage(
+  conversationId: string,
+): (text: string, replyToId?: string) => void {
   const meId = useMemo(() => getAccountId() ?? 'me', []);
   return useCallback(
-    (text: string) => {
+    (text: string, replyToId?: string) => {
       // Fire-and-forget: the engine writes the optimistic bubble to the DB (instant UI),
       // enqueues the durable outbox item, and transmits off the render path (§L6/§L7).
-      void syncEngine.sendText(conversationId, meId, text);
+      void syncEngine.sendText(conversationId, meId, text, replyToId);
     },
     [conversationId, meId],
   );

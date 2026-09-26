@@ -109,6 +109,17 @@ export function enqueueOptimisticSend(
   conversationId: string,
   text: string,
   senderId: string,
+  /**
+   * The message being quoted, when this send is a reply.
+   *
+   * It belongs to the SAME transaction as the bubble and the outbox row, not to a follow-up
+   * write: the quote is part of what the user composed, so a row that exists without it is
+   * already wrong. It also has to live in the PAYLOAD rather than be re-derived at transmit
+   * time — the worker retries the identical payload under the identical clientMsgId, so a
+   * reply that only the message row knew about would reach the peer as a plain message on
+   * the first attempt and stay that way forever (the send is idempotent server-side).
+   */
+  replyToId?: string,
 ): Promise<string | null> {
   const body = text.trim();
   // A blank body has nothing to deliver. A blank sender is worse than nothing: the backend
@@ -132,6 +143,11 @@ export function enqueueOptimisticSend(
       clientMsgId,
       type: 'text',
       content: body,
+      // Spread rather than assigned: under `exactOptionalPropertyTypes` an explicit
+      // `undefined` is a real property, and `JSON.stringify` would either drop it here and
+      // keep it elsewhere or serialise it as `null` — which the backend reads as "cleared",
+      // not "absent". Same idiom as `toSendBody` in infra/network/chat.ts.
+      ...(replyToId !== undefined ? { replyTo: replyToId } : {}),
     };
     const json = JSON.stringify(payload);
 
@@ -142,6 +158,12 @@ export function enqueueOptimisticSend(
         m.senderId = senderId;
         m.type = 'text';
         m.contentPlain = body;
+        // Guarded, not assigned unconditionally — the same shape as `markFailed`'s
+        // `nextAttemptAt` and `applyServerMessages`' own `replyToId`: under
+        // `exactOptionalPropertyTypes` an `undefined` write is a type error, and leaving the
+        // column untouched is also what keeps it at WatermelonDB's `null` default rather than
+        // a written-and-empty value.
+        if (replyToId !== undefined) m.replyToId = replyToId;
         m.state = 'sending';
         m.deleted = false;
         m.viewOnce = false;

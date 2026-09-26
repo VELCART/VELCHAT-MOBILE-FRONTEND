@@ -20,6 +20,7 @@ export {
 export type { ConversationPatch, RowStream } from './queries';
 export {
   observeMessages,
+  findQuotedMessages,
   sendMessageLocal,
   applyServerMessage,
   applyServerMessages,

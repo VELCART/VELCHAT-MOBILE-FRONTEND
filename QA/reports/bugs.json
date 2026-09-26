@@ -2520,6 +2520,40 @@
       "notes": "Found by the product owner on a device that had been signed out, during the two-device verification pass. Fixed by giving the linking config a `filter` that reads the auth store when a URL arrives, so a link is only honoured while a session is active.\n\nFIX (defence in depth, not a reproduced-bug fix): linking now carries filter: () => hasSession(). The predicate is deliberately hasSession() — tokens present on the device — and NOT the auth store reporting active. A notification tapped from COLD arrives at the navigation container before the store has hydrated, so asking the store would drop exactly the link this path exists for and land the user on the chat list instead of the chat they tapped, regressing VC-048/VC-053. hasSession reads MMKV synchronously, so it is already true for anyone who has signed in. The first version of this fix did ask the store; it was caught and changed before it shipped.\n\nHONEST STATUS: the gate is correct and cheap, but it closes a hole that was reasoned about rather than observed. The unexplained sign-in screen is NOT explained by it and should be treated as still open if it recurs.",
       "fixedIn": "dev branch, 2026-09-25",
       "jira": "VC-75"
+    },
+    {
+      "id": "VC-075",
+      "status": "Fixed",
+      "regression": false,
+      "evidence": [],
+      "refs": ["VC-033", "VC-073", "VC-045"],
+      "testIds": [],
+      "title": "Replying from a notification sends nothing until the app is next opened — the headless service is skipped whenever a React context merely exists",
+      "severity": "P1",
+      "priority": "P1",
+      "layer": "CLIENT",
+      "feature": "Notifications — inline reply (RemoteInput)",
+      "component": "apps/mobile/android/app/src/main/java/com/velchat/push/PushActionReceiver.kt (queueForJs) + apps/mobile/src/features/notifications/model/pushRuntime.ts",
+      "environment": "Production build",
+      "device": "Pixel emulator (Android 16) and OPPO CPH2643",
+      "os": "Android",
+      "frequency": "Every inline reply taken while the app is backgrounded but its process is still alive",
+      "reproducibility": "100% — this is the ordinary case, because tapping a notification action does not resume the app.",
+      "preconditions": "VelChat has been opened at least once since boot (so a React context exists), then backgrounded. A message arrives from the other device and posts a notification.",
+      "steps": [
+        "Device A: open VelChat, then press Home so the app is backgrounded but not killed.",
+        "Device B: send a message to Device A.",
+        "Device A: pull down the shade, tap Reply on the VelChat notification, type a reply and send it.",
+        "Do NOT open the VelChat app.",
+        "Watch the notification, and watch Device B for the reply."
+      ],
+      "expected": "The reply leaves the device immediately and arrives on Device B, with the app never brought to the foreground — that is the entire point of replying from a notification.",
+      "actual": "Nothing is sent. The notification sits on 'Sending…' indefinitely and the reply only leaves the device when the user next opens the app, at which point the whole queue drains at once.",
+      "user_impact": "The inline reply feature is effectively broken in its normal case: the user believes they have replied, the recipient sees nothing, and the message appears minutes or hours later when the app happens to be opened. Reported live by the user as 'notification se message send nahi ho raha' and 'app open krne pe jata hai message'.",
+      "suspected_cause": "queueForJs guarded the fast path with `if (PushBridge.emitPendingEvents(context)) return`. emitPendingEvents answers 'is there a live React context to emit to', not 'will anything act on it'. A backgrounded process still has a context, so the receiver returned early, PushHeadlessService was never started, and javascript — suspended behind the app being in the background — never drained the event. The event sat in the native queue until the next foreground.",
+      "notes": "FIXED in two places.\n\n1. PushActionReceiver.queueForJs now takes the live path only when the app is genuinely RESUMED: `if (PushBridge.isAppResumed(context) && PushBridge.emitPendingEvents(context)) return`. Resumed is the one state where the live path is both faster and certain, because the engine is running and its outbox is not suspended. Everywhere else the headless route is taken, which owns a foreground service for its duration and flushes the outbox before it resolves. Starting it with the process already alive is safe — React Native reuses the instance.\n\n2. The live (resumed) path had the mirror-image gap: it applied the reply to the database but never flushed the outbox, so a reply typed while the app WAS resumed also waited for the next natural flush. pushRuntime's live subscription now awaits syncEngine.flushOutboxNow() after a reply event, matching what the headless path already did.\n\nVERIFIED LIVE, two devices, 2026-09-26: emulator backgrounded (topResumedActivity = launcher throughout), phone sent S1CHECK/S1CHECK2, three inline replies sent from the emulator's notification. logcat shows 'Background started FGS: com.velchat/.push.PushHeadlessService' → 'push: applying queued notification actions' → 'push: handlers done, flushing the outbox' → 'push: outbox flushed' for each, and all three replies ('Hi', 'Kkr', 'Kn') landed on the phone at 10:36 am with the app never foregrounded. No duplicate sends across the three cycles.",
+      "jira": "VC-77",
+      "fixedIn": "dev branch, 2026-09-26 (a670f4c)"
     }
   ]
 }

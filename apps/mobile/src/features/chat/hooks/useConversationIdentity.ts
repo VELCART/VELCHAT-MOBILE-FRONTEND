@@ -26,6 +26,13 @@ export interface ConversationIdentity {
   readonly name: string | undefined;
   /** Chat wallpaper (§F2), resolved from the row — `plain` until someone picks another. */
   readonly wallpaper: WallpaperId;
+  /**
+   * Has the local row actually been READ yet? Without this the caller cannot tell "this
+   * conversation has no name" from "we have not looked" — and the difference is visible: the
+   * header rendered the words "Unknown contact" for a frame on every open reached from a
+   * notification, which carries no name in its route.
+   */
+  readonly resolved: boolean;
 }
 
 const EMPTY: ConversationIdentity = {
@@ -33,15 +40,46 @@ const EMPTY: ConversationIdentity = {
   peerAvatarUrl: undefined,
   name: undefined,
   wallpaper: 'plain',
+  resolved: false,
 };
+
+/**
+ * The last identity each conversation published, so RE-opening one paints its wallpaper and its
+ * name on the first frame instead of one DB emission later.
+ *
+ * Opening a chat used to start from `EMPTY` every time, which means `wallpaper: 'plain'` — so a
+ * chat set to `blush` painted a white (or black) ground, then repainted pink a frame later.
+ * Every open. The observable is the source of truth and overwrites this the moment it emits;
+ * this only decides what is on screen until then.
+ *
+ * BOUNDED (§M0 — no unbounded caches). Oldest-inserted is evicted, which for chat-switching is
+ * near enough to least-recently-used, and the cost of a miss is exactly the behaviour that
+ * shipped before.
+ */
+const RECENT_LIMIT = 32;
+const recent = new Map<string, ConversationIdentity>();
+
+function remember(
+  conversationId: string,
+  identity: ConversationIdentity,
+): void {
+  recent.delete(conversationId);
+  recent.set(conversationId, identity);
+  if (recent.size > RECENT_LIMIT) {
+    const oldest = recent.keys().next();
+    if (!oldest.done) recent.delete(oldest.value);
+  }
+}
 
 export function useConversationIdentity(
   conversationId: string,
 ): ConversationIdentity {
-  const [identity, setIdentity] = useState<ConversationIdentity>(EMPTY);
+  const [identity, setIdentity] = useState<ConversationIdentity>(
+    () => recent.get(conversationId) ?? EMPTY,
+  );
 
   useEffect(() => {
-    setIdentity(EMPTY);
+    setIdentity(recent.get(conversationId) ?? EMPTY);
     // The row we are currently drawing. Held because the header has to be able to re-title
     // itself when the ADDRESS BOOK changes: the saved name is not on this row and never will be,
     // so the observable will not emit again to deliver it (VC-044).
@@ -51,13 +89,16 @@ export function useConversationIdentity(
 
     const publish = (): void => {
       if (!row) return;
-      setIdentity({
+      const next: ConversationIdentity = {
         peerId: row.peerId,
         peerAvatarUrl: row.peerAvatarUrl,
         // The header shows the name the USER saved, matching the chat list (VC-047).
         name: peerDisplayName(discoveredContacts(), row.peerId, row.name),
         wallpaper: resolveWallpaperId(row.wallpaper),
-      });
+        resolved: true,
+      };
+      remember(conversationId, next);
+      setIdentity(next);
     };
 
     let sub: { unsubscribe: () => void } | undefined;

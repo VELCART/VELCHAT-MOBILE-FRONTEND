@@ -86,7 +86,28 @@
       "plain": "Plain",
       "frosted": "Frosted",
       "blush": "Blush"
-    }
+    },
+    "you": "You",
+    "reply": "Reply",
+    "cancelReply": "Cancel reply",
+    "a11yQuoting": "Replying to {{author}}",
+    "state": {
+      "sending": "Sending",
+      "sent": "Sent",
+      "delivered": "Delivered",
+      "read": "Read",
+      "failed": "Not sent, tap to retry"
+    },
+    "quoted": {
+      "photo": "Photo",
+      "video": "Video",
+      "audio": "Audio",
+      "document": "Document",
+      "message": "Message"
+    },
+    "threadEmpty": "No messages yet",
+    "threadEmptySub": "Say hi to start the conversation.",
+    "replyHint": "Long press to reply"
   },
   "newChat": {
     "title": "New chat",

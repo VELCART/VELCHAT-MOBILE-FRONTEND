@@ -59,6 +59,7 @@ import {
   applyReceipt,
   parseReceiptFrame,
   enqueueOptimisticSend,
+  findQuotedMessages,
   claimNextDue,
   markAckd,
   markFailed,
@@ -83,6 +84,7 @@ import {
   takeDirty,
   reassertReceipts,
 } from '../../infra';
+import type { SendMessageInput } from '../../infra';
 
 /** Lower/upper bounds for the outbox self-adjusting timer (never poll a hot loop). */
 const OUTBOX_MIN_DELAY_MS = 500;
@@ -1340,7 +1342,9 @@ class SyncEngine {
           });
         }
         try {
-          const ack = await sendChatMessage(item.input);
+          const ack = await sendChatMessage(
+            await this.resolveReplyTarget(item.input),
+          );
           // A 2xx with no usable seq (`normalizeSendAck` defaults a missing/NaN one to 0) is a
           // server-side anomaly, not a successful send (VC-022): `seq > 0` filters elsewhere (the
           // cursor, `applyReceipt`) would make this row invisible forever — un-tickable, and the
@@ -1413,6 +1417,54 @@ class SyncEngine {
     }, delay);
   }
 
+  /**
+   * Translate a reply's quoted id from LOCAL to SERVER, immediately before the send.
+   *
+   * It has to happen here rather than at compose time, and the reason is timing. The composer
+   * only has the quoted message's local record id, and replying to a message that is itself
+   * still in flight is ordinary behaviour — so at enqueue time there is frequently no server id
+   * to substitute. Resolving once, then, would freeze that "none" into the durable payload and
+   * the reply would stay unattributed through every retry. Resolving on each attempt means the
+   * usual case (the target was acked a round trip ago) just works, and the unusual one repairs
+   * itself on the next attempt.
+   *
+   * The stored payload is deliberately NOT rewritten: it keeps the local id so the next attempt
+   * re-resolves from scratch. And when there is still no server id, `replyTo` is dropped from
+   * the wire body entirely rather than sent as a local id the backend cannot resolve — a plain
+   * message is a smaller lie than a dangling reference. The row's own `reply_to_id` is left
+   * untouched either way, so the sender keeps seeing their own quote.
+   */
+  private async resolveReplyTarget(
+    input: SendMessageInput,
+  ): Promise<SendMessageInput> {
+    const quoted = input.replyTo;
+    if (quoted === undefined || quoted === '') return input;
+    // `string | null` deliberately, not the model's declared `string | undefined`: WatermelonDB
+    // stamps every unwritten optional column `null`, so a row that has never learned its server
+    // id reads back as null here. An `=== undefined` guard passes that straight through and puts
+    // `replyTo: null` on the wire — which is the dangling reference this method exists to
+    // prevent, wearing a different type. Truthiness covers null, undefined and ''.
+    let serverId: string | null | undefined;
+    try {
+      // Matches either identity, so this also no-ops correctly if the id is ALREADY a server one.
+      const rows = await findQuotedMessages([quoted]);
+      serverId = rows[0]?.serverMsgId;
+    } catch (e) {
+      // A lookup failure must not fail the send — the message still deserves to go out.
+      log.warn('reply target lookup failed', { reason: String(e) });
+      serverId = undefined;
+    }
+    if (serverId) {
+      return { ...input, replyTo: serverId };
+    }
+    // Shallow copy minus the key. `delete` rather than a rest-destructure so there is no unused
+    // binding, and rather than an explicit rebuild so a field added to SendMessageInput later
+    // cannot be silently dropped from a reply's wire body.
+    const withoutReply: SendMessageInput = { ...input };
+    delete withoutReply.replyTo;
+    return withoutReply;
+  }
+
   private clearOutboxTimer(): void {
     if (this.outboxTimer !== null) {
       clearTimeout(this.outboxTimer);
@@ -1430,6 +1482,13 @@ class SyncEngine {
     conversationId: string,
     senderId: string,
     text: string,
+    /**
+     * The message being quoted, when this is a reply. Passed straight through to the one
+     * transaction below — the engine holds no reply policy of its own, and deliberately does
+     * NOT validate that the target exists: the DB write is the render path, and a lookup here
+     * would put a query in front of the bubble for a target the composer just picked off screen.
+     */
+    replyToId?: string,
   ): Promise<void> {
     // ONE transaction for the bubble + its outbox row: a crash between two writes used to strand
     // a message in `sending` that nothing would ever transmit or surface as failed.
@@ -1438,6 +1497,7 @@ class SyncEngine {
       conversationId,
       text,
       senderId,
+      replyToId,
     );
     if (!clientMsgId) return;
     // The budget that decides whether sending FEELS instant (§L7: ≤20 ms p50). Measured here

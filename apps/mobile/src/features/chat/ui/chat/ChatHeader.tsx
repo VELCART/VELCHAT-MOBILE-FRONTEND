@@ -27,6 +27,7 @@ import {
   conversationRowIdentity,
   presenceTimeLabel,
 } from './chatModel';
+import { chatPalette } from '../../model/chatPalette';
 
 const AVATAR = 40;
 
@@ -57,20 +58,35 @@ function derivePresenceLine(
 
 const noop = (): void => undefined;
 
+/** Hoisted: a fresh object per render is a new prop identity for no reason. */
+const DISABLED = { disabled: true } as const;
+const ENABLED = { disabled: false } as const;
+
+/**
+ * A header action. `disabled` is the honest word for an UNBUILT one, and it is load-bearing:
+ * a stub wired to `noop` but rendered with a real role, a real label and a press-dim says "I
+ * did something" in the only vocabulary a button has, so the user reads a dead tap as the app
+ * being broken and TalkBack announces a working control that is not. The composer's stubs were
+ * fixed for exactly this (VC-059); the header's two call buttons were not.
+ */
 function HeaderIconButton({
   label,
   onPress,
   icon: Icon,
+  disabled = false,
 }: {
   label: string;
   onPress: () => void;
   icon: (props: IconProps) => React.JSX.Element;
+  disabled?: boolean;
 }): React.JSX.Element {
   const t = useTheme();
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={disabled ? DISABLED : ENABLED}
+      disabled={disabled}
       onPress={onPress}
       hitSlop={8}
       style={({ pressed }) => ({
@@ -78,7 +94,7 @@ function HeaderIconButton({
         height: 40,
         alignItems: 'center',
         justifyContent: 'center',
-        opacity: pressed ? 0.6 : 1,
+        opacity: pressed && !disabled ? 0.6 : 1,
       })}
     >
       <Icon size={23} color={t.colors.textPrimary} strokeWidth={2} />
@@ -105,8 +121,11 @@ export function ChatHeader({
   // complete on the first frame instead of three round-trips after the tap. Stale entries are
   // revalidated in the background by the hook, and the row is observed, so a changed picture
   // appears without the user doing anything.
-  const { peerAvatarUrl, name: rowName } =
-    useConversationIdentity(conversationId);
+  const {
+    peerAvatarUrl,
+    name: rowName,
+    resolved,
+  } = useConversationIdentity(conversationId);
   const dp = peerAvatarUrl;
   // The notification deep link is `chat/:conversationId` and carries no name, so `name` is
   // undefined on that entry point and the header used to read "Chats" — the tab label — while
@@ -117,9 +136,14 @@ export function ChatHeader({
   // the slot where the person's name goes. That was the best available string when VC-053 was
   // written; the chat list has since needed the same answer and `chat.unknownContact` exists
   // for it (VC-070), so both surfaces say the same thing now.
+  // "Unknown contact" is an ANSWER, and it must not be given before the question has been
+  // asked. The local row arrives one emission after mount, so on the notification deep link —
+  // the one entry point that carries no name — the header used to state, in words, that it did
+  // not know who this was, and then replace that with the person's name a frame later. Until
+  // the row has been read there is simply nothing to say, so it says nothing.
   const { title, initial } = conversationRowIdentity(
     chatTitle(name, rowName, ''),
-    tr('chat.unknownContact'),
+    resolved ? tr('chat.unknownContact') : '',
   );
   const presenceLine = derivePresenceLine(typing, presence, tr);
   return (
@@ -205,8 +229,10 @@ export function ChatHeader({
           style={{
             fontSize: 12,
             lineHeight: 15,
+            // Typing is the thread's one accent, green, the way WhatsApp draws it — the whole
+            // point of the line is that it reads as live without being read.
             color: presenceLine.brand
-              ? t.colors.brandFrom
+              ? chatPalette(t.scheme).typing
               : t.colors.textTertiary,
           }}
         >
@@ -218,11 +244,13 @@ export function ChatHeader({
         label={tr('chat.videoCall')}
         onPress={noop}
         icon={VideoIcon}
+        disabled
       />
       <HeaderIconButton
         label={tr('chat.call')}
         onPress={noop}
         icon={CallIcon}
+        disabled
       />
       <HeaderIconButton
         label={tr('chat.more')}

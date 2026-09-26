@@ -16,6 +16,7 @@ import {
   type WallpaperId,
 } from '../../model/wallpaper';
 import { ChatWallpaper } from './ChatWallpaper';
+import { chatPalette } from '../../model/chatPalette';
 
 const TILE_HEIGHT = 104;
 
@@ -31,6 +32,7 @@ function PreviewTile({
   const t = useTheme();
   const { t: tr } = useTranslation();
   const paint = wallpaperPaint(id, t.scheme);
+  const chat = chatPalette(t.scheme);
   const label = tr(`chat.wallpaper.${id}`);
 
   return (
@@ -61,12 +63,9 @@ function PreviewTile({
             width: '62%',
             height: 13,
             borderRadius: 7,
-            backgroundColor: paint.incomingTint ?? t.colors.bgSubtle,
-            ...(paint.incomingBorder !== null
-              ? { borderWidth: 1, borderColor: paint.incomingBorder }
-              : t.scheme === 'dark'
-                ? { borderWidth: 1, borderColor: t.colors.hairline }
-                : null),
+            // The preview has to show the bubbles the chat will ACTUALLY draw, or the picker
+            // is choosing between three pictures of a screen that does not exist.
+            backgroundColor: paint.incomingTint ?? chat.incomingBg,
           }}
         />
         <View
@@ -75,7 +74,7 @@ function PreviewTile({
             width: '52%',
             height: 13,
             borderRadius: 7,
-            backgroundColor: t.colors.brandFrom,
+            backgroundColor: chat.outgoingBg,
           }}
         />
       </View>

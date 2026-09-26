@@ -11,7 +11,7 @@ import { appSchema, tableSchema } from '@nozbe/watermelondb';
 import { COMPOSITE_INDEXES } from './compositeIndexes';
 
 export const schema = appSchema({
-  version: 3,
+  version: 4,
   // VC-024: WatermelonDB only runs the migration chain on an UPGRADE — a brand-new install
   // takes the `_setUpWithSchema` path, which emits DDL from this file ALONE and never touches
   // migrations.ts. The v3 migration's composite indexes (`unsafeExecuteSql`) therefore only
@@ -72,6 +72,16 @@ export const schema = appSchema({
         { name: 'type', type: 'string' }, // text|image|video|audio|voice|doc|…|system
         { name: 'content_encrypted', type: 'string', isOptional: true }, // base64 (E2EE, opaque)
         { name: 'content_plain', type: 'string', isOptional: true }, // enterprise (server-readable)
+        // The message's identity ON THE SERVER (schema v4). Parsed all along but never stored,
+        // which made `reply_to_id` unusable for an inbound reply: the server quotes a messageId,
+        // local rows are keyed by a Watermelon-random id, and the two could never meet. Indexed
+        // because the quoted-reply lookup filters on it for every window containing a reply.
+        {
+          name: 'server_msg_id',
+          type: 'string',
+          isOptional: true,
+          isIndexed: true,
+        },
         { name: 'reply_to_id', type: 'string', isOptional: true },
         { name: 'thread_root_id', type: 'string', isOptional: true },
         { name: 'mentions', type: 'string', isOptional: true }, // JSON

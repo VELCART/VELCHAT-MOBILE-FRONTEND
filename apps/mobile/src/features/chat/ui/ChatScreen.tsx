@@ -30,7 +30,7 @@ import {
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useTheme } from '../../../theme';
 import { useTranslation } from '../../../i18n';
-import { Screen, spacing } from '../../../design-system';
+import { Screen, Text, spacing } from '../../../design-system';
 import type { RootStackParamList } from '../../../navigation/types';
 import {
   useMessages,
@@ -38,10 +38,13 @@ import {
   useRetrySend,
 } from '../hooks/useMessages';
 import { useTyping } from '../hooks/useTyping';
+import { useConversationTyping } from '../hooks/useConversationTyping';
+import { useDayClock } from '../hooks/useDayClock';
 import { ChatHeader } from './chat/ChatHeader';
 import { Composer } from './chat/Composer';
 import { JumpToLatest } from './chat/JumpToLatest';
-import { MessageBubble } from './chat/MessageBubble';
+import { MessageBubble, type QuotedPreview } from './chat/MessageBubble';
+import { TypingBubble } from './chat/TypingBubble';
 import { ChatWallpaper } from './chat/ChatWallpaper';
 import { WallpaperSheet } from './chat/WallpaperSheet';
 import { setChatWallpaper } from '../api/setChatWallpaper';
@@ -49,11 +52,15 @@ import { useConversationIdentity } from '../hooks/useConversationIdentity';
 import { wallpaperPaint, type WallpaperId } from '../model/wallpaper';
 import { isAtBottom } from '../model/autoScroll';
 import {
+  chatTitle,
   compactTime,
   dayCategory,
+  shortDate,
   startsNewDay,
   startsNewRun,
 } from './chat/chatModel';
+import { quotePreview } from '../model/chatPalette';
+import { useQuoteSource } from '../hooks/useQuoteSource';
 
 /**
  * How near the end counts as "following", as a fraction of the visible window. FlashList pins
@@ -111,11 +118,25 @@ interface MessageRow {
   readonly time: string;
   readonly firstOfRun: boolean;
   readonly dateLabel: string | null;
+  /** The message this one answers, already resolved to display strings. */
+  readonly quoted: QuotedPreview | undefined;
+  readonly quotedId: string | undefined;
 }
 
-/** Mine/theirs bubbles are structurally different — they must not share a recycle pool. */
+/**
+ * Mine/theirs bubbles are structurally different — they must not share a recycle pool. Neither
+ * may a cell that carries a date separator: the chip adds ~45dp of height, so recycling it into
+ * a plain bubble makes FlashList measure a wrong height for one frame and the list visibly
+ * jitters as a separator scrolls into view on the reference device (§R4).
+ */
 function messageItemType(item: MessageRow): string {
-  return item.mine ? 'mine' : 'theirs';
+  const side = item.mine ? 'mine' : 'theirs';
+  return item.dateLabel ? `${side}+day` : side;
+}
+
+/** Hoisted: an inline arrow is a fresh prop identity on every render. */
+function messageKey(item: MessageRow): string {
+  return item.id;
 }
 
 /**
@@ -162,12 +183,17 @@ function ChatThread({
   name: string | undefined;
 }): React.JSX.Element {
   const t = useTheme();
-  const { t: tr } = useTranslation();
+  // `i18n.language`, not `useLanguage()`: the app-language CONTEXT throws when it is absent,
+  // which makes every test that renders this screen depend on a provider it does not care
+  // about. `useTranslation` already subscribes to language changes, so reading it from there
+  // re-renders on a switch just the same and needs nothing mounted above.
+  const { t: tr, i18n } = useTranslation();
+  const language = i18n.language;
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   // The header observes this row too; one extra subscription to a single row is cheaper than
   // threading the value down through the header's props.
-  const { wallpaper } = useConversationIdentity(conversationId);
+  const { wallpaper, name: rowName } = useConversationIdentity(conversationId);
   const paint = wallpaperPaint(wallpaper, t.scheme);
   const [wallpaperOpen, setWallpaperOpen] = useState(false);
   const openWallpaper = useCallback(() => setWallpaperOpen(true), []);
@@ -180,11 +206,15 @@ function ChatThread({
     },
     [conversationId],
   );
-  const { messages, meId, loadOlder } = useMessages(conversationId);
+  const { messages, meId, loadOlder, atOldest } = useMessages(conversationId);
   const send = useSendMessage(conversationId);
   const retry = useRetrySend();
   const { notifyTyping, stopTyping } = useTyping(conversationId);
+  const peerTyping = useConversationTyping(conversationId);
   const [text, setText] = useState('');
+  /** The message being answered, or null for a plain send. */
+  const [replyToId, setReplyToId] = useState<string | null>(null);
+  const peerName = chatTitle(name, rowName, tr('chat.unknownContact'));
 
   // Feed each keystroke to the throttled typing signal (§C4) alongside the local text state.
   const onChangeText = useCallback(
@@ -195,15 +225,22 @@ function ChatThread({
     [notifyTyping],
   );
 
-  // Stable "now" for date-separator classification — it must not shift each render (that
-  // would rebuild every chip label) and needn't track the midnight rollover mid-session.
-  const now = useMemo(() => Date.now(), []);
+  // "Now" for date-separator classification. Stable across renders, but NOT frozen for the
+  // session: it moves at midnight and on foreground, or a chat left open overnight goes on
+  // calling yesterday "Today" (see useDayClock).
+  const now = useDayClock();
 
   const listRef = useRef<FlashListRef<MessageRow>>(null);
   // Mirrored in a ref so the common case — a scroll event that does not cross the threshold —
   // costs no re-render.
   const showJumpRef = useRef(false);
   const [showJump, setShowJump] = useState(false);
+
+  /**
+   * Has the reader actually left the newest message? Not "has a scroll event fired" — opening
+   * the chat fires several by itself. This is what gates paging history, below.
+   */
+  const browsingRef = useRef(false);
 
   const onScroll = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const { contentOffset, layoutMeasurement, contentSize } = e.nativeEvent;
@@ -212,11 +249,26 @@ function ChatThread({
       layoutHeight: layoutMeasurement.height,
       contentHeight: contentSize.height,
     });
+    if (next) browsingRef.current = true;
     if (next !== showJumpRef.current) {
       showJumpRef.current = next;
       setShowJump(next);
     }
   }, []);
+
+  /**
+   * Page older history — but never merely because the chat is short.
+   *
+   * `onStartReached` fires on MOUNT whenever the content is shorter than the viewport, which is
+   * every new or nearly-empty conversation. That ran a `countMessages` and then a server
+   * round-trip for `loadOlderMessages` every time one of them was opened, on a device whose
+   * battery budget is measured (§R6) — to fetch history that, by definition, the user had not
+   * asked to see. It only means anything once they have scrolled away from the newest message.
+   */
+  const onStartReached = useCallback(() => {
+    if (!browsingRef.current) return;
+    loadOlder();
+  }, [loadOlder]);
 
   const jumpToLatest = useCallback(() => {
     listRef.current?.scrollToEnd({ animated: true });
@@ -254,29 +306,81 @@ function ChatThread({
   //
   // Only when the reader was already at the bottom — `showJumpRef` is the live answer to that,
   // and someone scrolled up into history must not be yanked down by their own keyboard.
+  // `replyToId` is in here for the same reason as `kbHeight`: opening the reply panel makes the
+  // composer taller and the list shorter, with no scroll event to re-arm FlashList's follow.
+  //
+  // `peerTyping` is here because the typing bubble is a list FOOTER. It is appended below the
+  // newest message, so the moment it appears it is exactly one bubble-height below the fold —
+  // the reader sees nothing happen, which is the opposite of what a typing indicator is for.
+  // FlashList's own follow arms itself from scroll events and a footer mounting produces none.
+  //
+  // Twice, deliberately: once now, and once on the next frame. Each of these three things
+  // changes the content or the viewport DURING the commit, and the list has not measured the
+  // new size yet when the effect runs — a single call scrolls to where the bottom was. The
+  // frame callback is owned and cancelled (§M7), so a conversation switch cannot leave one
+  // pending against a list that has gone.
   useEffect(() => {
     if (showJumpRef.current) return;
-    listRef.current?.scrollToEnd({ animated: false });
-  }, [kbHeight]);
+    const toEnd = (): void => {
+      listRef.current?.scrollToEnd({ animated: false });
+    };
+    toEnd();
+    const frame = requestAnimationFrame(toEnd);
+    return () => cancelAnimationFrame(frame);
+  }, [kbHeight, replyToId, peerTyping]);
 
   const onSend = useCallback(() => {
     if (!text.trim()) return;
-    send(text);
+    send(text, replyToId ?? undefined);
     setText('');
+    setReplyToId(null);
     stopTyping();
-  }, [text, send, stopTyping]);
+  }, [text, send, stopTyping, replyToId]);
+
+  // Swipe-right on a bubble, or a tap on a quote inside one: both mean "answer that one".
+  const onReply = useCallback((id: string) => setReplyToId(id), []);
+  const cancelReply = useCallback(() => setReplyToId(null), []);
+
+  /** Everything a quote can be resolved from — the open window, plus anything paged in. */
+  const quoteSource = useQuoteSource(messages);
+
+  const quotedLabels = useMemo(
+    () => ({
+      photo: tr('chat.quoted.photo'),
+      video: tr('chat.quoted.video'),
+      audio: tr('chat.quoted.audio'),
+      document: tr('chat.quoted.document'),
+      message: tr('chat.quoted.message'),
+    }),
+    [tr],
+  );
+
+  const resolveQuote = useCallback(
+    (id: string | undefined): QuotedPreview | undefined => {
+      if (!id) return undefined;
+      const src = quoteSource.get(id);
+      if (!src) return undefined;
+      const quotedIsMine = src.senderId === meId;
+      return {
+        author: quotedIsMine ? tr('chat.you') : peerName,
+        preview: quotePreview(src.type, src.contentPlain, quotedLabels),
+        mine: quotedIsMine,
+      };
+    },
+    [quoteSource, meId, peerName, quotedLabels, tr],
+  );
 
   const dateLabelFor = useCallback(
     (ts: number): string => {
       const cat = dayCategory(ts, now);
       if (cat === 'today') return tr('chat.today');
       if (cat === 'yesterday') return tr('chat.yesterday');
-      return new Date(ts).toLocaleDateString(undefined, {
-        day: 'numeric',
-        month: 'short',
-      });
+      // The APP's language, not the device's: picking Hindi in-app on an en-US phone used to
+      // put "आज" beside "12 Aug". `shortDate` also carries the year for anything not in the
+      // current one, so August 2024 no longer reads the same as this August.
+      return shortDate(ts, now, language);
     },
-    [now, tr],
+    [now, tr, language],
   );
 
   // One grouping pass per emission (the window is bounded — `observeMessages` takes 50).
@@ -288,11 +392,19 @@ function ChatThread({
         contentPlain: m.contentPlain ?? '',
         mine: m.senderId === meId,
         state: m.state,
-        time: compactTime(m.createdAt),
+        time: compactTime(m.createdAt, language),
         firstOfRun: startsNewRun(messages, i),
-        dateLabel: startsNewDay(messages, i) ? dateLabelFor(m.createdAt) : null,
+        // A separator on the OLDEST LOADED bubble is a guess: it means "oldest of this
+        // window", not "oldest of its day", so paging older history moves it to a different
+        // bubble mid-scroll. Draw it there only once the window is known to be complete.
+        dateLabel:
+          startsNewDay(messages, i) && (i + 1 < messages.length || atOldest)
+            ? dateLabelFor(m.createdAt)
+            : null,
+        quoted: resolveQuote(m.replyToId),
+        quotedId: m.replyToId,
       })),
-    [messages, meId, dateLabelFor],
+    [messages, meId, dateLabelFor, resolveQuote, language, atOldest],
   );
 
   // Ascending (oldest → newest) for the list.
@@ -306,9 +418,26 @@ function ChatThread({
 
   // Depends only on stable references, so a new emission no longer re-renders every cell.
   // The two wallpaper values are plain strings off a memoised paint, so they don't churn.
+  // Held in a ref so the jump callback can stay stable: giving `renderItem` a dependency that
+  // changes on every DB emission would re-render the whole visible window for each arriving
+  // message, which is the one thing this screen's row memoisation exists to prevent (§R4).
+  const rowsRef = useRef<readonly MessageRow[]>(rowsAsc);
+  rowsRef.current = rowsAsc;
+
+  const onJumpToQuoted = useCallback((id: string) => {
+    const index = rowsRef.current.findIndex(r => r.id === id);
+    if (index < 0) return;
+    listRef.current?.scrollToIndex({
+      index,
+      animated: true,
+      viewPosition: 0.5,
+    });
+  }, []);
+
   const renderItem = useCallback(
     ({ item }: { item: MessageRow }) => (
       <MessageBubble
+        id={item.id}
         contentPlain={item.contentPlain}
         mine={item.mine}
         state={item.state}
@@ -316,13 +445,57 @@ function ChatThread({
         clientMsgId={item.clientMsgId}
         firstOfRun={item.firstOfRun}
         dateLabel={item.dateLabel}
+        quoted={item.quoted}
+        quotedId={item.quotedId}
         onRetry={retry}
+        onReply={onReply}
+        onJumpToQuoted={onJumpToQuoted}
         incomingTint={paint.incomingTint}
-        incomingBorder={paint.incomingBorder}
       />
     ),
-    [retry, paint.incomingTint, paint.incomingBorder],
+    [retry, onReply, onJumpToQuoted, paint.incomingTint],
   );
+
+  /** The peer's "…" bubble, at the foot of the thread where WhatsApp puts it. */
+  const listFooter = useMemo(
+    () =>
+      peerTyping ? <TypingBubble incomingTint={paint.incomingTint} /> : null,
+    [peerTyping, paint.incomingTint],
+  );
+
+  /**
+   * A conversation with nothing in it used to be a bare wallpaper and a composer, which reads
+   * the same as "still loading" — and `messages` starts empty, so EVERY chat showed that frame
+   * for one emission before its history arrived.
+   */
+  const listEmpty = useMemo(
+    () => (
+      <View
+        style={{
+          paddingTop: spacing.giant,
+          paddingHorizontal: spacing.xl,
+          alignItems: 'center',
+          gap: spacing.xxs,
+        }}
+      >
+        <Text variant="label" align="center" color="secondary">
+          {tr('chat.threadEmpty')}
+        </Text>
+        <Text variant="caption" align="center" color="tertiary">
+          {tr('chat.threadEmptySub')}
+        </Text>
+      </View>
+    ),
+    [tr],
+  );
+
+  /** What the composer shows above the input while a reply is being written. */
+  const replyDraft = useMemo(() => {
+    if (!replyToId) return null;
+    const q = resolveQuote(replyToId);
+    if (!q) return null;
+    return { author: q.author, preview: q.preview };
+  }, [replyToId, resolveQuote]);
 
   return (
     <Screen edges={['top']} padded={false}>
@@ -346,7 +519,7 @@ function ChatThread({
           <FlashList
             ref={listRef}
             data={rowsAsc}
-            keyExtractor={m => m.id}
+            keyExtractor={messageKey}
             renderItem={renderItem}
             getItemType={messageItemType}
             onScroll={onScroll}
@@ -356,8 +529,10 @@ function ChatThread({
             maintainVisibleContentPosition={FOLLOW_NEWEST}
             // Oldest-first now, so the history is at the START of the content. Without this the
             // thread simply ended at one window and nothing could ever load more.
-            onStartReached={loadOlder}
+            onStartReached={onStartReached}
             onStartReachedThreshold={0.5}
+            ListFooterComponent={listFooter}
+            ListEmptyComponent={listEmpty}
             contentContainerStyle={LIST_CONTENT_STYLE}
             showsVerticalScrollIndicator={false}
           />
@@ -369,6 +544,8 @@ function ChatThread({
           onChangeText={onChangeText}
           onSend={onSend}
           keyboardUp={kbHeight > 0}
+          reply={replyDraft}
+          onCancelReply={cancelReply}
         />
       </View>
     </Screen>

@@ -152,6 +152,21 @@ export function normalizeSendAck(raw: unknown): SendAck {
   };
 }
 
+/**
+ * The id `normalizeServerMessage` invents when a frame carries none.
+ *
+ * Deterministic from (conversation, seq) so two paths that both have to invent one agree — but it
+ * is NOT a server identity, and must never be persisted as one or sent back as a `replyTo`: the
+ * backend cannot resolve it. Exported so the DB layer can recognise and reject it rather than
+ * re-deriving the shape and drifting from this one.
+ */
+export function syntheticMessageId(
+  conversationId: string,
+  seq: number,
+): string {
+  return `srv_${conversationId}_${String(seq)}`;
+}
+
 /** Normalise a server message row; returns null when it lacks the ordering key (`seq`). */
 export function normalizeServerMessage(raw: unknown): ServerMessage | null {
   const d = rec(raw);
@@ -160,7 +175,7 @@ export function normalizeServerMessage(raw: unknown): ServerMessage | null {
   if (seq === undefined || conversationId === undefined) return null;
   const messageId =
     pickStr(d, 'messageId', 'message_id', '_id', 'id') ??
-    `srv_${conversationId}_${seq}`;
+    syntheticMessageId(conversationId, seq);
   const senderId =
     pickStr(
       d,

@@ -836,3 +836,33 @@ export function AlertCircleIcon({
     </Svg>
   );
 }
+
+/** Curved arrow turning back on itself — Reply (swipe-to-reply, the quote affordance). */
+export function ReplyIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M9 14 4 9l5-5" {...stroke(color, strokeWidth)} />
+      <Path
+        d="M4 9h7.5A7.5 7.5 0 0 1 19 16.5V20"
+        {...stroke(color, strokeWidth)}
+      />
+    </Svg>
+  );
+}
+
+/** Plain cross — dismiss a reply draft, close an inline panel. */
+export function CloseIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path d="M18 6 6 18M6 6l12 12" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}

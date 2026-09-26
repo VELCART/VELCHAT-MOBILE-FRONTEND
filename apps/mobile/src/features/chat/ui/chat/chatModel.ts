@@ -59,17 +59,42 @@ export function startsNewRun(
 }
 
 /**
- * Time-of-day token (12-hour, e.g. "9:05 AM") — the bubble timestamp and the header's
- * presence line share it. `toLocaleTimeString` is ICU over JNI on Hermes, so callers must
- * resolve this ONCE per DB emission, never per row per render (§R4). '' for an invalid ts.
+ * Time-of-day token — the bubble timestamp and the header's presence line share it.
+ * `toLocaleTimeString` is ICU over JNI on Hermes, so callers must resolve this ONCE per DB
+ * emission, never per row per render (§R4). '' for an invalid ts.
+ *
+ * `hour12` is NOT set, deliberately. It used to be hard-coded `true`, which OVERRODE the
+ * device's own 24-hour preference: a phone set to 21:05 rendered "9:05 PM" on every bubble and
+ * on the last-seen line. Most of the locales this app ships (`hi`, `ar`) default to 24-hour.
+ * Omitting the flag hands the decision back to the locale, which is the only thing that knows.
+ *
+ * `locale` is the APP's language, not the device's. Passing `undefined` falls back to the
+ * device, which is what made a user reading the app in Hindi see "Aaj" beside "9:05 AM".
  */
-export function compactTime(ts: number): string {
+export function compactTime(ts: number, locale?: string): string {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
-  return d.toLocaleTimeString(undefined, {
+  return d.toLocaleTimeString(locale, {
     hour: 'numeric',
     minute: '2-digit',
-    hour12: true,
+  });
+}
+
+/**
+ * The short date a separator or a last-seen line shows for something older than yesterday.
+ *
+ * The YEAR appears only when the timestamp is not in the current year: "12 Aug" for this
+ * August, "12 Aug 2024" for the one before. Without it a message from two years ago is
+ * indistinguishable from one from last week's Tuesday.
+ */
+export function shortDate(ts: number, now: number, locale?: string): string {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return '';
+  const sameYear = d.getFullYear() === new Date(now).getFullYear();
+  return d.toLocaleDateString(locale, {
+    day: 'numeric',
+    month: 'short',
+    ...(sameYear ? {} : { year: 'numeric' }),
   });
 }
 
@@ -94,13 +119,14 @@ export function presenceTimeLabel(
   ts: number,
   now: number,
   yesterdayLabel: string,
+  locale?: string,
 ): string {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return '';
   const cat = dayCategory(ts, now);
-  if (cat === 'today') return compactTime(ts);
+  if (cat === 'today') return compactTime(ts, locale);
   if (cat === 'yesterday') return yesterdayLabel;
-  return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  return shortDate(ts, now, locale);
 }
 
 /**

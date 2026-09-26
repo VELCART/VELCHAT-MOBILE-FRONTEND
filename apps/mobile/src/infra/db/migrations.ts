@@ -51,5 +51,36 @@ export const migrations = schemaMigrations({
       toVersion: 3,
       steps: COMPOSITE_INDEXES.map(unsafeExecuteSql),
     },
+    {
+      /**
+       * v3 -> v4: store the server's own id for a message.
+       *
+       * `ServerMessage.messageId` was parsed and thrown away, so a reply arriving from a peer
+       * carried a `reply_to_id` that nothing local could ever match — local rows are keyed by a
+       * Watermelon-random id, and the fallback `client_msg_id` is `srv_<conv>_<seq>`, not the
+       * server's id. Every inbound quote therefore rendered as unavailable. This column is the
+       * join key that makes the quoted message findable.
+       *
+       * Unlike the v3 step above, this one does NOT need `unsafeExecuteSql` for its index:
+       * `isIndexed` is inert only when indexing a column that ALREADY exists, whereas
+       * `addColumns` emits the index along with the column (WatermelonDB's
+       * `encodeAddColumnsMigrationStep` calls `encodeIndex`). The migrations test asserts the
+       * generated DDL for both the fresh-install and the upgrade path rather than trusting it.
+       */
+      toVersion: 4,
+      steps: [
+        addColumns({
+          table: 'messages',
+          columns: [
+            {
+              name: 'server_msg_id',
+              type: 'string',
+              isOptional: true,
+              isIndexed: true,
+            },
+          ],
+        }),
+      ],
+    },
   ],
 });

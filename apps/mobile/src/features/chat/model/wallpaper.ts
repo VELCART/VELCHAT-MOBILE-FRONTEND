@@ -32,9 +32,18 @@ export interface WallpaperPaint {
   /** Painted over the base, in order. Empty for `plain`. */
   readonly blooms: readonly Bloom[];
   /**
-   * Overrides for the INCOMING bubble on this ground. A decorated wallpaper needs a
-   * translucent bubble, otherwise an opaque `bgSubtle` rectangle sits on the wash like a
-   * sticker. `null` means "use the theme's own values", which is what `plain` wants.
+   * Override for the INCOMING bubble on this ground, or `null` for the thread's own colour.
+   *
+   * Every wallpaper now passes `null`, and that is the point rather than an oversight. The
+   * translucent tints these used to carry were an answer to a bubble that had no colour of its
+   * own: an opaque `bgSubtle` rectangle sat on a decorated wash like a sticker, so the bubble
+   * was made see-through instead. The thread's bubbles are now WhatsApp's — solid white or
+   * solid #1F2C33, separated from whatever is behind them by a shadow, exactly as WhatsApp
+   * does it on its own patterned wallpaper. A translucent bubble on top of that would undo
+   * both the colour and the 3:1 boundary the shadow buys (VC-060).
+   *
+   * The field stays because a future wallpaper may genuinely need it — a photo background, say,
+   * where even a shadow is not enough separation.
    */
   readonly incomingTint: string | null;
   readonly incomingBorder: string | null;
@@ -92,8 +101,8 @@ const PAINT: Record<WallpaperId, Record<Scheme, WallpaperPaint>> = {
         { cx: 0.88, cy: 0.26, r: 0.56, color: '#C496BE', opacity: 0.15 },
         { cx: 0.62, cy: 0.96, r: 0.64, color: '#82AFB9', opacity: 0.15 },
       ],
-      incomingTint: 'rgba(255,255,255,0.72)',
-      incomingBorder: 'rgba(11,11,12,0.06)',
+      incomingTint: null,
+      incomingBorder: null,
     },
     dark: {
       base: '#0A0A0B',
@@ -102,8 +111,8 @@ const PAINT: Record<WallpaperId, Record<Scheme, WallpaperPaint>> = {
         { cx: 0.88, cy: 0.26, r: 0.56, color: '#AA78AF', opacity: 0.17 },
         { cx: 0.62, cy: 0.96, r: 0.64, color: '#5A96A5', opacity: 0.15 },
       ],
-      incomingTint: 'rgba(255,255,255,0.07)',
-      incomingBorder: 'rgba(255,255,255,0.10)',
+      incomingTint: null,
+      incomingBorder: null,
     },
   },
   // Pink at the top fading out downward, so the composer end of the screen stays calm.
@@ -114,8 +123,8 @@ const PAINT: Record<WallpaperId, Record<Scheme, WallpaperPaint>> = {
         { cx: 0.5, cy: 0.0, r: 0.95, color: '#FF6FB5', opacity: 0.14 },
         { cx: 0.5, cy: 0.34, r: 0.8, color: '#FFC2D8', opacity: 0.1 },
       ],
-      incomingTint: 'rgba(255,255,255,0.86)',
-      incomingBorder: 'rgba(11,11,12,0.05)',
+      incomingTint: null,
+      incomingBorder: null,
     },
     dark: {
       base: '#0A0A0B',
@@ -123,8 +132,8 @@ const PAINT: Record<WallpaperId, Record<Scheme, WallpaperPaint>> = {
         { cx: 0.5, cy: 0.0, r: 0.95, color: '#E85CA0', opacity: 0.16 },
         { cx: 0.5, cy: 0.34, r: 0.8, color: '#7A3E63', opacity: 0.12 },
       ],
-      incomingTint: 'rgba(255,255,255,0.06)',
-      incomingBorder: 'rgba(255,255,255,0.09)',
+      incomingTint: null,
+      incomingBorder: null,
     },
   },
 };
