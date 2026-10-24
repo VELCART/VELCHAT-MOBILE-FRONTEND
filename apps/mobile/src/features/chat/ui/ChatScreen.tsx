@@ -531,6 +531,17 @@ function ChatThread({
             // thread simply ended at one window and nothing could ever load more.
             onStartReached={onStartReached}
             onStartReachedThreshold={0.5}
+            // Render further ahead than the 250dp default, and let a fling come to rest a
+            // little sooner than Android's own 0.985.
+            //
+            // Both are about the same report: flung hard, the thread showed empty cells where
+            // bubbles should be. A fling can outrun any virtualised list — the question is only
+            // by how much and for how long. 600dp is roughly a screen of lead, which is what it
+            // takes for the renderer to stay ahead at speed without holding a second screen of
+            // cells in memory on a 3 GB device (§R5); 0.978 shortens the tail of a hard fling
+            // just enough to notice, without making the list feel sticky or short-throw.
+            drawDistance={600}
+            decelerationRate={0.978}
             ListFooterComponent={listFooter}
             ListEmptyComponent={listEmpty}
             contentContainerStyle={LIST_CONTENT_STYLE}

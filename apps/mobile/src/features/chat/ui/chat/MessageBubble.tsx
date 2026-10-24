@@ -31,7 +31,7 @@
  * label arrives already formatted — ICU formatting is done once per emission by the screen,
  * never per row per render (§R4).
  */
-import React, { useCallback } from 'react';
+import React, { useCallback, useMemo } from 'react';
 import { View, Text as RNText, Pressable } from 'react-native';
 import { useTheme } from '../../../../theme';
 import { useTranslation } from '../../../../i18n';
@@ -74,6 +74,16 @@ function metaSpacer(time: string, mine: boolean): string {
   const FIGURE = ' ';
   return FIGURE.repeat(time.length + (mine ? 4 : 1));
 }
+
+/** Hoisted: these never vary, and a fresh object per row per render is pure churn. */
+const META_ROW = {
+  position: 'absolute' as const,
+  right: PAD_H,
+  bottom: PAD_BOTTOM - 1,
+  flexDirection: 'row' as const,
+  alignItems: 'center' as const,
+  gap: 3,
+};
 
 export interface QuotedPreview {
   readonly author: string;
@@ -147,161 +157,168 @@ function MessageBubbleBase({
    * list and costs the scroll nothing.
    */
 
+  /**
+   * A STATIC style object, not the `({ pressed }) => …` form Pressable also accepts.
+   *
+   * That form is a function prop, so Pressable re-renders the cell on press-in and press-out
+   * and allocates a fresh style object every time — in a list, on the scroll path. The press
+   * feedback it bought was an 88% opacity dip on a bubble whose only press action is a long
+   * press, which is confirmed by the reply panel appearing. Memoised on what actually changes.
+   */
+  const bubbleStyle = useMemo(
+    () => ({
+      paddingHorizontal: PAD_H,
+      paddingTop: PAD_TOP,
+      paddingBottom: PAD_BOTTOM,
+      borderRadius: R,
+      // The tail replaces the corner it grows from — WhatsApp squares it.
+      borderTopRightRadius: mine && firstOfRun ? 0 : R,
+      borderTopLeftRadius: !mine && firstOfRun ? 0 : R,
+      backgroundColor: fill,
+      // An incoming bubble is a subtle fill on a near-identical ground — about 1.04:1 in light
+      // and 1.06:1 in dark, far under the 3:1 WCAG 1.4.11 asks of a component boundary — so
+      // without this it has no perceptible shape (VC-060). The outgoing bubble is the brand
+      // fill and needs nothing.
+      ...(mine ? null : { borderWidth: 1, borderColor: c.bubbleBorder }),
+    }),
+    [mine, firstOfRun, fill, c.bubbleBorder],
+  );
+
   const jump = useCallback(() => {
     if (quotedId && onJumpToQuoted) onJumpToQuoted(quotedId);
   }, [quotedId, onJumpToQuoted]);
 
   // One label for the whole row. The ticks and the quote are decorative to a screen reader:
   // announced separately they arrive out of order and read as gibberish between messages.
-  const a11yLabel = [
-    quoted ? tr('chat.a11yQuoting', { author: quoted.author }) : null,
-    contentPlain,
-    time,
-    mine ? sendStateLabel(state, tr) : null,
-  ]
-    .filter(Boolean)
-    .join('. ');
+  //
+  // Memoised because this is a list cell: an array, a filter and a join per render per row is
+  // JS the scroll pays for on every recycled cell, to produce a string that only a screen
+  // reader ever reads (§R4).
+  const a11yLabel = useMemo(
+    () =>
+      [
+        quoted ? tr('chat.a11yQuoting', { author: quoted.author }) : null,
+        contentPlain,
+        time,
+        mine ? sendStateLabel(state, tr) : null,
+      ]
+        .filter(Boolean)
+        .join('. '),
+    [quoted, contentPlain, time, mine, state, tr],
+  );
 
   return (
     <View>
       {dateLabel ? <DateChip label={dateLabel} tint={incomingTint} /> : null}
-      <View style={{ paddingTop: topGap, justifyContent: 'center' }}>
+      <View
+        style={{
+          paddingTop: topGap,
+          paddingHorizontal: t.spacing.xs,
+          alignItems: mine ? 'flex-end' : 'flex-start',
+        }}
+      >
         <View
           style={{
-            paddingHorizontal: t.spacing.xs,
-            alignItems: mine ? 'flex-end' : 'flex-start',
+            maxWidth: BUBBLE_MAX_WIDTH,
+            // The gutter the tail hangs in. Keeping it as a margin means the tail never
+            // widens the bubble and the list never scrolls sideways.
+            marginLeft: mine ? 0 : TAIL_WIDTH,
+            marginRight: mine ? TAIL_WIDTH : 0,
           }}
         >
+          {firstOfRun ? (
+            <View
+              pointerEvents="none"
+              // `0`, not `-TAIL_WIDTH`: the margin above already inset the bubble by exactly
+              // one tail-width, so this box IS the gutter.
+              style={{
+                position: 'absolute',
+                top: 0,
+                ...(mine ? { right: 0 } : { left: 0 }),
+              }}
+            >
+              <BubbleTail mine={mine} color={fill} />
+            </View>
+          ) : null}
+
           <View
-            style={{
-              maxWidth: BUBBLE_MAX_WIDTH,
-              // The gutter the tail hangs in. Keeping it as a margin means the tail never
-              // widens the bubble and the list never scrolls sideways.
-              marginLeft: mine ? 0 : TAIL_WIDTH,
-              marginRight: mine ? TAIL_WIDTH : 0,
-            }}
+            accessible
+            accessibilityRole="text"
+            accessibilityLabel={a11yLabel}
+            accessibilityHint={tr('chat.replyHint')}
+            style={bubbleStyle}
           >
-            {firstOfRun ? (
-              <View
-                pointerEvents="none"
-                // `0`, not `-TAIL_WIDTH`: the margin above already inset the bubble by exactly
-                // one tail-width, so this box IS the gutter.
-                style={{
-                  position: 'absolute',
-                  top: 0,
-                  ...(mine ? { right: 0 } : { left: 0 }),
-                }}
+            {quoted ? (
+              <Pressable
+                onPress={jump}
+                disabled={!quotedId || !onJumpToQuoted}
+                accessibilityRole="button"
+                accessibilityLabel={tr('chat.a11yQuoting', {
+                  author: quoted.author,
+                })}
+                style={({ pressed }) => ({
+                  alignSelf: 'stretch',
+                  marginBottom: 4,
+                  opacity: pressed ? 0.75 : 1,
+                })}
               >
-                <BubbleTail mine={mine} color={fill} />
-              </View>
+                <QuotedMessage
+                  author={quoted.author}
+                  preview={quoted.preview}
+                  accent={quoteAccent(c, mine)}
+                  background={mine ? c.quoteInOutgoingBg : c.quoteInIncomingBg}
+                  previewColor={
+                    mine ? c.quoteTextOnOutgoing : c.quoteTextOnIncoming
+                  }
+                />
+              </Pressable>
             ) : null}
 
-            <Pressable
-              accessible
-              accessibilityRole="text"
-              accessibilityLabel={a11yLabel}
-              accessibilityHint={tr('chat.replyHint')}
+            <RNText
               onLongPress={fireReply}
-              delayLongPress={300}
-              style={({ pressed }) => ({
-                paddingHorizontal: PAD_H,
-                paddingTop: PAD_TOP,
-                paddingBottom: PAD_BOTTOM,
-                borderRadius: R,
-                // The tail replaces the corner it grows from — WhatsApp squares it.
-                borderTopRightRadius: mine && firstOfRun ? 0 : R,
-                borderTopLeftRadius: !mine && firstOfRun ? 0 : R,
-                backgroundColor: fill,
-                opacity: pressed ? 0.88 : 1,
-                // An incoming bubble is a subtle fill on a near-identical ground — about
-                // 1.04:1 in light and 1.06:1 in dark, far under the 3:1 WCAG 1.4.11 asks of a
-                // component boundary — so without this it has no perceptible shape (VC-060).
-                // The outgoing bubble is the brand fill and needs nothing.
-                ...(mine
-                  ? null
-                  : { borderWidth: 1, borderColor: c.bubbleBorder }),
-              })}
+              style={{
+                fontFamily: CHAT_FONT,
+                fontSize: CHAT_BODY_SIZE,
+                lineHeight: CHAT_BODY_LINE,
+                color: textColor,
+              }}
             >
-              {quoted ? (
-                <Pressable
-                  onPress={jump}
-                  disabled={!quotedId || !onJumpToQuoted}
-                  accessibilityRole="button"
-                  accessibilityLabel={tr('chat.a11yQuoting', {
-                    author: quoted.author,
-                  })}
-                  style={({ pressed }) => ({
-                    alignSelf: 'stretch',
-                    marginBottom: 4,
-                    opacity: pressed ? 0.75 : 1,
-                  })}
-                >
-                  <QuotedMessage
-                    author={quoted.author}
-                    preview={quoted.preview}
-                    accent={quoteAccent(c, mine)}
-                    background={
-                      mine ? c.quoteInOutgoingBg : c.quoteInIncomingBg
-                    }
-                    previewColor={
-                      mine ? c.quoteTextOnOutgoing : c.quoteTextOnIncoming
-                    }
-                  />
-                </Pressable>
-              ) : null}
-
+              {contentPlain}
               <RNText
                 style={{
                   fontFamily: CHAT_FONT,
-                  fontSize: CHAT_BODY_SIZE,
-                  lineHeight: CHAT_BODY_LINE,
-                  color: textColor,
+                  fontSize: CHAT_META_SIZE,
+                  lineHeight: CHAT_META_LINE,
                 }}
               >
-                {contentPlain}
-                <RNText
-                  style={{
-                    fontFamily: CHAT_FONT,
-                    fontSize: CHAT_META_SIZE,
-                    lineHeight: CHAT_META_LINE,
-                  }}
-                >
-                  {metaSpacer(time, mine)}
-                </RNText>
+                {metaSpacer(time, mine)}
               </RNText>
+            </RNText>
 
-              <View
-                pointerEvents={state === 'failed' ? 'auto' : 'none'}
+            <View
+              pointerEvents={state === 'failed' ? 'auto' : 'none'}
+              style={META_ROW}
+            >
+              <RNText
                 style={{
-                  position: 'absolute',
-                  right: PAD_H,
-                  bottom: PAD_BOTTOM - 1,
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  gap: 3,
+                  fontFamily: CHAT_FONT,
+                  fontSize: CHAT_META_SIZE,
+                  lineHeight: CHAT_META_LINE,
+                  color: metaColor,
                 }}
               >
-                <RNText
-                  style={{
-                    fontFamily: CHAT_FONT,
-                    fontSize: CHAT_META_SIZE,
-                    lineHeight: CHAT_META_LINE,
-                    color: metaColor,
-                  }}
-                >
-                  {time}
-                </RNText>
-                {mine ? (
-                  <MessageTicks
-                    state={state}
-                    idleColor={metaColor}
-                    readColor={c.tickRead}
-                    failedColor={t.colors.danger}
-                    onRetry={() => onRetry(clientMsgId)}
-                  />
-                ) : null}
-              </View>
-            </Pressable>
+                {time}
+              </RNText>
+              {mine ? (
+                <MessageTicks
+                  state={state}
+                  idleColor={metaColor}
+                  readColor={c.tickRead}
+                  failedColor={t.colors.danger}
+                  onRetry={() => onRetry(clientMsgId)}
+                />
+              ) : null}
+            </View>
           </View>
         </View>
       </View>
