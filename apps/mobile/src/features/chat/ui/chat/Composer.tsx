@@ -5,6 +5,7 @@
  * existing optimistic path); emoji / attach / camera / mic are no-op stubs for now.
  */
 import React, { useCallback, useEffect, useRef } from 'react';
+import { Animated, Easing } from 'react-native';
 import {
   View,
   TextInput,
@@ -107,9 +108,36 @@ export function Composer({
   const restingInset = useRef(insets.bottom);
   if (!keyboardUp && insets.bottom > 0) restingInset.current = insets.bottom;
 
+  /**
+   * The send gesture's feedback.
+   *
+   * It lives on the BUTTON, not on the bubble. Animating each new bubble in means an animated
+   * node inside every list cell, and that was measured to cost the thread six points of janky
+   * frames while scrolling — on the app's most-used screen, to decorate an event that happens
+   * once. This is one view, outside the list, so the scroll never pays for it: a quick dip and
+   * rebound as the message leaves, which is the moment the gesture actually needs confirming.
+   */
+  const press = useRef(new Animated.Value(0)).current;
   const onPrimary = useCallback(() => {
-    if (hasText) onSend();
-  }, [hasText, onSend]);
+    if (!hasText) return;
+    press.stopAnimation();
+    press.setValue(0);
+    Animated.sequence([
+      Animated.timing(press, {
+        toValue: 1,
+        duration: 90,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+      Animated.spring(press, {
+        toValue: 0,
+        useNativeDriver: true,
+        bounciness: 10,
+        speed: 18,
+      }),
+    ]).start();
+    onSend();
+  }, [hasText, onSend, press]);
 
   // Picking a message to answer puts the caret in the box, the way it does in WhatsApp —
   // otherwise the swipe is followed by a second tap that does nothing but open the keyboard.
@@ -219,28 +247,41 @@ export function Composer({
         {/* Send when there is text, and a mic that is not built yet when there is not — so the
             same circle is a working control half the time and a stub the other half. It reports
             which one it currently is instead of looking identical in both (VC-059). */}
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={hasText ? tr('chat.send') : tr('chat.voice')}
-          accessibilityState={hasText ? ENABLED : DISABLED}
-          disabled={!hasText}
-          onPress={onPrimary}
-          style={({ pressed }) => ({
-            width: 46,
-            height: 46,
-            borderRadius: 23,
-            backgroundColor: t.colors.brandFrom,
-            alignItems: 'center',
-            justifyContent: 'center',
-            opacity: pressed && hasText ? 0.8 : 1,
-          })}
+        <Animated.View
+          style={{
+            transform: [
+              {
+                scale: press.interpolate({
+                  inputRange: [0, 1],
+                  outputRange: [1, 0.82],
+                }),
+              },
+            ],
+          }}
         >
-          {hasText ? (
-            <SendIcon size={22} color={t.colors.actionFg} strokeWidth={2.4} />
-          ) : (
-            <MicIcon size={22} color={t.colors.actionFg} strokeWidth={2} />
-          )}
-        </Pressable>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={hasText ? tr('chat.send') : tr('chat.voice')}
+            accessibilityState={hasText ? ENABLED : DISABLED}
+            disabled={!hasText}
+            onPress={onPrimary}
+            style={({ pressed }) => ({
+              width: 46,
+              height: 46,
+              borderRadius: 23,
+              backgroundColor: t.colors.brandFrom,
+              alignItems: 'center',
+              justifyContent: 'center',
+              opacity: pressed && hasText ? 0.8 : 1,
+            })}
+          >
+            {hasText ? (
+              <SendIcon size={22} color={t.colors.actionFg} strokeWidth={2.4} />
+            ) : (
+              <MicIcon size={22} color={t.colors.actionFg} strokeWidth={2} />
+            )}
+          </Pressable>
+        </Animated.View>
       </View>
     </View>
   );

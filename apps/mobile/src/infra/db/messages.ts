@@ -135,6 +135,48 @@ export async function findQuotedMessages(
     .fetch();
 }
 
+/**
+ * Teach an existing row the server identity it never learned, and answer with it.
+ *
+ * `server_msg_id` arrived in schema v4; the migration back-fills it NULL, so every message that
+ * already existed on the device has no server identity and can never be quoted to a peer. The
+ * sync path fills the column in going forward, but it cannot repair those rows: a history frame
+ * for a message already held reconciles to `skip` — correctly, since there is nothing about the
+ * MESSAGE to change — and skip writes nothing. So the repair is its own small write rather than
+ * a special case bolted onto reconciliation.
+ *
+ * Deliberately narrow. It matches on conversation + seq, which is the pair the server and this
+ * device agree on, and it REFUSES to overwrite an id the row already holds: the stored one came
+ * from the sync path and is the one receipts and quotes already reference. A synthetic id is
+ * refused too — storing `srv_<conv>_<seq>` as a server identity would put a reference the
+ * backend cannot resolve on the wire, which is the whole defect this column exists to prevent.
+ *
+ * Returns the id now on the row, or undefined if there was nothing to write it to.
+ */
+export async function recordServerMsgId(
+  conversationId: string,
+  seq: number,
+  serverMsgId: string,
+): Promise<string | undefined> {
+  if (!serverMsgId || serverMsgId === syntheticMessageId(conversationId, seq)) {
+    return undefined;
+  }
+  const db = getDatabase();
+  const rows = await db
+    .get<Message>('messages')
+    .query(Q.where('conversation_id', conversationId), Q.where('seq', seq))
+    .fetch();
+  const row = rows[0];
+  if (!row) return undefined;
+  if (row.serverMsgId) return row.serverMsgId;
+  await db.write(async () => {
+    await row.update(m => {
+      m.serverMsgId = serverMsgId;
+    });
+  });
+  return serverMsgId;
+}
+
 /** Total messages held locally for a conversation — tells the UI whether older ones exist. */
 export function countMessages(conversationId: string): Promise<number> {
   return getDatabase()

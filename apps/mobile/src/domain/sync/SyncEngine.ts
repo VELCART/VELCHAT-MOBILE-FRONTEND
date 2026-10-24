@@ -60,6 +60,7 @@ import {
   parseReceiptFrame,
   enqueueOptimisticSend,
   findQuotedMessages,
+  recordServerMsgId,
   claimNextDue,
   markAckd,
   markFailed,
@@ -1448,7 +1449,11 @@ class SyncEngine {
     try {
       // Matches either identity, so this also no-ops correctly if the id is ALREADY a server one.
       const rows = await findQuotedMessages([quoted]);
-      serverId = rows[0]?.serverMsgId;
+      const row = rows[0];
+      serverId = row?.serverMsgId;
+      if (!serverId && row?.seq !== undefined && row.seq > 0) {
+        serverId = await this.learnServerMsgId(row.conversationId, row.seq);
+      }
     } catch (e) {
       // A lookup failure must not fail the send — the message still deserves to go out.
       log.warn('reply target lookup failed', { reason: String(e) });
@@ -1463,6 +1468,47 @@ class SyncEngine {
     const withoutReply: SendMessageInput = { ...input };
     delete withoutReply.replyTo;
     return withoutReply;
+  }
+
+  /**
+   * Ask the server for ONE message by its seq, purely to learn its server id.
+   *
+   * `server_msg_id` is a schema-v4 column: the migration back-fills it NULL and only messages
+   * applied AFTER the upgrade carry one. Every message that already existed on the device
+   * therefore has no server identity, and a reply quoting one of them had its `replyTo` dropped
+   * at the wire — the sender saw their own quote and the RECIPIENT SAW A PLAIN MESSAGE. That is
+   * not a corner case: on the day this shipped it was every message in every chat.
+   *
+   * Repaired on demand rather than by sweeping each chat on open. A sweep spends a request and
+   * a page of parsing on every conversation the user looks at, forever, to fix something only a
+   * reply ever needs (§R6 battery budget); this costs exactly one single-row request, exactly
+   * when a reply is about to go out without its quote, and it works for a message of any age
+   * rather than only for whatever a sweep's window happened to cover.
+   *
+   * `applyServerMessages` does the writing — its reconcile path already fills `server_msg_id`
+   * in on an existing row — so this adds no write logic and cannot diverge from the sync path.
+   * Returns undefined on any failure (offline, deleted message, a server with no id for it), and
+   * the caller then sends without the quote exactly as before: never worse than today.
+   */
+  private async learnServerMsgId(
+    conversationId: string,
+    seq: number,
+  ): Promise<string | undefined> {
+    try {
+      // `afterSeq = seq - 1`, limit 1 → the single message at `seq`.
+      const batch = await fetchMessagesAfter(conversationId, seq - 1, 1);
+      const found = batch.find(m => m.seq === seq);
+      if (!found) return undefined;
+      // `recordServerMsgId`, not `applyServerMessages`: a frame for a message already held
+      // reconciles to `skip` — rightly, there is nothing about the message to change — and a
+      // skip writes nothing, so routing the repair through the sync path would have been a
+      // round trip that silently changed nothing. It also refuses a synthetic id, so a server
+      // frame that carries none leaves the row exactly as it was.
+      return await recordServerMsgId(conversationId, seq, found.messageId);
+    } catch (e) {
+      log.warn('reply target repair failed', { reason: String(e) });
+      return undefined;
+    }
   }
 
   private clearOutboxTimer(): void {

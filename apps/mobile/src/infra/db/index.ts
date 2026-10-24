@@ -21,6 +21,7 @@ export type { ConversationPatch, RowStream } from './queries';
 export {
   observeMessages,
   findQuotedMessages,
+  recordServerMsgId,
   sendMessageLocal,
   applyServerMessage,
   applyServerMessages,

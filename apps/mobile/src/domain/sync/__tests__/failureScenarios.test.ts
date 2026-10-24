@@ -1951,6 +1951,75 @@ describe('quoted reply id resolution', () => {
     expect(reply?.replyToId).toBe(localId);
   });
 
+  it('learns a missing server id from the server rather than send the reply unquoted', async () => {
+    // The state every device was in on the day `server_msg_id` shipped: the row is real and has
+    // a seq, but the column is a v4 migration back-fill, i.e. empty. Before this repair the
+    // reply went out with no `replyTo` at all — the sender saw their quote and the RECIPIENT
+    // SAW A PLAIN MESSAGE, which is exactly what was reported from the two-device run.
+    mockSendChat.mockResolvedValue({ messageId: 'srv_reply', seq: 2 });
+    await bootConnected();
+    await applyServerMessages([
+      {
+        messageId: syntheticMessageId(conv, 1),
+        conversationId: conv,
+        seq: 1,
+        senderId: PEER,
+        type: 'text',
+        content: 'the original',
+        serverTs: T0 + 1000,
+      },
+    ]);
+    const localId = await onlyRowId();
+    // The server does know this message's real identity; nothing had ever asked for it.
+    serverHistory.set(conv, [
+      serverMsg(conv, 1, {
+        messageId: 'mongo_oid_91',
+        content: 'the original',
+      }),
+    ]);
+
+    await syncEngine.sendText(conv, ME, 'answering that', localId);
+    await until(
+      () => mockSendChat.mock.calls.length > 0,
+      'the reply to be transmitted',
+    );
+
+    expect(lastSentInput().replyTo).toBe('mongo_oid_91');
+    // And the repair is durable: the row now carries the id, so the next reply costs no request.
+    const original = (await messagesOf(conv)).find(m => m.senderId === PEER);
+    expect(original?.serverMsgId).toBe('mongo_oid_91');
+  });
+
+  it('still sends, unquoted, when the server cannot identify the quoted message', async () => {
+    // Offline, deleted, or a server that simply has nothing at that seq. A reply that cannot
+    // carry its quote is still a message the user wrote, and it must go out.
+    mockSendChat.mockResolvedValue({ messageId: 'srv_reply', seq: 2 });
+    await bootConnected();
+    await applyServerMessages([
+      {
+        messageId: syntheticMessageId(conv, 1),
+        conversationId: conv,
+        seq: 1,
+        senderId: PEER,
+        type: 'text',
+        content: 'the original',
+        serverTs: T0 + 1000,
+      },
+    ]);
+    const localId = await onlyRowId();
+    mockFetchAfter.mockRejectedValue(new Error('offline'));
+
+    await syncEngine.sendText(conv, ME, 'answering that', localId);
+    await until(
+      () => mockSendChat.mock.calls.length > 0,
+      'the reply to be transmitted',
+    );
+
+    expect('replyTo' in lastSentInput()).toBe(false);
+    const reply = (await messagesOf(conv)).find(m => m.senderId === ME);
+    expect(reply?.replyToId).toBe(localId);
+  });
+
   it('keeps the LOCAL id in the durable payload, so a retry re-resolves it', async () => {
     // This is what makes transmit-time resolution worth having: the stored payload is never
     // rewritten, so an attempt made after the quoted message is finally acked picks up the

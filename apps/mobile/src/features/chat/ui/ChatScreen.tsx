@@ -131,7 +131,7 @@ interface MessageRow {
  */
 function messageItemType(item: MessageRow): string {
   const side = item.mine ? 'mine' : 'theirs';
-  return item.dateLabel ? `${side}+day` : side;
+  return side;
 }
 
 /** Hoisted: an inline arrow is a fresh prop identity on every render. */

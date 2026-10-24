@@ -76,6 +76,7 @@ export {
   purgeAllLocalChat,
   observeMessages,
   findQuotedMessages,
+  recordServerMsgId,
   sendMessageLocal,
   applyServerMessage,
   applyServerMessages,
