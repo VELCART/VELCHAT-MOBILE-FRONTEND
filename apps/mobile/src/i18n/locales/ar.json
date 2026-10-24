@@ -228,10 +228,10 @@
     "more": "المزيد",
     "goOffline": "الانتقال إلى وضع عدم الاتصال",
     "goOnline": "الاتصال بالإنترنت",
-    "hintMessages": "الرسائل",
-    "hintFiles": "الملفات",
-    "hintMedia": "الوسائط",
-    "hintAi": "بحث الذكاء الاصطناعي"
+    "hintMessages": "ابحث في الرسائل",
+    "hintFiles": "ابحث في الملفات",
+    "hintMedia": "ابحث في الصور والفيديو",
+    "hintAi": "اسأل الذكاء الاصطناعي"
   },
   "search": {
     "placeholder": "اسأل Vel AI أو ابحث",

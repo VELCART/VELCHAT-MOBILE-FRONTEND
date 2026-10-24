@@ -15,6 +15,8 @@ import {
   UserIcon,
   ChatIcon,
   ChatPlusIcon,
+  PinIcon,
+  BellOffIcon,
   spacing,
 } from '../../../design-system';
 import { useTypingUser } from '../../../core';
@@ -57,6 +59,8 @@ interface ConversationRowProps {
   preview: string;
   time: string;
   unreadCount: number;
+  pinned: boolean;
+  muted: boolean;
   isDm: boolean;
   /** Already-resolved peer photo; absent → coloured initial. Never fetched during render. */
   peerAvatarUrl: string | undefined;
@@ -74,6 +78,8 @@ function ConversationRowBase({
   preview,
   time,
   unreadCount,
+  pinned,
+  muted,
   isDm,
   peerAvatarUrl,
   onOpen,
@@ -140,8 +146,11 @@ function ConversationRowBase({
 
       <View style={{ flex: 1, gap: 3 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          {/* An unread row is marked by WEIGHT, not only by the pill at the other end of it.
+              Scanning a list for what is new should not require reading every right edge —
+              and `label` is the same face one step heavier, so the row never reflows. */}
           <Text
-            variant="body"
+            variant={unread ? 'label' : 'body'}
             numberOfLines={1}
             style={{ flex: 1, fontSize: 17, color: t.colors.textPrimary }}
           >
@@ -150,6 +159,7 @@ function ConversationRowBase({
           <Text
             variant="caption"
             style={{
+              fontSize: 12.5,
               color: unread ? t.colors.brandFrom : t.colors.textTertiary,
             }}
           >
@@ -174,13 +184,35 @@ function ConversationRowBase({
           ) : (
             <Text
               variant="caption"
-              color="secondary"
               numberOfLines={1}
-              style={{ flex: 1, fontSize: 14 }}
+              style={{
+                flex: 1,
+                fontSize: 14,
+                // Unread reads a step darker, read a step back — the pair is what makes the
+                // list scannable at a glance rather than uniformly grey.
+                color: unread ? t.colors.textPrimary : t.colors.textSecondary,
+              }}
             >
               {preview}
             </Text>
           )}
+          {/* Both of these were already on the row and neither was ever drawn: a pinned chat
+              looked ordinary except for its position, and a muted one gave no sign at all —
+              so a silent conversation read as a conversation nobody was having. */}
+          {muted ? (
+            <BellOffIcon
+              size={15}
+              color={t.colors.textTertiary}
+              strokeWidth={1.9}
+            />
+          ) : null}
+          {pinned ? (
+            <PinIcon
+              size={15}
+              color={t.colors.textTertiary}
+              strokeWidth={1.9}
+            />
+          ) : null}
           {unread ? (
             <View
               style={{
@@ -188,7 +220,11 @@ function ConversationRowBase({
                 height: 20,
                 paddingHorizontal: 6,
                 borderRadius: 10,
-                backgroundColor: t.colors.brandFrom,
+                // A muted conversation still counts, but it does not shout: the badge keeps
+                // the number and drops the emphasis, which is the whole point of muting it.
+                backgroundColor: muted
+                  ? t.colors.textTertiary
+                  : t.colors.brandFrom,
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
@@ -232,6 +268,8 @@ export function ChatsList(): React.JSX.Element {
         preview={item.preview}
         time={item.time}
         unreadCount={item.unread}
+        pinned={item.pinned}
+        muted={item.muted}
         isDm={item.type === 'dm'}
         peerAvatarUrl={item.peerAvatarUrl}
         onOpen={onOpen}

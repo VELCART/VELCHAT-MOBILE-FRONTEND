@@ -228,10 +228,10 @@
     "more": "More options",
     "goOffline": "Go offline",
     "goOnline": "Go online",
-    "hintMessages": "messages",
-    "hintFiles": "files",
-    "hintMedia": "media",
-    "hintAi": "AI search"
+    "hintMessages": "Search messages",
+    "hintFiles": "Search files",
+    "hintMedia": "Search photos and videos",
+    "hintAi": "Ask AI"
   },
   "search": {
     "placeholder": "Ask Vel AI or Search",

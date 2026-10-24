@@ -72,6 +72,8 @@ export {
   DoubleCheckIcon,
   AlertCircleIcon,
   ReplyIcon,
+  PinIcon,
+  BellOffIcon,
   CloseIcon,
 } from './icons';
 export type { IconProps } from './icons';

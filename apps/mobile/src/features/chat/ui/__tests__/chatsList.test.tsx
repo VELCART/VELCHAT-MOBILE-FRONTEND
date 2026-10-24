@@ -63,6 +63,8 @@ function rowProps(
     preview: vm.preview,
     time: vm.time,
     unreadCount: vm.unread,
+    pinned: vm.pinned,
+    muted: vm.muted,
     isDm: vm.type === 'dm',
     peerAvatarUrl: vm.peerAvatarUrl,
     onOpen: () => undefined,

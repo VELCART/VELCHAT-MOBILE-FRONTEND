@@ -228,10 +228,10 @@
     "more": "और विकल्प",
     "goOffline": "ऑफ़लाइन जाएं",
     "goOnline": "ऑनलाइन जाएं",
-    "hintMessages": "मैसेज",
-    "hintFiles": "फ़ाइलें",
-    "hintMedia": "मीडिया",
-    "hintAi": "AI सर्च"
+    "hintMessages": "संदेश खोजें",
+    "hintFiles": "फ़ाइलें खोजें",
+    "hintMedia": "फ़ोटो और वीडियो खोजें",
+    "hintAi": "AI से पूछें"
   },
   "search": {
     "placeholder": "Vel AI से पूछें या खोजें",

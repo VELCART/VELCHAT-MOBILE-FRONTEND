@@ -35,8 +35,28 @@ describe('toConversationRow', () => {
       preview: 'see you at 6',
       unread: 3,
       pinned: false,
+      muted: false,
       time: conversationTimeLabel(at(2026, 7, 2, 9, 30), NOW),
     });
+  });
+
+  it('reads muted off the CLOCK, not off a flag', () => {
+    // The column stores an expiry, so "muted" is a question with an answer that changes on
+    // its own. Resolved at emission time; the row must never re-derive it per render.
+    const future = toConversationRow(
+      model({ isMutedUntil: NOW + 60_000 } as never),
+      NOW,
+    );
+    expect(future.muted).toBe(true);
+
+    const expired = toConversationRow(
+      model({ isMutedUntil: NOW - 1 } as never),
+      NOW,
+    );
+    expect(expired.muted).toBe(false);
+
+    // Never muted at all — the column is optional and absent is not "muted since zero".
+    expect(toConversationRow(model(), NOW).muted).toBe(false);
   });
 
   it('reflects an IN-PLACE model mutation in a NEW row object', () => {

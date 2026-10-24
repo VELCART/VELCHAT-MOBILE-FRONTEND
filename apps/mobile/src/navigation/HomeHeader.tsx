@@ -131,11 +131,16 @@ function SearchHint(): React.JSX.Element {
     };
   }, [fade]);
 
+  // ONE phrase, in ONE colour.
+  //
+  // This used to be the fixed word "Search" in `textSecondary` followed by a rotating
+  // fragment in `textTertiary`, assembled by concatenation. Two problems, both visible: the
+  // fragments are not all nouns, so the bar regularly read "Search AI search"; and the
+  // two-tone join made the placeholder look like a half-rendered string rather than a hint.
+  // Concatenating a verb onto a noun is also not translatable — Hindi puts the verb last and
+  // Arabic reads right to left, so neither could ever be built this way.
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', flex: 1 }}>
-      <Text variant="body" color="secondary">
-        {`${tr('header.search')} `}
-      </Text>
       <Animated.Text
         numberOfLines={1}
         style={{
@@ -143,7 +148,7 @@ function SearchHint(): React.JSX.Element {
           opacity: fade,
           fontFamily: t.typography.body.fontFamily,
           fontSize: 16,
-          color: t.colors.textTertiary,
+          color: t.colors.textSecondary,
         }}
       >
         {tr(`header.${SEARCH_HINTS[i]}`)}

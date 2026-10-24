@@ -887,3 +887,40 @@ export function CloseIcon({
     </Svg>
   );
 }
+
+/** A pushpin — a conversation kept at the top of the list. */
+export function PinIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M9 4h6l-1 5 3 3v2H7v-2l3-3-1-5Z"
+        {...stroke(color, strokeWidth)}
+      />
+      <Path d="M12 14v6" {...stroke(color, strokeWidth)} />
+    </Svg>
+  );
+}
+
+/** A bell with a stroke through it — notifications silenced for this conversation. */
+export function BellOffIcon({
+  size = 24,
+  color = '#000',
+  strokeWidth = 2,
+}: IconProps): React.JSX.Element {
+  return (
+    <Svg width={size} height={size} viewBox="0 0 24 24">
+      <Path
+        d="M18 8a6 6 0 0 0-9.3-5M6.3 6.3A6 6 0 0 0 6 8c0 7-3 9-3 9h13"
+        {...stroke(color, strokeWidth)}
+      />
+      <Path
+        d="M13.7 21a2 2 0 0 1-3.4 0M3 3l18 18"
+        {...stroke(color, strokeWidth)}
+      />
+    </Svg>
+  );
+}

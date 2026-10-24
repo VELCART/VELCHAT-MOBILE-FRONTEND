@@ -34,6 +34,12 @@ export interface ConversationRowVM {
   readonly unread: number;
   readonly pinned: boolean;
   /**
+   * Is this conversation silenced RIGHT NOW? The column stores an expiry, not a flag, so
+   * "muted" is a question about the clock — resolved here, at emission time, rather than in
+   * the row, which must not re-derive it per render (§R4).
+   */
+  readonly muted: boolean;
+  /**
    * Rendered timestamp, resolved at EMISSION time. `toLocaleTimeString`/`toLocaleDateString`
    * are ICU calls over JNI on Hermes — far too slow to run per row per render (§R4), and the
    * label only changes when the row does. Trade-off: an app left open across midnight keeps
@@ -100,6 +106,7 @@ export function toConversationRow(
     preview: c.lastMessagePreview ?? '',
     unread: c.unreadCount,
     pinned: c.isPinned,
+    muted: (c.isMutedUntil ?? 0) > now,
     time: conversationTimeLabel(c.lastMessageAt, now),
     // Carried on the row itself, resolved once at sync time. A row that had to FETCH its peer and
     // photo cost three REST calls per render — which is why photos used to arrive late, in a
