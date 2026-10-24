@@ -2,6 +2,9 @@
  * @format
  */
 
+// Gesture handler's native side has to be initialised before any view is created (ADR-0011),
+// so this stays the first import in the bundle.
+import 'react-native-gesture-handler';
 // Polyfill crypto.getRandomValues before any crypto (device keys, libsignal) runs.
 import 'react-native-get-random-values';
 import { AppRegistry } from 'react-native';

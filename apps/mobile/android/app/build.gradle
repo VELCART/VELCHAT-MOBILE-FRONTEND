@@ -225,6 +225,31 @@ android {
         // because its application id happens to equal the namespace).
         // This resource is the hook the library checks first; point it at the real namespace.
         resValue "string", "build_config_package", "com.velchat"
+
+        // WINDOWS PATH LENGTH (ADR-0011). CMake names each object file after the FULL source
+        // path, mirrored under the build directory. For react-native-gesture-handler's
+        // generated shadow nodes that comes to ~315 characters:
+        //
+        //   .cxx/RelWithDebInfo/<hash>/<abi>/rngesturehandler_codegen_autolinked_build/
+        //   CMakeFiles/react_codegen_rngesturehandler_codegen.dir/D_/Velchat-Frontend/apps/
+        //   mobile/node_modules/react-native-gesture-handler/shared/shadowNodes/react/
+        //   renderer/components/rngesturehandler_codegen/
+        //   RNGestureHandlerDetectorShadowNode.cpp.o
+        //
+        // and ninja, as bundled with CMake 3.22.1, still uses the 260-character Win32 API, so
+        // the build fails with "Filename longer than 260 characters" even on a machine with
+        // LongPathsEnabled=1. Shortening the staging directory does not help: the mirrored
+        // source path alone is ~290 characters.
+        //
+        // CMAKE_OBJECT_PATH_MAX is CMake's own answer — above this length it stops mirroring
+        // the source path and hashes the object name instead. It changes nothing about the
+        // output, only where intermediates are written, which is why it is set unconditionally
+        // rather than guarded on the host OS.
+        externalNativeBuild {
+            cmake {
+                arguments "-DCMAKE_OBJECT_PATH_MAX=240"
+            }
+        }
     }
     // One APK per ABI (§R5 — the reference device is a 3 GB phone, and download size is the
     // first thing it pays).

@@ -98,6 +98,14 @@
       "read": "Read",
       "failed": "Not sent, tap to retry"
     },
+    "actions": {
+      "title": "Message",
+      "reply": "Reply",
+      "copy": "Copy",
+      "delete": "Delete for me",
+      "deleteHint": "Removes this message from this device only.",
+      "deleteHintMine": "Removes it from this device only — the other person still has it."
+    },
     "quoted": {
       "photo": "Photo",
       "video": "Video",
@@ -107,7 +115,8 @@
     },
     "threadEmpty": "No messages yet",
     "threadEmptySub": "Say hi to start the conversation.",
-    "replyHint": "Long press to reply"
+    "replyHint": "Long press to reply",
+    "actionsHint": "Long press for message options"
   },
   "newChat": {
     "title": "New chat",

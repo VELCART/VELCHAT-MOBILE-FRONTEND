@@ -294,7 +294,9 @@ let lastStamp = 0;
 
 /** A short client message id (server seq is assigned later, on ACK). */
 export function newClientMsgId(): string {
-  return `m_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  return `m_${Date.now().toString(36)}_${Math.random()
+    .toString(36)
+    .slice(2, 8)}`;
 }
 
 /**
@@ -684,6 +686,70 @@ export async function markMessageSending(clientMsgId: string): Promise<void> {
     if (!row) return;
     await row.update(m => {
       m.state = 'sending';
+    });
+  });
+}
+
+/**
+ * Hide a message on THIS DEVICE ONLY (§L7) — the "delete for me" of the hold-a-message sheet.
+ *
+ * NOT delete-for-everyone. There is no backend route for an unsend yet (see
+ * `docs/backend-integration-reference.md`), so nothing here reaches the peer and nothing here
+ * should be presented to the user as if it did — the sheet labels the action "delete for me"
+ * and spells out that the other side still has the message. When that route lands it becomes a
+ * separate function with a separate name, and the `deleted_scope` column (schema v3,
+ * `me|everyone`) is where the two are told apart; this one is unambiguously the `me` case.
+ *
+ * A soft delete rather than a destroy, deliberately. The row IS the record that this message
+ * was deleted: `observeMessages` and `searchMessages` both filter `deleted:false`, so flipping
+ * the flag removes it from everything the user can see, while the row that stays behind is what
+ * stops the next backfill from re-inserting the very message they just deleted (reconciliation
+ * matches an existing row and the update branch never touches `deleted`).
+ *
+ * The body is left on the row. "Delete for me" is reversible in principle and a reply that
+ * quotes this message still has to render its preview — wiping `content_plain` here would blank
+ * those quotes with no way back. The row is invisible, not shredded; a true local shred is a
+ * separate, deliberate feature.
+ *
+ * Also re-points the chat list. Deleting the newest message and still seeing its text as the
+ * conversation's last line is the half of this feature that is invisible from inside the thread
+ * and is the half users report. Bounded: one indexed query for the newest survivor.
+ *
+ * Idempotent, and a no-op for an id that is not there — the caller is a press handler, so a
+ * double tap or a row that has since been purged must not throw.
+ */
+export async function deleteMessageForMe(messageId: string): Promise<void> {
+  const db = getDatabase();
+  const msgs = db.get<Message>('messages');
+  const row = await msgs.find(messageId).catch(() => null);
+  if (!row || row.deleted) return;
+  const conversationId = row.conversationId;
+
+  await db.write(async () => {
+    await row.update(m => {
+      m.deleted = true;
+    });
+
+    const conv = await db
+      .get<Conversation>('conversations')
+      .find(conversationId)
+      .catch(() => null);
+    if (!conv) return;
+
+    // Only the row the list is actually advertising needs repairing. Anything older is not on
+    // screen, and re-deriving the preview for it would be a query per delete for no change.
+    const shownAt = conv.lastMessageAt ?? 0;
+    if (row.createdAt < shownAt) return;
+
+    const survivors = await msgs
+      .query(...messageWindowClauses(conversationId, 1))
+      .fetch();
+    const next = survivors[0];
+    await conv.update(c => {
+      c.lastMessagePreview = next?.contentPlain ?? '';
+      c.lastMessageAt = next?.createdAt ?? 0;
+      c.lastMessageSeq = next?.seq ?? 0;
+      c.updatedAt = Date.now();
     });
   });
 }

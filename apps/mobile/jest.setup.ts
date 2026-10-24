@@ -121,6 +121,54 @@ jest.mock('react-native-device-info', () => ({
   },
 }));
 
+// Gesture handler + Reanimated (ADR-0011). Both reach for native modules that do not exist
+// under Jest, so both need a double here or every suite that renders a chat row fails to load.
+//
+// Gesture handler ships one. Reanimated 4 does not, usefully: `setUpTests()` and its own
+// `mock.js` both pull in react-native-worklets, which throws on `loadUnpackersWithCode`
+// before a single test runs because the worklets runtime is not installed. So this is a hand
+// written double of exactly the surface the app uses — deliberately small, so that reaching
+// for a new Reanimated API shows up here as a failing import rather than as silence.
+//
+// It is a BEHAVIOURAL double, not a no-op: a shared value really holds its value and
+// `useAnimatedStyle` really calls its worklet, so a test can still assert on what a component
+// computes. What it does not do is animate — there is no UI thread to animate on.
+require('react-native-gesture-handler/jestSetup');
+jest.mock('react-native-reanimated', () => {
+  const { View } = require('react-native') as typeof import('react-native');
+  const run = <T>(fn: (...a: unknown[]) => T) => fn;
+  return {
+    __esModule: true,
+    // `createAnimatedComponent` is here because react-native-screens asks for it on import,
+    // not because the chat uses it — a missing one takes down every navigation test.
+    default: {
+      View,
+      Text: View,
+      ScrollView: View,
+      Image: View,
+      createAnimatedComponent: (c: unknown) => c,
+    },
+    createAnimatedComponent: (c: unknown) => c,
+    useSharedValue: (initial: unknown) => ({ value: initial }),
+    useAnimatedStyle: (fn: () => unknown) => fn(),
+    useAnimatedReaction: () => undefined,
+    useDerivedValue: (fn: () => unknown) => ({ value: fn() }),
+    withSpring: (to: unknown) => to,
+    withTiming: (to: unknown) => to,
+    withDelay: (_d: number, to: unknown) => to,
+    cancelAnimation: () => undefined,
+    runOnJS: run,
+    runOnUI: run,
+    Easing: {
+      linear: (v: number) => v,
+      ease: (v: number) => v,
+      out: (f: unknown) => f,
+      in: (f: unknown) => f,
+      quad: (v: number) => v,
+    },
+  };
+});
+
 // No real network in unit/component tests — loaders must fall back gracefully.
 (globalThis as { fetch?: unknown }).fetch = jest.fn(() =>
   Promise.reject(new Error('network disabled in tests')),

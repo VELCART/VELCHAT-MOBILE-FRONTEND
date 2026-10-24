@@ -90,6 +90,7 @@ export {
   countMessages,
   MESSAGE_PAGE,
   applyReceipt,
+  deleteMessageForMe,
   enqueueSend,
   enqueueOptimisticSend,
   claimNextDue,
@@ -175,6 +176,8 @@ export {
   readDeviceContacts,
   getAppState,
   subscribeAppState,
+  copyWithAutoClear,
+  disposeClipboardAutoClear,
 } from './native';
 export type {
   BatteryStatus,

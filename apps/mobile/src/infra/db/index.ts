@@ -35,6 +35,7 @@ export {
   countMessages,
   MESSAGE_PAGE,
   applyReceipt,
+  deleteMessageForMe,
 } from './messages';
 export {
   enqueueSend,

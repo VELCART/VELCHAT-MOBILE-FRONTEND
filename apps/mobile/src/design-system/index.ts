@@ -51,6 +51,7 @@ export {
   MailIcon,
   VideoIcon,
   TrashIcon,
+  CopyIcon,
   SparkleIcon,
   SlidersIcon,
   LinkIcon,

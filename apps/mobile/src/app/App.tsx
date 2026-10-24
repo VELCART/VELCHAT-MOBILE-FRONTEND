@@ -7,6 +7,7 @@
  */
 import React, { useEffect } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { ThemeProvider, type ThemeMode } from '../theme';
 import { I18nProvider, isSupportedLanguage, type AppLanguage } from '../i18n';
@@ -53,6 +54,9 @@ function Gate(): React.JSX.Element {
   const ready = useAuthBootstrap();
   return ready ? <RootNavigator /> : <Splash />;
 }
+
+/** Hoisted: a fresh style object would remount the native root on every render. */
+const GESTURE_ROOT = { flex: 1 } as const;
 
 export default function App(): React.JSX.Element {
   useEffect(() => {
@@ -139,24 +143,28 @@ export default function App(): React.JSX.Element {
   }, []);
 
   return (
-    <SafeAreaProvider>
-      <ErrorBoundary>
-        <QueryClientProvider client={queryClient}>
-          <ThemeProvider
-            initialMode={readInitialThemeMode()}
-            onModeChange={mode => kv.set(KVKeys.themeMode, mode)}
-          >
-            <I18nProvider
-              initialLanguage={readInitialLanguage()}
-              onLanguageChange={lang => kv.set(KVKeys.language, lang)}
+    // Outermost, and it must fill the window: gesture-handler attaches its native root here,
+    // and any gesture mounted outside it silently never fires (ADR-0011).
+    <GestureHandlerRootView style={GESTURE_ROOT}>
+      <SafeAreaProvider>
+        <ErrorBoundary>
+          <QueryClientProvider client={queryClient}>
+            <ThemeProvider
+              initialMode={readInitialThemeMode()}
+              onModeChange={mode => kv.set(KVKeys.themeMode, mode)}
             >
-              <FeatureFlagsProvider>
-                <Gate />
-              </FeatureFlagsProvider>
-            </I18nProvider>
-          </ThemeProvider>
-        </QueryClientProvider>
-      </ErrorBoundary>
-    </SafeAreaProvider>
+              <I18nProvider
+                initialLanguage={readInitialLanguage()}
+                onLanguageChange={lang => kv.set(KVKeys.language, lang)}
+              >
+                <FeatureFlagsProvider>
+                  <Gate />
+                </FeatureFlagsProvider>
+              </I18nProvider>
+            </ThemeProvider>
+          </QueryClientProvider>
+        </ErrorBoundary>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }

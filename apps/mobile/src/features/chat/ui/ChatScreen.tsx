@@ -39,12 +39,14 @@ import {
 } from '../hooks/useMessages';
 import { useTyping } from '../hooks/useTyping';
 import { useConversationTyping } from '../hooks/useConversationTyping';
+import { useMessageActions } from '../hooks/useMessageActions';
 import { useDayClock } from '../hooks/useDayClock';
 import { ChatHeader } from './chat/ChatHeader';
 import { Composer } from './chat/Composer';
 import { JumpToLatest } from './chat/JumpToLatest';
 import { MessageBubble, type QuotedPreview } from './chat/MessageBubble';
 import { TypingBubble } from './chat/TypingBubble';
+import { MessageActionsSheet } from './chat/MessageActionsSheet';
 import { ChatWallpaper } from './chat/ChatWallpaper';
 import { WallpaperSheet } from './chat/WallpaperSheet';
 import { setChatWallpaper } from '../api/setChatWallpaper';
@@ -214,6 +216,8 @@ function ChatThread({
   const [text, setText] = useState('');
   /** The message being answered, or null for a plain send. */
   const [replyToId, setReplyToId] = useState<string | null>(null);
+  // Long press opens this; swipe-right skips it and replies directly (both are WhatsApp's).
+  const actions = useMessageActions(conversationId);
   const peerName = chatTitle(name, rowName, tr('chat.unknownContact'));
 
   // Feed each keystroke to the throttled typing signal (§C4) alongside the local text state.
@@ -339,6 +343,11 @@ function ChatThread({
 
   // Swipe-right on a bubble, or a tap on a quote inside one: both mean "answer that one".
   const onReply = useCallback((id: string) => setReplyToId(id), []);
+  // Reply chosen from the action sheet. The sheet closes itself afterwards.
+  const replyFromActions = useCallback(() => {
+    const id = actions.target?.id;
+    if (id) setReplyToId(id);
+  }, [actions.target]);
   const cancelReply = useCallback(() => setReplyToId(null), []);
 
   /** Everything a quote can be resolved from — the open window, plus anything paged in. */
@@ -449,11 +458,12 @@ function ChatThread({
         quotedId={item.quotedId}
         onRetry={retry}
         onReply={onReply}
+        onLongPress={actions.open}
         onJumpToQuoted={onJumpToQuoted}
         incomingTint={paint.incomingTint}
       />
     ),
-    [retry, onReply, onJumpToQuoted, paint.incomingTint],
+    [retry, onReply, actions.open, onJumpToQuoted, paint.incomingTint],
   );
 
   /** The peer's "…" bubble, at the foot of the thread where WhatsApp puts it. */
@@ -549,6 +559,16 @@ function ChatThread({
           />
           {showJump ? <JumpToLatest onPress={jumpToLatest} /> : null}
         </View>
+
+        <MessageActionsSheet
+          visible={actions.visible}
+          mine={actions.target?.mine ?? false}
+          canCopy={(actions.target?.text ?? '') !== ''}
+          onClose={actions.close}
+          onReply={replyFromActions}
+          onCopy={actions.copy}
+          onDelete={actions.remove}
+        />
 
         <Composer
           value={text}
