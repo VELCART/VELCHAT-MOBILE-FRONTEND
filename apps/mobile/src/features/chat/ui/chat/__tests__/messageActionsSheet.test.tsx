@@ -58,9 +58,13 @@ beforeEach(() => jest.clearAllMocks());
 describe('what the sheet offers', () => {
   it('lists reply, copy and delete, in that order', () => {
     show();
+    // The scrim is a button too — BottomSheet labels it so TalkBack does not announce a
+    // screen-sized unnamed element before the sheet's own rows. It is the sheet's chrome,
+    // not one of its actions, so it is filtered out rather than asserted on here.
     const names = screen
       .getAllByRole('button')
-      .map(b => b.props.accessibilityLabel);
+      .map(b => b.props.accessibilityLabel as string)
+      .filter(n => n !== label('common.close'));
 
     expect(names).toEqual([
       label('chat.actions.reply'),

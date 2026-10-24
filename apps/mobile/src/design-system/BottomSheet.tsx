@@ -32,8 +32,11 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
+import { useTranslation } from '../i18n';
 
 const SCRIM_MAX = 0.55;
+/** Hoisted: a fresh style object per render for a full-screen view is pure churn. */
+const SCRIM_FILL = { flex: 1 } as const;
 
 export function BottomSheet({
   visible,
@@ -48,6 +51,8 @@ export function BottomSheet({
   dismissable?: boolean;
 }): React.JSX.Element | null {
   const t = useTheme();
+  const { t: tr } = useTranslation();
+  const closeLabel = tr('common.close');
   const insets = useSafeAreaInsets();
   const { height: screenH } = useWindowDimensions();
 
@@ -189,6 +194,10 @@ export function BottomSheet({
       statusBarTranslucent
       animationType="none"
       onRequestClose={requestClose}
+      // Without this, iOS leaves everything BEHIND the sheet reachable by VoiceOver — a user
+      // can swipe straight past the sheet into a screen they cannot see and do not know is
+      // still there (§M18).
+      accessibilityViewIsModal
     >
       <View style={StyleSheet.absoluteFill}>
         <Animated.View
@@ -197,7 +206,15 @@ export function BottomSheet({
             { backgroundColor: '#000000', opacity: scrimOpacity },
           ]}
         >
-          <Pressable style={{ flex: 1 }} onPress={requestClose} />
+          {/* The scrim is a real control — tapping it closes the sheet — so it says so.
+              Unlabelled it was a screen-sized unnamed element that TalkBack focused BEFORE
+              the sheet's own rows, which reads as the app having lost its place. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={closeLabel}
+            style={SCRIM_FILL}
+            onPress={requestClose}
+          />
         </Animated.View>
 
         <Animated.View

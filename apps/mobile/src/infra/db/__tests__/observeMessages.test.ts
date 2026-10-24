@@ -23,4 +23,26 @@ describe('observeMessages column coverage', () => {
   it('still names state, so a bubble keeps ticking sending → sent → read', () => {
     expect(MESSAGE_OBSERVED_COLUMNS).toContain('state');
   });
+
+  it('names seq — the column the window is ORDERED by', () => {
+    // A row can learn its real seq after it is on screen (a live frame arriving before the
+    // ack, then the reconcile update). On an already-delivered row nothing else changes, so
+    // without this the list keeps drawing the old order.
+    expect(MESSAGE_OBSERVED_COLUMNS).toContain('seq');
+  });
+
+  it('names created_at — the timestamp the bubble prints', () => {
+    // `applyServerMessages` re-stamps it to the server's time in either direction (VC-030).
+    // Unobserved, a corrected time appears only on the next visit — and a correction across
+    // midnight strands the bubble under the wrong date separator.
+    expect(MESSAGE_OBSERVED_COLUMNS).toContain('created_at');
+  });
+
+  it('does not name columns nothing on screen reads', () => {
+    // Every extra column is another reason to re-render the whole visible window on the app's
+    // most-used screen (§R4). `server_msg_id` is wire plumbing and `reply_to_id` is written
+    // once at insert — neither is ever a later change the reader must see.
+    expect(MESSAGE_OBSERVED_COLUMNS).not.toContain('server_msg_id');
+    expect(MESSAGE_OBSERVED_COLUMNS).not.toContain('reply_to_id');
+  });
 });

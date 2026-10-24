@@ -190,3 +190,52 @@ export function conversationRowIdentity(
   if (!resolved) return { title: fallback, initial: undefined };
   return { title: resolved, initial: resolved.charAt(0).toUpperCase() };
 }
+
+/**
+ * How much larger to draw a message that is NOTHING BUT EMOJI — WhatsApp's "big emoji", and
+ * one of the few places a chat app changes type size for content rather than for chrome.
+ *
+ * `null` means "draw it normally", which is the answer for everything with a word in it and
+ * for a wall of emoji long enough that enlarging it would simply overflow. Up to three get the
+ * full treatment; nothing else is special-cased, because the point is a reaction-sized message,
+ * not a font-size ladder.
+ *
+ * Pure, and deliberately conservative about its own regex: `\p{Extended_Pictographic}` is a
+ * unicode property escape, and if the engine this runs on does not support one the honest
+ * answer is "not emoji-only" rather than a crash on the render path of every bubble.
+ */
+const EMOJI_SIZES: Record<number, number> = { 1: 40, 2: 34, 3: 28 };
+
+let emojiOnlyRe: RegExp | null | undefined;
+function emojiMatcher(): RegExp | null {
+  if (emojiOnlyRe !== undefined) return emojiOnlyRe;
+  try {
+    // One or more pictographs, each optionally followed by a variation selector, skin-tone
+    // modifier or ZWJ sequence, and nothing else but whitespace.
+    // A LITERAL, not `new RegExp('\u2026')`: in a string every backslash has to be doubled, and
+    // a single one is silently swallowed \u2014 `'\p{\u2026}'` is just the letter p \u2014 so the pattern
+    // compiles to something that matches nothing rather than failing loudly.
+    emojiOnlyRe =
+      /^(?:\s*(?:\p{Extended_Pictographic}|\p{Emoji_Modifier_Base})(?:\p{Emoji_Modifier}|\uFE0F|\u200D\p{Extended_Pictographic})*\s*)+$/u;
+  } catch {
+    emojiOnlyRe = null;
+  }
+  return emojiOnlyRe;
+}
+
+export function emojiOnlyFontSize(text: string): number | null {
+  const body = text.trim();
+  if (body.length === 0 || body.length > 24) return null;
+  const re = emojiMatcher();
+  if (!re || !re.test(body)) return null;
+  // Count what a READER counts, which is neither code units nor code points: 👍🏽 is one emoji
+  // written as a thumb plus a skin tone, and 👨‍👩‍👧 is one written as three people joined by
+  // zero-width joiners. So strip the parts that modify rather than add — a ZWJ and whatever
+  // follows it, skin tones, and variation selectors — and count what is left.
+  const atoms = body
+    .replace(/\s+/gu, '')
+    .replace(/‍\p{Extended_Pictographic}/gu, '')
+    .replace(/\p{Emoji_Modifier}|️/gu, '');
+  const count = (atoms.match(/\p{Extended_Pictographic}/gu) ?? []).length;
+  return EMOJI_SIZES[count] ?? null;
+}

@@ -49,6 +49,7 @@ import Animated, {
 import { useTheme } from '../../../../theme';
 import { useTranslation } from '../../../../i18n';
 import { DateChip } from './DateChip';
+import { emojiOnlyFontSize } from './chatModel';
 import { BubbleTail, TAIL_WIDTH } from './BubbleTail';
 import { QuotedMessage } from './QuotedMessage';
 import { MessageTicks, sendStateLabel } from './MessageTicks';
@@ -177,6 +178,12 @@ function MessageBubbleBase({
   const textColor = mine ? c.outgoingText : c.incomingText;
   const metaColor = mine ? c.outgoingMeta : c.incomingMeta;
   const topGap = dateLabel ? 0 : firstOfRun ? GAP_BETWEEN_RUNS : GAP_WITHIN_RUN;
+  // A message that is nothing but a few emoji is drawn large, the way WhatsApp draws it — the
+  // emoji IS the message, not decoration on one. `null` for everything else.
+  const bigEmoji = useMemo(
+    () => emojiOnlyFontSize(contentPlain),
+    [contentPlain],
+  );
 
   const fireReply = useCallback(() => onReply(id), [onReply, id]);
   const openActions = useCallback(
@@ -421,8 +428,10 @@ function MessageBubbleBase({
                 onLongPress={openActions}
                 style={{
                   fontFamily: CHAT_FONT,
-                  fontSize: CHAT_BODY_SIZE,
-                  lineHeight: CHAT_BODY_LINE,
+                  fontSize: bigEmoji ?? CHAT_BODY_SIZE,
+                  lineHeight: bigEmoji
+                    ? Math.round(bigEmoji * 1.25)
+                    : CHAT_BODY_LINE,
                   color: textColor,
                 }}
               >

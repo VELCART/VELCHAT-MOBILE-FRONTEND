@@ -1,7 +1,17 @@
 // Proves the §M4 layer-boundary lint actually fails on a violation (MBOOT-0 DoD).
-// Writes a temp file that imports infra from the domain layer (illegal per §M3/§M4),
-// runs eslint on it, asserts eslint rejects it, then removes the probe.
-import { writeFileSync, rmSync } from 'node:fs';
+// Writes a temp file containing an illegal import, runs eslint on it, asserts eslint rejects
+// it, then removes the probe.
+//
+// THE PROBE MUST USE AN EDGE THE CONFIG ACTUALLY FORBIDS. It used to probe `domain -> infra`,
+// which `.eslintrc.js` allows on purpose — the SyncEngine orchestrates infra, and the rule says
+// so in a comment right beside the allowance. So the gate could only ever fail, and a gate that
+// always fails is a gate nobody reads: it stopped saying anything about whether the boundary
+// plugin was wired at all.
+//
+// `features/*/ui -> infra` is the edge this probes now, and it is a real one: it fired during
+// MP2 when the chat screen reached for `getMessagesByIds` directly, which is exactly the mistake
+// the gate exists to keep catching. UI goes through the feature's own hooks/api.
+import { writeFileSync, rmSync, mkdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
@@ -10,13 +20,17 @@ const appRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   '..',
 );
-const probe = path.join(appRoot, 'src', 'domain', '__boundary_probe__.ts');
+// Inside an existing feature's `ui` folder, because the rule is matched on the folder pattern
+// `src/features/*/ui` — a probe anywhere else is simply a different element type.
+const probeDir = path.join(appRoot, 'src', 'features', 'chat', 'ui');
+const probe = path.join(probeDir, '__boundary_probe__.ts');
 
+mkdirSync(probeDir, { recursive: true });
 writeFileSync(
   probe,
   [
-    '// TEMP probe (auto-generated). domain -> infra import is a §M4 violation.',
-    "import '../infra';",
+    '// TEMP probe (auto-generated). features/*/ui -> infra is a §M4 violation.',
+    "import '../../../infra';",
     'export {};',
     '',
   ].join('\n'),
@@ -37,12 +51,12 @@ rmSync(probe, { force: true });
 
 if (caught) {
   console.log(
-    'OK  boundary gate works: a domain -> infra import was rejected by eslint.',
+    'OK  boundary gate works: a features/*/ui -> infra import was rejected by eslint.',
   );
   process.exit(0);
 }
 console.error(
-  'FAIL  boundary gate did not reject a domain -> infra import.\n',
+  'FAIL  boundary gate did not reject a features/*/ui -> infra import.\n',
   output,
 );
 process.exit(1);

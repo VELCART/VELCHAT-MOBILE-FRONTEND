@@ -259,7 +259,8 @@
     "offline": "You're offline — waiting for network",
     "flightMode": "Flight mode on — you're offline",
     "connecting": "Connecting…",
-    "syncing": "Syncing your messages…"
+    "syncing": "Syncing your messages…",
+    "close": "Close"
   },
   "status": {
     "title": "Status",

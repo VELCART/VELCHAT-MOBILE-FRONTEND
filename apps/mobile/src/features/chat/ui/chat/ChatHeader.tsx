@@ -252,8 +252,12 @@ export function ChatHeader({
         icon={CallIcon}
         disabled
       />
+      {/* Labelled for what it DOES, not for the glyph it wears. It opens the wallpaper
+          picker directly, so announcing "More options" promised a menu and delivered a
+          single-purpose sheet — when there is a real overflow menu here, this goes back to
+          `chat.more`. */}
       <HeaderIconButton
-        label={tr('chat.more')}
+        label={tr('chat.wallpaper.title')}
         onPress={onOpenWallpaper}
         icon={MoreIcon}
       />

@@ -61,6 +61,18 @@ export const MESSAGE_OBSERVED_COLUMNS: readonly string[] = [
   // that write lands in the database and nothing re-renders: the text is there and the user
   // still sees an empty bubble until they leave the chat and come back (VC-063).
   'content_plain',
+  // The sort key. The window is ordered by `seq`, and a row can learn its real seq AFTER it is
+  // already on screen: a live fan-out frame can land before the ack, and the reconcile UPDATE
+  // branch then writes `seq` on a row the query already matches. If that row was already
+  // `delivered`, no other named column changes — so the write lands in the database and the
+  // list keeps drawing the OLD order until the chat is re-entered.
+  'seq',
+  // The timestamp the bubble prints, and the secondary ordering the grouping helpers read.
+  // `applyServerMessages` re-stamps `created_at` to the server's `sent_at` in either direction
+  // (VC-030), so a device whose clock was fast shows one time and should quietly settle to
+  // another; without this column named it settles only on the next visit to the chat, and a
+  // correction that crosses midnight leaves the bubble under the wrong date separator.
+  'created_at',
 ];
 
 export function observeMessages(
