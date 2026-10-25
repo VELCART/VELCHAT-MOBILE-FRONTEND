@@ -3,7 +3,7 @@
  * device, §R4), reading straight from WatermelonDB via `useConversations`. Pinned float
  * to the top, then most-recent; unread count as a brand pill. Instant open (DB-backed).
  */
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useRef } from 'react';
 import { View, Pressable, Image, type ViewStyle } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
 import { useNavigation } from '@react-navigation/native';
@@ -27,6 +27,7 @@ import {
   type ConversationRowVM,
 } from '../hooks/useConversations';
 import { conversationRowIdentity } from './chat/chatModel';
+import { backfillPeerIdentities } from '../api/refreshPeerIdentity';
 
 const AVATAR = 54;
 
@@ -251,6 +252,21 @@ export function ChatsList(): React.JSX.Element {
   const navigation =
     useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { rows, loaded } = useConversations();
+
+  // Give the chats the user has never OPENED a photo.
+  //
+  // `peer_avatar_url` was only ever written by the chat screen's own revalidation, so a
+  // conversation had a face once you had been inside it and a coloured initial otherwise —
+  // which is exactly "some have a picture and some don't" with no pattern a user could see.
+  // Bounded to the most recent twenty, one request at a time, off the render path, and once
+  // per mount (`backfillPeerIdentities` keeps its own per-session guard, and un-marks a chat
+  // whose fetch failed so an offline launch does not cost the session its photos).
+  const backfilled = useRef(false);
+  useEffect(() => {
+    if (!loaded || backfilled.current || rows.length === 0) return;
+    backfilled.current = true;
+    void backfillPeerIdentities(rows).catch(() => undefined);
+  }, [loaded, rows]);
   const onOpen = useCallback(
     (id: string, name?: string) => {
       navigation.navigate('Chat', { conversationId: id, name });

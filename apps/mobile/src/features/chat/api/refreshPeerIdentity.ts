@@ -49,7 +49,12 @@ export async function refreshPeerIdentity(
   attempted.add(conversationId);
 
   const profile = await getProfile(peerId).catch(() => null);
-  if (!profile) return;
+  if (!profile) {
+    // Offline, or the request failed. Un-mark it: the cost of trying again is one request,
+    // and the cost of not trying is a chat with no face for the rest of the session.
+    attempted.delete(conversationId);
+    return;
+  }
   const patch: ConversationPatch = {};
   // The name the USER saved wins over the one the peer registered (VC-047): without this, a
   // revalidation an hour later quietly renamed "Aayush Sir" back to "Aayush Jain".
@@ -65,6 +70,49 @@ export async function refreshPeerIdentity(
   }
   if (Object.keys(patch).length > 0) {
     await upsertConversation(conversationId, patch).catch(() => undefined);
+  }
+}
+
+/**
+ * How many chats one backfill pass will resolve. The list is unbounded and the user's
+ * attention is not: these are the rows they can actually see or are about to.
+ */
+const BACKFILL_MAX = 20;
+
+/**
+ * Give the chats the user has NEVER OPENED a photo.
+ *
+ * `refreshPeerIdentity` above only runs from the chat screen, so a conversation's picture
+ * appeared the first time you opened it and not before. Nothing else ever wrote
+ * `peer_avatar_url` — not the inbox sync, despite the chat list's own comment claiming so —
+ * which is why the list showed a face for some people and a coloured initial for others, with
+ * no pattern the user could see. The one thing it correlated with was whether that chat had
+ * ever been opened on this install.
+ *
+ * Deliberately bounded and deliberately cheap: the most recent {@link BACKFILL_MAX} DMs that
+ * have a peer and no photo, one at a time rather than twenty at once (a burst of profile
+ * requests on launch is the thing the per-row fetch was removed to avoid), each still behind
+ * the same TTL and once-per-session guard as the opened-chat path.
+ *
+ * A failure UN-marks the conversation, so a pass that ran with no network does not cost the
+ * session its photos — the next time the list mounts, it tries again.
+ */
+export async function backfillPeerIdentities(
+  rows: readonly {
+    readonly id: string;
+    readonly peerId: string | undefined;
+    readonly peerAvatarUrl: string | undefined;
+  }[],
+): Promise<void> {
+  const missing = rows
+    .filter(r => r.peerId && !r.peerAvatarUrl && !attempted.has(r.id))
+    .slice(0, BACKFILL_MAX);
+  for (const row of missing) {
+    try {
+      await refreshPeerIdentity(row.id, row.peerId);
+    } catch {
+      attempted.delete(row.id);
+    }
   }
 }
 
