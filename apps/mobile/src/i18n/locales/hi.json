@@ -235,10 +235,23 @@
   },
   "search": {
     "placeholder": "Vel AI से पूछें या खोजें",
-    "recent": "हाल की खोजें",
+    "inputLabel": "चैट और संदेश खोजें",
+    "clear": "खोज हटाएं",
     "frequent": "अक्सर",
+    "browseEmptyTitle": "अभी खोजने के लिए कुछ नहीं",
+    "browseEmptySub": "किसी से बात शुरू करते ही आपकी चैट और संदेश यहां दिखेंगे।",
+    "searching": "खोज रहे हैं",
+    "resultCount": "{{n}} परिणाम",
+    "resultCountOne": "1 परिणाम",
     "noResults": "“{{q}}” के लिए कोई परिणाम नहीं",
     "noResultsSub": "कोई दूसरा शब्द या फ़िल्टर आज़माएं।",
+    "errorTitle": "खोज नहीं चल सकी",
+    "errorSub": "इस डिवाइस पर आपके संदेश पढ़ने में कुछ गड़बड़ हुई।",
+    "retry": "फिर कोशिश करें",
+    "unavailableTitle": "{{filter}} खोज अभी उपलब्ध नहीं है",
+    "unavailableSub": "VelChat अभी इस डिवाइस पर मीडिया इंडेक्स नहीं करता। चैट और संदेश खोजें।",
+    "unreadLabel": "अपठित",
+    "openChatHint": "यह चैट खोलता है",
     "filters": {
       "all": "सभी",
       "unread": "अपठित",
@@ -247,7 +260,7 @@
       "links": "लिंक",
       "docs": "दस्तावेज़",
       "audio": "ऑडियो",
-      "contacts": "संपर्क"
+      "chats": "चैट"
     }
   },
   "common": {

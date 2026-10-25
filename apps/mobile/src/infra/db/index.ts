@@ -58,7 +58,8 @@ export {
   searchConversations,
   searchMessages,
   fetchConversationNames,
-  sanitizeLikeQuery,
+  likePattern,
+  matchesLiteral,
 } from './search';
 export type { ConversationSearchHit, MessageSearchHit } from './search';
 export { dmConversationId } from './dmId';

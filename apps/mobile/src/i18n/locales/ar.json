@@ -235,10 +235,23 @@
   },
   "search": {
     "placeholder": "اسأل Vel AI أو ابحث",
-    "recent": "عمليات البحث الأخيرة",
+    "inputLabel": "ابحث في المحادثات والرسائل",
+    "clear": "مسح البحث",
     "frequent": "المتكرر",
+    "browseEmptyTitle": "لا شيء للبحث فيه بعد",
+    "browseEmptySub": "ستظهر محادثاتك ورسائلك هنا بمجرد أن تبدأ محادثة.",
+    "searching": "جارٍ البحث",
+    "resultCount": "{{count}} نتيجة",
+    "resultCountOne": "نتيجة واحدة",
     "noResults": "لا نتائج لـ ”{{q}}“",
     "noResultsSub": "جرّب كلمة أو عامل تصفية آخر.",
+    "errorTitle": "تعذّر تشغيل البحث",
+    "errorSub": "حدث خطأ أثناء قراءة رسائلك على هذا الجهاز.",
+    "retry": "أعد المحاولة",
+    "unavailableTitle": "بحث {{filter}} غير متاح بعد",
+    "unavailableSub": "لا يفهرس VelChat الوسائط على هذا الجهاز بعد. ابحث في المحادثات والرسائل.",
+    "unreadLabel": "غير المقروء",
+    "openChatHint": "يفتح هذه المحادثة",
     "filters": {
       "all": "الكل",
       "unread": "غير المقروء",
@@ -247,7 +260,7 @@
       "links": "الروابط",
       "docs": "المستندات",
       "audio": "الصوت",
-      "contacts": "جهات الاتصال"
+      "chats": "المحادثات"
     }
   },
   "common": {

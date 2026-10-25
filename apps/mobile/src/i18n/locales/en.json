@@ -235,10 +235,23 @@
   },
   "search": {
     "placeholder": "Ask Vel AI or Search",
-    "recent": "Recent searches",
+    "inputLabel": "Search chats and messages",
+    "clear": "Clear search",
     "frequent": "Frequent",
+    "browseEmptyTitle": "Nothing to search yet",
+    "browseEmptySub": "Your chats and messages show up here once you start talking to someone.",
+    "searching": "Searching",
+    "resultCount": "{{n}} results",
+    "resultCountOne": "1 result",
     "noResults": "No results for “{{q}}”",
     "noResultsSub": "Try a different word or filter.",
+    "errorTitle": "Search could not run",
+    "errorSub": "Something went wrong reading your messages on this device.",
+    "retry": "Try again",
+    "unavailableTitle": "{{filter}} search isn’t available yet",
+    "unavailableSub": "VelChat doesn’t index media on this device yet. Search chats and messages instead.",
+    "unreadLabel": "Unread",
+    "openChatHint": "Opens this chat",
     "filters": {
       "all": "All",
       "unread": "Unread",
@@ -247,7 +260,7 @@
       "links": "Links",
       "docs": "Docs",
       "audio": "Audio",
-      "contacts": "Contacts"
+      "chats": "Chats"
     }
   },
   "common": {
