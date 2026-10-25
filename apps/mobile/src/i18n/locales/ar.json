@@ -261,7 +261,9 @@
       "docs": "المستندات",
       "audio": "الصوت",
       "chats": "المحادثات"
-    }
+    },
+    "sectionChats": "الدردشات",
+    "sectionMessages": "الرسائل"
   },
   "common": {
     "empty": "لا يوجد شيء هنا بعد",

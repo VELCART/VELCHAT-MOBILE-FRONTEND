@@ -85,6 +85,7 @@ function renderRow(r: SearchResult): void {
     <ThemeProvider initialMode="light">
       <ResultRow
         result={r}
+        showChrome
         unreadWord={t('search.unreadLabel')}
         openHint={t('search.openChatHint')}
         onOpen={() => undefined}

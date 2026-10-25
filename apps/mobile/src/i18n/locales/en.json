@@ -261,7 +261,9 @@
       "docs": "Docs",
       "audio": "Audio",
       "chats": "Chats"
-    }
+    },
+    "sectionChats": "Chats",
+    "sectionMessages": "Messages"
   },
   "common": {
     "empty": "Nothing here yet",

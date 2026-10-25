@@ -16,6 +16,37 @@ import {
 } from '../../../infra';
 import { syncEngine } from '../../../domain/sync';
 
+/**
+ * The last window each conversation painted, so RE-OPENING a chat draws on the first frame.
+ *
+ * WatermelonDB queries are asynchronous, so a subscription set up in an effect cannot have
+ * emitted by the time the screen first paints: every chat open showed an empty thread for at
+ * least one frame, and on the reference device that reads as a visible delay before the
+ * messages appear. Nothing about that is the database being slow — it is the screen having
+ * nothing to draw yet.
+ *
+ * This holds MODEL REFERENCES, not copies. WatermelonDB already keeps these objects alive in
+ * its own cache, and it mutates them in place, so an entry that is still current costs
+ * essentially nothing and an entry that is stale is corrected by the first emission — which
+ * arrives a frame later and overwrites it either way. The cache decides what is on screen
+ * until then, never what is true.
+ *
+ * BOUNDED (§M0 — no unbounded caches). Eight conversations at one window each; oldest-inserted
+ * is evicted, which for chat-switching is near enough to least-recently-used. A miss is
+ * exactly the behaviour that shipped before.
+ */
+const RECENT_WINDOWS = 8;
+const recentWindows = new Map<string, Message[]>();
+
+function rememberWindow(conversationId: string, rows: Message[]): void {
+  recentWindows.delete(conversationId);
+  recentWindows.set(conversationId, rows);
+  if (recentWindows.size > RECENT_WINDOWS) {
+    const oldest = recentWindows.keys().next();
+    if (!oldest.done) recentWindows.delete(oldest.value);
+  }
+}
+
 export function useMessages(conversationId: string): {
   messages: Message[];
   meId: string;
@@ -39,18 +70,24 @@ export function useMessages(conversationId: string): {
   loaded: boolean;
 } {
   const meId = useMemo(() => getAccountId() ?? 'me', []);
-  const [messages, setMessages] = useState<Message[]>([]);
+  const [messages, setMessages] = useState<Message[]>(
+    () => recentWindows.get(conversationId) ?? [],
+  );
   // The window grows; it never shrinks while the chat is open, so scrolling back up does not
   // re-drop history the user just pulled in.
   const [limit, setLimit] = useState(MESSAGE_PAGE);
   const [atOldest, setAtOldest] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  // Seeded from the cache counts as loaded: there is something real on screen, so the empty
+  // state must not flash over it while the subscription catches up.
+  const [loaded, setLoaded] = useState(() => recentWindows.has(conversationId));
   const loadingOlder = useRef(false);
 
   useEffect(() => {
     setLimit(MESSAGE_PAGE); // a different conversation starts from one page again
     setAtOldest(false);
-    setLoaded(false);
+    const cached = recentWindows.get(conversationId);
+    setMessages(cached ?? []);
+    setLoaded(cached !== undefined);
   }, [conversationId]);
 
   /**
@@ -144,6 +181,7 @@ export function useMessages(conversationId: string): {
     let sub: { unsubscribe: () => void } | undefined;
     try {
       sub = observeMessages(conversationId, limit).subscribe(rows => {
+        rememberWindow(conversationId, rows);
         setMessages(rows);
         setLoaded(true);
       });

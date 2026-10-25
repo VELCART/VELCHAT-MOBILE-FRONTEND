@@ -64,6 +64,7 @@ import type { SearchResult, FrequentChat } from '../model/types';
 import type { HighlightSpan } from '../model/snippet';
 import { searchPalette } from '../model/searchPalette';
 import { avatarColor, avatarInitial } from '../model/avatar';
+import { sectionise, type SearchRow } from '../model/sections';
 
 /** Same avatar, same gaps, same pressed treatment as `features/chat/ui/ChatsList.tsx`. */
 const AVATAR = 54;
@@ -222,8 +223,36 @@ function Leading({
 /** Hoisted shape — a fresh `{ uri }` per render is a new prop identity for the same image. */
 const PHOTO_SOURCE = (uri: string): { uri: string } => ({ uri });
 
+/** A section heading. Announced as one, so a screen reader can skip a whole section. */
+function SectionHeader({ title }: { title: string }): React.JSX.Element {
+  const t = useTheme();
+  const p = searchPalette(t.scheme);
+  return (
+    // The role goes on a wrapper because the design-system `Text` does not forward
+    // accessibility props — and a heading a screen reader cannot skip by is not a heading.
+    <View
+      accessibilityRole="header"
+      style={{
+        paddingHorizontal: t.spacing.lg,
+        paddingTop: t.spacing.md,
+        paddingBottom: t.spacing.xxs,
+      }}
+    >
+      <Text variant="caption" style={{ fontSize: 13, color: p.metaText }}>
+        {title}
+      </Text>
+    </View>
+  );
+}
+
 interface ResultRowProps {
   readonly result: SearchResult;
+  /**
+   * Draw the avatar and the chat name? False for the second and later messages from the SAME
+   * conversation — the run has already said whose chat it is, and repeating it fifty times is
+   * what made a page of true matches read as duplicates.
+   */
+  readonly showChrome: boolean;
   readonly unreadWord: string;
   readonly openHint: string;
   readonly onOpen: (conversationId: string, name: string) => void;
@@ -235,6 +264,7 @@ interface ResultRowProps {
  */
 function ResultRowBase({
   result,
+  showChrome,
   unreadWord,
   openHint,
   onOpen,
@@ -266,35 +296,46 @@ function ResultRowBase({
         alignItems: 'center',
         gap: t.spacing.md,
         paddingHorizontal: t.spacing.lg,
-        paddingVertical: t.spacing.sm,
+        // A continuation row is one line of text, so it gets one line's worth of room. Left
+        // at the full row padding it opened a gap the size of the name it was not drawing,
+        // and the run read as a column of floating timestamps.
+        paddingVertical: showChrome ? t.spacing.sm : t.spacing.xxs,
         backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
       })}
     >
-      <Leading title={result.title} photo={result.peerAvatarUrl} />
-      <View style={{ flex: 1, gap: 3 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-          <View style={{ flex: 1 }}>
-            <HighlightedText
-              text={result.title}
-              spans={result.titleSpans}
-              variant={unread ? 'label' : 'body'}
-              style={{ fontSize: 17, color: t.colors.textPrimary }}
-              numberOfLines={1}
-            />
+      {showChrome ? (
+        <Leading title={result.title} photo={result.peerAvatarUrl} />
+      ) : (
+        // Keeps the snippet aligned under the run it belongs to, so the column of text the
+        // eye is actually reading stays in one place.
+        <View style={{ width: AVATAR }} />
+      )}
+      <View style={{ flex: 1, gap: showChrome ? 3 : 0 }}>
+        {showChrome ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <View style={{ flex: 1 }}>
+              <HighlightedText
+                text={result.title}
+                spans={result.titleSpans}
+                variant={unread ? 'label' : 'body'}
+                style={{ fontSize: 17, color: t.colors.textPrimary }}
+                numberOfLines={1}
+              />
+            </View>
+            {result.time ? (
+              <Text
+                variant="caption"
+                style={{
+                  fontSize: 12.5,
+                  marginLeft: t.spacing.xs,
+                  color: unread ? t.colors.textPrimary : p.metaText,
+                }}
+              >
+                {result.time}
+              </Text>
+            ) : null}
           </View>
-          {result.time ? (
-            <Text
-              variant="caption"
-              style={{
-                fontSize: 12.5,
-                marginLeft: t.spacing.xs,
-                color: unread ? t.colors.textPrimary : p.metaText,
-              }}
-            >
-              {result.time}
-            </Text>
-          ) : null}
-        </View>
+        ) : null}
         <View
           style={{
             flexDirection: 'row',
@@ -314,6 +355,16 @@ function ResultRowBase({
               numberOfLines={1}
             />
           </View>
+          {/* On a continuation row the time rides BESIDE the snippet — there is no title line
+              left for it to sit above, and left there it floated over nothing. */}
+          {!showChrome && result.time ? (
+            <Text
+              variant="caption"
+              style={{ fontSize: 12.5, color: p.metaText }}
+            >
+              {result.time}
+            </Text>
+          ) : null}
           {unread ? (
             <View
               style={{
@@ -627,18 +678,38 @@ export function SearchScreen(): React.JSX.Element {
 
   const unreadWord = tr('search.unreadLabel');
   const openHint = tr('search.openChatHint');
+  // Chats and messages are different answers to different questions, so they get different
+  // sections — and a run of messages from one chat names that chat ONCE (see `sectionise`).
+  const sectionTitles = useMemo(
+    () => ({
+      chats: tr('search.sectionChats'),
+      messages: tr('search.sectionMessages'),
+    }),
+    [tr],
+  );
+  const rows = useMemo(
+    () => sectionise(results, sectionTitles),
+    [results, sectionTitles],
+  );
+
   const renderItem = useCallback(
-    ({ item }: { item: SearchResult }) => (
-      <ResultRow
-        result={item}
-        unreadWord={unreadWord}
-        openHint={openHint}
-        onOpen={openChat}
-      />
-    ),
+    ({ item }: { item: SearchRow }) =>
+      item.kind === 'header' ? (
+        <SectionHeader title={item.title} />
+      ) : (
+        <ResultRow
+          result={item.result}
+          showChrome={item.showChrome}
+          unreadWord={unreadWord}
+          openHint={openHint}
+          onOpen={openChat}
+        />
+      ),
     [openChat, unreadWord, openHint],
   );
-  const keyExtractor = useCallback((item: SearchResult) => item.id, []);
+  const keyExtractor = useCallback((item: SearchRow) => item.id, []);
+  // A header and a row are structurally different and must not share a recycle pool.
+  const getItemType = useCallback((item: SearchRow) => item.kind, []);
   const listContentStyle = useMemo<ViewStyle>(
     () => ({ paddingBottom: insets.bottom + spacing.xl }),
     [insets.bottom],
@@ -761,8 +832,9 @@ export function SearchScreen(): React.JSX.Element {
 
     return (
       <FlashList
-        data={results}
+        data={rows}
         keyExtractor={keyExtractor}
+        getItemType={getItemType}
         renderItem={renderItem}
         contentContainerStyle={listContentStyle}
         showsVerticalScrollIndicator={false}

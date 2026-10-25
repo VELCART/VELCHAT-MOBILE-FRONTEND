@@ -261,7 +261,9 @@
       "docs": "दस्तावेज़",
       "audio": "ऑडियो",
       "chats": "चैट"
-    }
+    },
+    "sectionChats": "चैट",
+    "sectionMessages": "संदेश"
   },
   "common": {
     "empty": "यहाँ अभी कुछ नहीं है",
