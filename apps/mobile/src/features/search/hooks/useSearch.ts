@@ -22,7 +22,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   searchConversations,
   searchMessages,
-  fetchConversationNames,
+  fetchConversationChrome,
   observeConversations,
   Conversation,
 } from '../../../infra';
@@ -80,6 +80,7 @@ function toResult(
   at: number,
   conversationId: string,
   unreadCount: number,
+  peerAvatarUrl: string | undefined,
 ): SearchResult {
   const window = snippet(body, query, SNIPPET_BUDGET);
   return {
@@ -99,6 +100,7 @@ function toResult(
     unreadCount,
     conversationId,
     conversationName: title,
+    peerAvatarUrl,
   };
 }
 
@@ -113,9 +115,9 @@ async function runSearch(q: string, filter: SearchFilter): Promise<RunOutcome> {
   ]);
 
   // Join: resolve which chat each message hit belongs to (one batched query).
-  const names =
+  const chrome =
     msgs.length > 0
-      ? await fetchConversationNames(msgs.map(m => m.conversationId))
+      ? await fetchConversationChrome(msgs.map(m => m.conversationId))
       : {};
 
   const hits: RankedHit[] = [];
@@ -134,12 +136,14 @@ async function runSearch(q: string, filter: SearchFilter): Promise<RunOutcome> {
         c.lastMessageAt,
         c.id,
         c.unreadCount,
+        c.peerAvatarUrl,
       ),
     });
   }
 
   for (const m of msgs) {
-    const chatName = names[m.conversationId] || NO_NAME;
+    const chat = chrome[m.conversationId];
+    const chatName = chat?.name || NO_NAME;
     hits.push({
       at: m.createdAt,
       raw: m.contentPlain,
@@ -152,6 +156,7 @@ async function runSearch(q: string, filter: SearchFilter): Promise<RunOutcome> {
         m.createdAt,
         m.conversationId,
         0,
+        chat?.peerAvatarUrl,
       ),
     });
   }
@@ -194,6 +199,7 @@ export function useSearch(query: string, filter: SearchFilter): SearchState {
             rows.map(c => ({
               id: c.id,
               name: c.name ?? '',
+              peerAvatarUrl: c.peerAvatarUrl,
             })),
           );
           setFrequentLoaded(true);

@@ -32,6 +32,7 @@ import {
   TextInput,
   Pressable,
   ScrollView,
+  Image,
   type ViewStyle,
 } from 'react-native';
 import { FlashList } from '@shopify/flash-list';
@@ -167,7 +168,22 @@ function HighlightedText({
 }
 
 /** The conversation avatar — the same object the inbox draws, so the row reads as the same chat. */
-function Leading({ title }: { title: string }): React.JSX.Element {
+/**
+ * The leading avatar: the peer's PHOTO when the conversation row carries one, the coloured
+ * initial when it does not.
+ *
+ * The photo arrives on the row, resolved once by the inbox sync — never fetched here, which
+ * would be a members lookup, a profile and a media URL per row per keystroke. Without it every
+ * search result drew an initial while the same conversation in the inbox drew a face, so the
+ * person you were searching for looked like somebody else in the results.
+ */
+function Leading({
+  title,
+  photo,
+}: {
+  title: string;
+  photo: string | undefined;
+}): React.JSX.Element {
   const t = useTheme();
   const p = searchPalette(t.scheme);
   const initial = avatarInitial(title);
@@ -186,7 +202,13 @@ function Leading({ title }: { title: string }): React.JSX.Element {
         ...(initial ? {} : { borderWidth: 1, borderColor: p.fieldBorder }),
       }}
     >
-      {initial ? (
+      {photo ? (
+        <Image
+          source={PHOTO_SOURCE(photo)}
+          style={{ width: AVATAR, height: AVATAR }}
+          resizeMode="cover"
+        />
+      ) : initial ? (
         <Text variant="title" style={{ color: '#fff' }}>
           {initial}
         </Text>
@@ -196,6 +218,9 @@ function Leading({ title }: { title: string }): React.JSX.Element {
     </View>
   );
 }
+
+/** Hoisted shape — a fresh `{ uri }` per render is a new prop identity for the same image. */
+const PHOTO_SOURCE = (uri: string): { uri: string } => ({ uri });
 
 interface ResultRowProps {
   readonly result: SearchResult;
@@ -245,7 +270,7 @@ function ResultRowBase({
         backgroundColor: pressed ? t.colors.bgSubtle : 'transparent',
       })}
     >
-      <Leading title={result.title} />
+      <Leading title={result.title} photo={result.peerAvatarUrl} />
       <View style={{ flex: 1, gap: 3 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <View style={{ flex: 1 }}>
@@ -430,9 +455,11 @@ function FilterChip({
 
 function FrequentAvatar({
   name,
+  photo,
   onPress,
 }: {
   name: string;
+  photo: string | undefined;
   onPress: () => void;
 }): React.JSX.Element {
   const t = useTheme();
@@ -458,11 +485,18 @@ function FrequentAvatar({
           backgroundColor: initial ? avatarColor(name) : p.fieldBg,
           alignItems: 'center',
           justifyContent: 'center',
+          overflow: 'hidden',
           // Was `hairline` on `bgSubtle` — 1.10:1, a ring that rendered as nothing.
           ...(initial ? {} : { borderWidth: 1, borderColor: p.fieldBorder }),
         }}
       >
-        {initial ? (
+        {photo ? (
+          <Image
+            source={PHOTO_SOURCE(photo)}
+            style={{ width: 56, height: 56 }}
+            resizeMode="cover"
+          />
+        ) : initial ? (
           <Text variant="title" style={{ color: '#fff' }}>
             {initial}
           </Text>
@@ -673,6 +707,7 @@ export function SearchScreen(): React.JSX.Element {
                 <FrequentAvatar
                   key={c.id}
                   name={c.name}
+                  photo={c.peerAvatarUrl}
                   onPress={() => openChat(c.id, c.name)}
                 />
               ))}

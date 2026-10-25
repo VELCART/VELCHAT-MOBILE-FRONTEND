@@ -28,6 +28,15 @@ export function useMessages(conversationId: string): {
    * one bubble, then jumps to another the moment more history arrives.
    */
   atOldest: boolean;
+  /**
+   * False until the FIRST subscription emission for this conversation.
+   *
+   * Without it the thread's "no messages yet" state renders on every single chat open:
+   * `messages` starts as an empty array, so for one emission a conversation full of history
+   * says it is empty. The chat LIST already learned this (`useConversations.loaded`); the
+   * thread needed the same answer.
+   */
+  loaded: boolean;
 } {
   const meId = useMemo(() => getAccountId() ?? 'me', []);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -35,11 +44,13 @@ export function useMessages(conversationId: string): {
   // re-drop history the user just pulled in.
   const [limit, setLimit] = useState(MESSAGE_PAGE);
   const [atOldest, setAtOldest] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const loadingOlder = useRef(false);
 
   useEffect(() => {
     setLimit(MESSAGE_PAGE); // a different conversation starts from one page again
     setAtOldest(false);
+    setLoaded(false);
   }, [conversationId]);
 
   /**
@@ -132,13 +143,19 @@ export function useMessages(conversationId: string): {
   useEffect(() => {
     let sub: { unsubscribe: () => void } | undefined;
     try {
-      sub = observeMessages(conversationId, limit).subscribe(setMessages);
+      sub = observeMessages(conversationId, limit).subscribe(rows => {
+        setMessages(rows);
+        setLoaded(true);
+      });
     } catch {
+      // The query could not even be built. There is nothing to wait for, so the thread is
+      // "loaded and empty" rather than stuck on a blank screen forever.
       setMessages([]);
+      setLoaded(true);
     }
     return () => sub?.unsubscribe();
   }, [conversationId, limit]);
-  return { messages, meId, loadOlder, atOldest };
+  return { messages, meId, loadOlder, atOldest, loaded };
 }
 
 /** Retry a permanently-failed send (tapped from the bubble) — re-queues the same message. */

@@ -43,10 +43,16 @@ export interface SearchResult {
   readonly conversationId: string;
   /** The conversation name to hand the Chat route (its header title). */
   readonly conversationName: string;
+  /**
+   * The peer's photo, resolved at sync time onto the conversation row — never fetched while
+   * rendering. Absent → the row draws the same coloured initial the inbox draws.
+   */
+  readonly peerAvatarUrl: string | undefined;
 }
 
 /** A frequent/recent conversation shown in the browse-state avatar row. */
 export interface FrequentChat {
   readonly id: string;
   readonly name: string;
+  readonly peerAvatarUrl: string | undefined;
 }

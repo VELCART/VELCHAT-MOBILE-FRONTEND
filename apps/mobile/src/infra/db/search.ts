@@ -23,6 +23,15 @@ export interface ConversationSearchHit {
   lastMessagePreview: string;
   lastMessageAt: number;
   unreadCount: number;
+  /**
+   * The peer's photo, already resolved onto the conversation row by the inbox sync.
+   *
+   * Carried here for the same reason the inbox row carries it: a search result that had to
+   * FETCH a photo would be a members lookup, a profile and a media URL per row per keystroke.
+   * Without it every result drew a coloured initial, so the person you were searching for
+   * looked like a different person in search than in the chat list.
+   */
+  peerAvatarUrl: string | undefined;
 }
 
 /** A message match — the message row + which conversation it belongs to (for the join). */
@@ -133,6 +142,7 @@ export async function searchConversations(
     if (!matchesLiteral(name, q) && !matchesLiteral(preview, q)) continue;
     hits.push({
       id: c.id,
+      peerAvatarUrl: c.peerAvatarUrl,
       name,
       lastMessagePreview: preview,
       lastMessageAt: c.lastMessageAt ?? 0,
@@ -214,20 +224,31 @@ export async function searchMessages(
   return hits;
 }
 
+/** What a message hit needs to know about the conversation it lives in. */
+export interface ConversationChrome {
+  readonly name: string;
+  readonly peerAvatarUrl: string | undefined;
+}
+
 /**
- * Resolve conversation display names for a set of ids in ONE query (id → name), so a message
- * hit can show which chat it lives in without an N+1 fetch. Missing ids are simply absent.
+ * Resolve the name AND photo for a set of conversation ids in ONE query, so a message hit can
+ * show which chat it lives in — and whose face — without an N+1 fetch. Missing ids are absent.
+ *
+ * This used to return names alone, which is why a message result drew a coloured initial while
+ * the same conversation in the inbox drew a photo.
  */
-export async function fetchConversationNames(
+export async function fetchConversationChrome(
   ids: readonly string[],
-): Promise<Record<string, string>> {
+): Promise<Record<string, ConversationChrome>> {
   const unique = [...new Set(ids)];
   if (unique.length === 0) return {};
   const rows = await getDatabase()
     .get<Conversation>('conversations')
     .query(Q.where('id', Q.oneOf(unique)))
     .fetch();
-  const out: Record<string, string> = {};
-  for (const c of rows) out[c.id] = c.name ?? '';
+  const out: Record<string, ConversationChrome> = {};
+  for (const c of rows) {
+    out[c.id] = { name: c.name ?? '', peerAvatarUrl: c.peerAvatarUrl };
+  }
   return out;
 }

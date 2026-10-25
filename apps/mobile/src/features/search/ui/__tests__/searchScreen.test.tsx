@@ -64,6 +64,7 @@ function result(partial: Partial<SearchResult> & { id: string }): SearchResult {
     time: '4:12 PM',
     unreadCount: 0,
     conversationId: 'c1',
+    peerAvatarUrl: undefined,
     conversationName: 'Tusha',
     ...partial,
   };

@@ -30,6 +30,7 @@ function hit(
       time: '',
       unreadCount: 0,
       conversationId: 'c1',
+      peerAvatarUrl: undefined,
       conversationName: '',
       ...partial,
     },

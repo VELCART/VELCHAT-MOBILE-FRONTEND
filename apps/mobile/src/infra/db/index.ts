@@ -57,7 +57,7 @@ export type { ReconcileAction, BackoffOptions } from './syncLogic';
 export {
   searchConversations,
   searchMessages,
-  fetchConversationNames,
+  fetchConversationChrome,
   likePattern,
   matchesLiteral,
 } from './search';

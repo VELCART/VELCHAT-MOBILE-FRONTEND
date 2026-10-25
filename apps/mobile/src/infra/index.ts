@@ -105,7 +105,7 @@ export {
   backoffMs,
   searchConversations,
   searchMessages,
-  fetchConversationNames,
+  fetchConversationChrome,
   likePattern,
   matchesLiteral,
   pendingReceiptFrames,

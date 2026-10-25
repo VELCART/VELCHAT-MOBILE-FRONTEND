@@ -23,7 +23,7 @@ import type {
 
 const mockSearchConversations = jest.fn();
 const mockSearchMessages = jest.fn();
-const mockFetchNames = jest.fn();
+const mockFetchChrome = jest.fn();
 let mockFrequentEmit: ((rows: unknown[]) => void) | null = null;
 const mockUnsubscribe = jest.fn();
 
@@ -31,7 +31,7 @@ jest.mock('../../../../infra', () => ({
   searchConversations: (q: string, o?: unknown) =>
     mockSearchConversations(q, o),
   searchMessages: (q: string, o?: unknown) => mockSearchMessages(q, o),
-  fetchConversationNames: (ids: readonly string[]) => mockFetchNames(ids),
+  fetchConversationChrome: (ids: readonly string[]) => mockFetchChrome(ids),
   observeConversations: () => ({
     subscribe: (next: (rows: unknown[]) => void) => {
       mockFrequentEmit = next;
@@ -50,6 +50,7 @@ function conv(
     lastMessagePreview: '',
     lastMessageAt: 1_000,
     unreadCount: 0,
+    peerAvatarUrl: undefined,
     ...partial,
   };
 }
@@ -77,7 +78,7 @@ beforeEach(() => {
   mockFrequentEmit = null;
   mockSearchConversations.mockReset().mockResolvedValue([]);
   mockSearchMessages.mockReset().mockResolvedValue([]);
-  mockFetchNames.mockReset().mockResolvedValue({});
+  mockFetchChrome.mockReset().mockResolvedValue({});
   mockUnsubscribe.mockReset();
 });
 
@@ -179,7 +180,9 @@ describe('useSearch — what a result carries', () => {
         contentPlain: `${'filler '.repeat(60)}needle${' tail'.repeat(60)}`,
       }),
     ]);
-    mockFetchNames.mockResolvedValue({ c1: 'Design crit' });
+    mockFetchChrome.mockResolvedValue({
+      c1: { name: 'Design crit', peerAvatarUrl: undefined },
+    });
 
     const { result } = renderHook(() => useSearch('needle', ALL));
     await settle();
@@ -310,5 +313,45 @@ describe('useSearch — ownership', () => {
       releaseOld([conv({ id: 'stale', name: 'Ra' })]);
     });
     expect(result.current.results.map(r => r.id)).toEqual(['c_new']);
+  });
+});
+
+describe('a result carries the peer photo the inbox already resolved', () => {
+  it('passes the conversation row’s photo straight through', async () => {
+    // Never fetched while rendering: a members lookup + profile + media URL per row per
+    // keystroke is exactly why search drew coloured initials where the inbox drew faces.
+    mockSearchConversations.mockResolvedValue([
+      conv({ id: 'c1', name: 'Ada', peerAvatarUrl: 'https://x/ada.jpg' }),
+    ]);
+
+    const { result } = renderHook(() => useSearch('ada', ALL));
+    await settle();
+    await waitFor(() => expect(result.current.results).toHaveLength(1));
+    expect(result.current.results[0]?.peerAvatarUrl).toBe('https://x/ada.jpg');
+  });
+
+  it('gives a MESSAGE hit the photo of the chat it lives in', async () => {
+    mockSearchMessages.mockResolvedValue([
+      msg({ id: 'm1', conversationId: 'c1', contentPlain: 'ada' }),
+    ]);
+    mockFetchChrome.mockResolvedValue({
+      c1: { name: 'Ada', peerAvatarUrl: 'https://x/ada.jpg' },
+    });
+
+    const { result } = renderHook(() => useSearch('ada', ALL));
+    await settle();
+    await waitFor(() => expect(result.current.results).toHaveLength(1));
+    expect(result.current.results[0]?.peerAvatarUrl).toBe('https://x/ada.jpg');
+  });
+
+  it('is undefined, never an empty string, when the chat has no photo', async () => {
+    mockSearchConversations.mockResolvedValue([
+      conv({ id: 'c1', name: 'Ada' }),
+    ]);
+
+    const { result } = renderHook(() => useSearch('ada', ALL));
+    await settle();
+    await waitFor(() => expect(result.current.results).toHaveLength(1));
+    expect(result.current.results[0]?.peerAvatarUrl).toBeUndefined();
   });
 });

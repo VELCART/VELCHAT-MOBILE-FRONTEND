@@ -208,7 +208,8 @@ function ChatThread({
     },
     [conversationId],
   );
-  const { messages, meId, loadOlder, atOldest } = useMessages(conversationId);
+  const { messages, meId, loadOlder, atOldest, loaded } =
+    useMessages(conversationId);
   const send = useSendMessage(conversationId);
   const retry = useRetrySend();
   const { notifyTyping, stopTyping } = useTyping(conversationId);
@@ -478,6 +479,9 @@ function ChatThread({
    * the same as "still loading" — and `messages` starts empty, so EVERY chat showed that frame
    * for one emission before its history arrived.
    */
+  // Nothing until the first DB emission. `messages` starts empty, so an ungated empty state
+  // tells the reader a conversation full of history has nothing in it, on every open — which
+  // is exactly what it did.
   const listEmpty = useMemo(
     () => (
       <View
@@ -553,7 +557,7 @@ function ChatThread({
             drawDistance={600}
             decelerationRate={0.978}
             ListFooterComponent={listFooter}
-            ListEmptyComponent={listEmpty}
+            ListEmptyComponent={loaded ? listEmpty : null}
             contentContainerStyle={LIST_CONTENT_STYLE}
             showsVerticalScrollIndicator={false}
           />
